@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/playwright-community/playwright-go"
@@ -47,6 +48,11 @@ func (s *BrowserService) CreateContext(boxID string, params model.CreateContextP
 
 	newContextInstance, err := mb.Instance.NewContext(opts)
 	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "socket hang up") || strings.Contains(errMsg, "connect") || strings.Contains(errMsg, "disconnected") {
+			fmt.Printf("WARN: Connection error during NewContext for box %s, cleaning up browser entry: %v\n", boxID, err)
+			s.handleBrowserDisconnect(boxID)
+		}
 		return nil, fmt.Errorf("failed to create Playwright context for box %s: %w", boxID, err)
 	}
 

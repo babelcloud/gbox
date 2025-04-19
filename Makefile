@@ -73,9 +73,11 @@ dist-%: ## Create package for specific platform and architecture (e.g., dist-dar
 	rm -rf $$PLATFORM_DIR; \
 	mkdir -p $$PLATFORM_DIR/bin; \
 	mkdir -p $$PLATFORM_DIR/manifests; \
+	mkdir -p $$PLATFORM_DIR/packages/mcp-server; \
 	mkdir -p $$PLATFORM_DIR/packages/cli; \
 	mkdir -p $$PLATFORM_DIR/packages/cli/cmd/script; \
 	cp -r manifests/. $$PLATFORM_DIR/manifests/; \
+	rsync -a --exclude='node_modules' packages/mcp-server/ $$PLATFORM_DIR/packages/mcp-server/; \
 	cp packages/cli/gbox-$$PLATFORM_ARCH $$PLATFORM_DIR/packages/cli/gbox; \
 	cp -r packages/cli/cmd/script/. $$PLATFORM_DIR/packages/cli/cmd/script/; \
 	cp .env $$PLATFORM_DIR/ 2>/dev/null || true; \

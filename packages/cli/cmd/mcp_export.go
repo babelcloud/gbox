@@ -103,6 +103,23 @@ func dirExists(path string) bool {
 }
 
 func exportConfig(mergeTo string, dryRun bool) error {
+	packagesRoot, err := getPackagesRootPath()
+	if err != nil {
+		return fmt.Errorf("failed to find project root: %w", err)
+	}
+
+	mcpServerDir := filepath.Join(packagesRoot, "mcp-server")
+	serverScript := filepath.Join(mcpServerDir, "dist", "index.js")
+
+	if _, err := os.Stat(serverScript); os.IsNotExist(err) {
+		return fmt.Errorf("server script not found at %s\nPlease build the MCP server first by running:\n  cd %s && pnpm build", serverScript, mcpServerDir)
+	}
+
+	serverScriptAbs, err := filepath.Abs(serverScript)
+
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path for server script: %w", err)
+	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("failed to get home directory: %w", err)
@@ -111,15 +128,36 @@ func exportConfig(mergeTo string, dryRun bool) error {
 	claudeConfig := filepath.Join(homeDir, "Library", "Application Support", "Claude", "claude_desktop_config.json")
 	cursorConfig := filepath.Join(homeDir, ".cursor", "mcp.json")
 
-	// configToExport remains the definitive new structure to be added/updated
-	mcpServerURL := strings.TrimSuffix(config.GetMcpServerUrl(), "/") + "/sse" // Get and format URL once
-	configToExport := McpConfig{
-		McpServers: map[string]McpServerEntry{
-			"gbox": {
-				Command: "npx",
-				Args:    []string{"mcp-remote", mcpServerURL}, // Use formatted URL
+	var configToExport McpConfig
+
+	if os.Getenv("DEBUG") == "true" {
+		configToExport = McpConfig{
+			McpServers: map[string]McpServerEntry{
+				"gbox": {
+					Command: "bash",
+					Args:    []string{"-c", fmt.Sprintf("cd %s && pnpm --silent dev", mcpServerDir)},
+				},
 			},
-		},
+		}
+
+	} else if os.Getenv("SSE_MODE") == "true" {
+		configToExport = McpConfig{
+			McpServers: map[string]McpServerEntry{
+				"gbox": {
+					Command: "npx",
+					Args:    []string{"mcp-remote", config.GetMcpServerUrl()}, // Use formatted URL
+				},
+			},
+		}
+	} else {
+		configToExport = McpConfig{
+			McpServers: map[string]McpServerEntry{
+				"gbox": {
+					Command: "node",
+					Args:    []string{serverScriptAbs},
+				},
+			},
+		}
 	}
 
 	if mergeTo != "" {
