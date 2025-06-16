@@ -2,7 +2,6 @@ package docker
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -31,30 +30,12 @@ func (s *Service) Create(ctx context.Context, params *model.BoxCreateParams, pro
 	// Get image name - This now handles defaults, env var resolution, and adding :latest if needed.
 	img := GetImage(params.Image)
 
-	// Check if image exists
+	// Check if image exists - return error if not available
 	_, _, err := s.client.ImageInspectWithRaw(ctx, img)
 	if err != nil {
-		// Image not found, try to pull it
-		var pullOptions types.ImagePullOptions
-		if params.ImagePullSecret != "" {
-			pullOptions.RegistryAuth = params.ImagePullSecret
-		}
-
-		// Handle image pulling
-		if progressWriter != nil {
-			// Send initial status
-			initialStatus := model.ProgressUpdate{
-				Status:  model.ProgressStatusPrepare,
-				Message: fmt.Sprintf("Preparing to pull image: %s", img),
-			}
-			encoder := json.NewEncoder(progressWriter)
-			encoder.Encode(initialStatus)
-		}
-
-		pullResult := s.pullImageInternal(ctx, img, pullOptions, progressWriter)
-		if !pullResult.success {
-			return nil, fmt.Errorf("failed to pull image: %s", pullResult.message)
-		}
+		// Image not found, return resource preparation status
+		s.logger.Warn("Image %s not available locally, resources are being prepared", img)
+		return nil, fmt.Errorf("image resources are being prepared, please try again later (image: %s)", img)
 	}
 
 	// Generate box ID
@@ -189,31 +170,16 @@ func (s *Service) Create(ctx context.Context, params *model.BoxCreateParams, pro
 }
 
 // createLinuxBox creates an Alpine Linux box with specific parameters
-func (s *Service) createLinuxBox(ctx context.Context, params *model.LinuxAndroidBoxCreateParam, progressWriter io.Writer) (*model.Box, error) {
+func (s *Service) createLinuxBox(ctx context.Context, params *model.LinuxAndroidBoxCreateParam) (*model.Box, error) {
 	// Use Alpine Linux as the default image
 	img := GetImage("")
 
-	// Check if image exists
+	// Check if image exists - return error if not available
 	_, _, err := s.client.ImageInspectWithRaw(ctx, img)
 	if err != nil {
-		// Image not found, try to pull it
-		pullOptions := types.ImagePullOptions{}
-
-		// Handle image pulling
-		if progressWriter != nil {
-			// Send initial status
-			initialStatus := model.ProgressUpdate{
-				Status:  model.ProgressStatusPrepare,
-				Message: fmt.Sprintf("Preparing to pull image: %s", img),
-			}
-			encoder := json.NewEncoder(progressWriter)
-			encoder.Encode(initialStatus)
-		}
-
-		pullResult := s.pullImageInternal(ctx, img, pullOptions, progressWriter)
-		if !pullResult.success {
-			return nil, fmt.Errorf("failed to pull image: %s", pullResult.message)
-		}
+		// Image not found, return resource preparation status
+		s.logger.Warn("Image %s not available locally, resources are being prepared", img)
+		return nil, fmt.Errorf("image resources are being prepared, please try again later (image: %s)", img)
 	}
 
 	// Generate box ID
@@ -286,12 +252,12 @@ func (s *Service) createLinuxBox(ctx context.Context, params *model.LinuxAndroid
 	return containerToBox(containerInfo), nil
 }
 
-func (s *Service) CreateLinuxBox(ctx context.Context, params *model.LinuxBoxCreateParam, progressWriter io.Writer) (*model.Box, error) {
-	return s.createLinuxBox(ctx, &params.CreateLinuxBox, progressWriter)
+func (s *Service) CreateLinuxBox(ctx context.Context, params *model.LinuxBoxCreateParam) (*model.Box, error) {
+	return s.createLinuxBox(ctx, &params.CreateLinuxBox)
 }
 
 // not implemented
-func (s *Service) CreateAndroidBox(ctx context.Context, params *model.AndroidBoxCreateParam, progressWriter io.Writer) (*model.Box, error) {
+func (s *Service) CreateAndroidBox(ctx context.Context, params *model.AndroidBoxCreateParam) (*model.Box, error) {
 	return nil, fmt.Errorf("CreateAndroidBox not implemented")
 }
 

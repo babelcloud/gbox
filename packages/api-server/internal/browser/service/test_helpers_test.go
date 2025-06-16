@@ -49,11 +49,11 @@ func (m *mockBoxService) Create(ctx context.Context, params *boxModel.BoxCreateP
 	return &boxModel.Box{ID: "mock-box-" + uuid.NewString()}, nil
 }
 
-func (m *mockBoxService) CreateLinuxBox(ctx context.Context, params *boxModel.LinuxBoxCreateParam, progressWriter io.Writer) (*boxModel.Box, error) {
+func (m *mockBoxService) CreateLinuxBox(ctx context.Context, params *boxModel.LinuxBoxCreateParam) (*boxModel.Box, error) {
 	return nil, fmt.Errorf("mockBoxService.CreateLinuxBox not implemented")
 }
 
-func (m *mockBoxService) CreateAndroidBox(ctx context.Context, params *boxModel.AndroidBoxCreateParam, progressWriter io.Writer) (*boxModel.Box, error) {
+func (m *mockBoxService) CreateAndroidBox(ctx context.Context, params *boxModel.AndroidBoxCreateParam) (*boxModel.Box, error) {
 	return nil, fmt.Errorf("mockBoxService.CreateAndroidBox not implemented")
 }
 
@@ -102,12 +102,8 @@ func (m *mockBoxService) RunCode(ctx context.Context, id string, params *boxMode
 func (m *mockBoxService) ExecWS(ctx context.Context, id string, params *boxModel.BoxExecWSParams, conn *websocket.Conn) (*boxModel.BoxExecResult, error) {
 	return nil, fmt.Errorf("mockBoxService.ExecWS not implemented")
 }
-func (m *mockBoxService) UpdateBoxImage(ctx context.Context, params *boxModel.ImageUpdateParams) (*boxModel.ImageUpdateResponse, error) {
-	return nil, fmt.Errorf("mockBoxService.UpdateBoxImage not implemented")
-}
-func (m *mockBoxService) UpdateBoxImageWithProgress(ctx context.Context, params *boxModel.ImageUpdateParams, progressWriter io.Writer) (*boxModel.ImageUpdateResponse, error) {
-	return nil, fmt.Errorf("mockBoxService.UpdateBoxImageWithProgress not implemented")
-}
+
+// UpdateBoxImage methods removed - now handled by background ImageManager
 func (m *mockBoxService) BoxActionClick(ctx context.Context, id string, params *boxModel.BoxActionClickParams) (*boxModel.BoxActionClickResult, error) {
 	return nil, fmt.Errorf("mockBoxService.BoxActionClick not implemented")
 }

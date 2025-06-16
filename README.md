@@ -12,16 +12,12 @@ As MCP is getting more and more popular, we also implemented a MCP server to mak
    - Execute python scripts directly
    - Share session across invokes <em>[under-development]</em>
 2. File
-   - Mount host machine folders into sandbox
-   - Access sandbox files through http links
-   - Read file content in multi-modal
-   - Write/re-write files
+   - Read/Write/List files in sandbox
    - Edit files <em>[under-development]</em>
    - Search files <em>[under-development]</em>
 3. Browser
-   - Open any url, return content in multi-modal
+   - Provide cdp url for browser control <em>[under-development]</em>
    - Download from any url <em>[under-development]</em>
-   - Operate browser by instructions
    - Human take over <em>[under-development]</em>
 4. Computer-Using Agent for Android
    - Natural language task execution via ADB client
@@ -29,27 +25,10 @@ As MCP is getting more and more popular, we also implemented a MCP server to mak
 5. HTTP Server
    - Start http service on any folder on demand <em>[under-development]</em>
 6. SDKs
-   - Python SDK: Install using `pip install pygbox`. See [PyPI](https://pypi.org/project/pygbox/) for details.
-   - Typescript SDK
+   - Typescript SDK Installing using `npm install gbox-sdk`, see [Gbox SDK Reference](https://docs.gbox.cloud/api-reference)
 7. MCP
    - Standard MCP support
    - Integrate Claude Desktop & Cursor
-
-## Use gbox as a SDK
-
-### Python SDK
-
-```bash
-pip install pygbox
-```
-[Python SDK Documentation](packages/sdk/python/README.md)
-
-### Typescript SDK
-
-```bash
-npm install @gru/gbox
-```
-[Typescript SDK Documentation](packages/sdk/typescript/README.md)
 
 ## Use gbox as a CLI
 
@@ -95,23 +74,35 @@ gbox mcp export --merge-to claude
 # Restart Claude Desktop
 ```
 
-### Command Line Usage
+### Command Line Usage (Under Development)
 
 The project provides a command-line tool `gbox` for managing sandbox containers:
 
 ```bash
-# Cluster management
-gbox cluster setup    # Setup cluster environment
-gbox cluster cleanup  # Cleanup cluster environment
+# login and profile management for gbox.cloud
+gbox login # login to gbox.cloud
+gbox logout # logout from gbox.cloud
 
-# Container management
-gbox box create --image python:3.9 --env "DEBUG=true" -w /app -v /host/path:/app   # Create container
+gbox profile create <profile-name> # create a new profile
+gbox profile delete <profile-name> # delete a profile
+
+# Setup local environment
+gbox local setup    # Setup local environment
+gbox local cleanup  # Cleanup local environment
+
+# Container management for both local and gbox.cloud
+gbox box newlinux --env "DEBUG=true"                                               # Create container
 gbox box list                                                                      # List containers
 gbox box start <box-id>                                                            # Start container
 gbox box stop <box-id>                                                             # Stop container
 gbox box delete <box-id>                                                           # Delete container
 gbox box exec <box-id> -- python -c "print('Hello')"                               # Execute command
-gbox box inspect <box-id>                                                          # Inspect container
+gbox box inspect <box-id>  
+gbox box cp <box-id> <local-path> <container-path>                                 # copy file from container to local
+
+# only for gbox.cloud
+gbox <box-id> 
+gbox switch                                                              
 
 # To use the Computer-Using Agent for Android, an OPENAI_API_KEY is required.
 gbox cua android "Open Uber and order a ride to The Chinese University of Hong Kong."
@@ -121,42 +112,6 @@ gbox mcp export                          # Export MCP configuration
 gbox mcp export --merge-to claude        # Export and merge into Claude Desktop config
 gbox mcp export --dry-run                # Preview merge result without applying changes
 ```
-
-### Volume Mounts
-
-The `gbox box create` command supports Docker-compatible volume mounts using the `-v` or `--volume` flag. This allows you to share files and directories between your host system and the sandbox containers.
-
-The volume mount syntax follows this format:
-
-```bash
--v /host/path:/container/path[:ro][:propagation]
-```
-
-Where:
-
-- `/host/path`: Path to a file or directory on your host system
-- `/container/path`: Path where the file or directory will be mounted in the container
-- `ro` (optional): Makes the mount read-only
-- `propagation` (optional): Sets the mount propagation mode (private, rprivate, shared, rshared, slave, rslave)
-
-Examples:
-
-```bash
-# Basic bind mount
-gbox box create -v /data:/data --image python:3.9
-
-# Read-only bind mount
-gbox box create -v /data:/data:ro
-
-# Multiple bind mounts
-gbox box create \
-  -v /config:/etc/myapp \
-  -v /data:/var/lib/myapp:ro \
-  -v /logs:/var/log/myapp:ro:rprivate \
-  --image python:3.9
-```
-
-Note: The host path must exist before creating the container. The container path will be created automatically if it doesn't exist.
 
 ## Computer-Using Agent on Android
 
@@ -218,7 +173,7 @@ ADB (Android Debug Bridge) is required for gbox to communicate with your Android
 #### 2. Use DoorDash/Foodpanda to order food delivery.
 <img src="https://i.imghippo.com/files/hYdz1413YaE.jpg" width="40%" height="40%">
 
-## MCP Use Cases
+## MCP Use Cases (Under Development)
 
 Your AI client such as Claude Desktop can use gbox MCP to deliver better results, such as
 
@@ -239,12 +194,6 @@ https://claude.ai/share/84600933-dcf2-44be-a2fd-7f49540db57a
 Analyze and compare Nvidia/Tesla market cap:
 ![Image](https://i.imghippo.com/files/FE2710WR.png)
 https://claude.ai/share/70c335b7-9fff-4ee7-8459-e6b7462d8994
-
-### 4. Processing Local Files
-
-Find images in download folder and compress into zip.
-![image](https://i.imghippo.com/files/wcKb4481gMk.jpeg)
-https://claude.ai/share/f8c4c617-9b32-4062-a8e2-2ab33ef46f42
 
 ### 5. Execute Arbitrary Tasks
 

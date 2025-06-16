@@ -16,6 +16,7 @@ type Service struct {
 	client        *client.Client
 	logger        *logger.Logger
 	accessTracker tracker.AccessTracker
+	imageManager  *ImageManager
 }
 
 // NewService creates a new Docker service instance
@@ -28,11 +29,29 @@ func NewService(tracker tracker.AccessTracker) (*Service, error) {
 		return nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
 
+	log := logger.New()
+
+	// Create and start ImageManager
+	imageManager := NewImageManager(cli, log)
+	imageManager.Start()
+
 	return &Service{
 		client:        cli,
-		logger:        logger.New(),
+		logger:        log,
 		accessTracker: tracker,
+		imageManager:  imageManager,
 	}, nil
+}
+
+// Close gracefully shuts down the service
+func (s *Service) Close() error {
+	if s.imageManager != nil {
+		s.imageManager.Stop()
+	}
+	if s.client != nil {
+		return s.client.Close()
+	}
+	return nil
 }
 
 func init() {

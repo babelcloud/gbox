@@ -223,12 +223,12 @@ func (s *Service) Create(ctx context.Context, req *model.BoxCreateParams, progre
 }
 
 // CreateLinuxBox creates a new linux box
-func (s *Service) CreateLinuxBox(ctx context.Context, req *model.LinuxBoxCreateParam, progressWriter io.Writer) (*model.Box, error) {
+func (s *Service) CreateLinuxBox(ctx context.Context, req *model.LinuxBoxCreateParam) (*model.Box, error) {
 	return nil, fmt.Errorf("CreateLinuxBox not implemented")
 }
 
 // CreateAndroidBox creates a new android box
-func (s *Service) CreateAndroidBox(ctx context.Context, req *model.AndroidBoxCreateParam, progressWriter io.Writer) (*model.Box, error) {
+func (s *Service) CreateAndroidBox(ctx context.Context, req *model.AndroidBoxCreateParam) (*model.Box, error) {
 	return nil, fmt.Errorf("CreateAndroidBox not implemented")
 }
 
@@ -715,68 +715,10 @@ func (s *Service) GetExternalPort(ctx context.Context, id string, internalPort i
 	return 0, fmt.Errorf("internal port %d not found in service %s", internalPort, id)
 }
 
-// UpdateBoxImage updates the default image (usually playwright) based on the target tag from environment variables.
-// If dryRun is true, it only reports the planned operations without executing them.
-func (s *Service) UpdateBoxImage(ctx context.Context, params *model.ImageUpdateParams) (*model.ImageUpdateResponse, error) {
-	// TODO: Implement K8S version of image updating
-	// For now, return empty response
-	return &model.ImageUpdateResponse{
-		Images:       []model.ImageInfo{},
-		ErrorMessage: "Image update not implemented for Kubernetes environment",
-	}, nil
-}
+// UpdateBoxImage and UpdateBoxImageWithProgress methods have been removed.
+// Image management is now handled by the background ImageManager service (for Docker environments).
 
-// UpdateBoxImageWithProgress is the streaming version of UpdateBoxImage for Kubernetes.
-// This is currently not implemented for K8s environment.
-func (s *Service) UpdateBoxImageWithProgress(ctx context.Context, params *model.ImageUpdateParams, progressWriter io.Writer) (*model.ImageUpdateResponse, error) {
-	// Write not implemented message to the progress writer
-	msg := struct {
-		Status  string `json:"status"`
-		Message string `json:"message"`
-	}{
-		Status:  "error",
-		Message: "Image update with progress streaming not implemented for Kubernetes environment",
-	}
-
-	encoder := json.NewEncoder(progressWriter)
-	encoder.Encode(msg)
-
-	// Return the same response as non-streaming version
-	return &model.ImageUpdateResponse{
-		Images:       []model.ImageInfo{},
-		ErrorMessage: "Image update not implemented for Kubernetes environment",
-	}, nil
-}
-
-// CheckImageExists checks if an image exists locally
-// For K8s environment, this is a placeholder implementation
-func (s *Service) CheckImageExists(ctx context.Context, params *model.BoxCreateParams) (bool, string) {
-	image := params.Image
-	if image == "" {
-		image = defaultImage
-	}
-
-	// In K8s environment, we assume the image always exists (K8s cluster handles pulling)
-	s.logger.Info("CheckImageExists called in K8s environment for image: %s", image)
-	return true, image
-}
-
-// EnsureImagePulling ensures an image is being pulled, starting the pull process if not already in progress
-// For K8s environment, this is a placeholder implementation
-func (s *Service) EnsureImagePulling(ctx context.Context, imageName string) {
-	// In K8s environment, image pulling is managed by Kubernetes itself, no implementation needed
-	s.logger.Info("EnsureImagePulling called in K8s environment for image: %s (no-op)", imageName)
-}
-
-// WaitForImagePull returns a channel that is closed when image pull completes
-// For K8s environment, this is a placeholder implementation
-func (s *Service) WaitForImagePull(imageName string) <-chan struct{} {
-	s.logger.Info("WaitForImagePull called in K8s environment for image: %s", imageName)
-	// Return a closed channel to indicate the image is "already pulled"
-	ch := make(chan struct{})
-	close(ch)
-	return ch
-}
+// Image management methods removed - handled by background ImageManager (Docker only)
 
 // Helper functions
 func getImage(image string) string {

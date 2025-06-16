@@ -177,15 +177,7 @@ func RegisterRoutes(ws *restful.WebService, boxHandler *BoxHandler) {
 		Returns(404, "Not Found", model.BoxError{}).
 		Returns(500, "Internal Server Error", model.BoxError{}))
 
-	// Image management operations
-	ws.Route(ws.POST("/boxes/images/update").To(boxHandler.UpdateBoxImage).
-		Doc("updates docker images, pulling latest and removing outdated versions").
-		Reads(model.ImageUpdateParams{}).
-		Produces("application/json", "application/json-stream").
-		Param(ws.QueryParameter("imageName", "image name to update (default: babelcloud/gbox-playwright)").DataType("string").Required(false)).
-		Param(ws.QueryParameter("dryRun", "if true, only reports planned actions without executing them").DataType("boolean").Required(false)).
-		Returns(200, "OK", model.ImageUpdateResponse{}).
-		Returns(500, "Internal Server Error", model.BoxError{}))
+	// Image management operations - removed /boxes/images/update route as images are now managed by background service
 
 	// these are only supported for cloud version
 	ws.Route(ws.POST("/boxes/{id}/actions/click").To(boxHandler.BoxActionClick).

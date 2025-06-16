@@ -17,8 +17,8 @@ type BoxService interface {
 	Get(ctx context.Context, id string) (*model.Box, error)
 	Create(ctx context.Context, params *model.BoxCreateParams, progressWriter io.Writer) (*model.Box, error)
 	// these are only supported for cloud version
-	CreateLinuxBox(ctx context.Context, params *model.LinuxBoxCreateParam, progressWriter io.Writer) (*model.Box, error)
-	CreateAndroidBox(ctx context.Context, params *model.AndroidBoxCreateParam, progressWriter io.Writer) (*model.Box, error)
+	CreateLinuxBox(ctx context.Context, params *model.LinuxBoxCreateParam) (*model.Box, error)
+	CreateAndroidBox(ctx context.Context, params *model.AndroidBoxCreateParam) (*model.Box, error)
 	Delete(ctx context.Context, id string, params *model.BoxDeleteParams) (*model.BoxDeleteResult, error)
 	DeleteAll(ctx context.Context, params *model.BoxesDeleteParams) (*model.BoxesDeleteResult, error)
 	Reclaim(ctx context.Context) (*model.BoxReclaimResult, error)
@@ -40,20 +40,12 @@ type BoxService interface {
 	ReadFile(ctx context.Context, id string, params *model.BoxFileReadParams) (*model.BoxFileReadResult, error)
 	WriteFile(ctx context.Context, id string, params *model.BoxFileWriteParams) (*model.BoxFileWriteResult, error)
 
-	// Box image operations
-	UpdateBoxImage(ctx context.Context, params *model.ImageUpdateParams) (*model.ImageUpdateResponse, error)
-	UpdateBoxImageWithProgress(ctx context.Context, params *model.ImageUpdateParams, progressWriter io.Writer) (*model.ImageUpdateResponse, error)
+	// Box image operations - removed UpdateBoxImage methods as they are now handled by background ImageManager
 
 	// GetExternalPort retrieves the host port mapping for a specific internal port of a box.
 	GetExternalPort(ctx context.Context, id string, internalPort int) (int, error)
 
-	// Added image management interfaces
-	// CheckImageExists checks if an image exists locally
-	CheckImageExists(ctx context.Context, params *model.BoxCreateParams) (bool, string)
-	// EnsureImagePulling ensures an image is being pulled, if not already in progress it will start pulling
-	EnsureImagePulling(ctx context.Context, imageName string)
-	// WaitForImagePull waits for an image pull to complete
-	WaitForImagePull(imageName string) <-chan struct{}
+	// Image management is now handled by background ImageManager service
 
 	// Box action operations, these are only supported for cloud version
 	BoxActionClick(ctx context.Context, id string, params *model.BoxActionClickParams) (*model.BoxActionClickResult, error)

@@ -56,6 +56,14 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to initialize box service: %v", err)
 	}
+	defer func() {
+		log.Info("Closing box service...")
+		if closer, ok := boxSvc.(interface{ Close() error }); ok {
+			if err := closer.Close(); err != nil {
+				log.Error("Error closing box service: %v", err)
+			}
+		}
+	}()
 
 	fileSvc, err := fileService.New(boxSvc)
 	if err != nil {

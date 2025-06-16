@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"sync"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 
-	"github.com/babelcloud/gbox/packages/api-server/config"
 	model "github.com/babelcloud/gbox/packages/api-server/pkg/box"
 	"github.com/babelcloud/gbox/packages/api-server/pkg/logger"
 )
@@ -30,120 +28,8 @@ const DefaultImageName = "babelcloud/gbox-playwright"
 // Logger instance
 var log = logger.New()
 
-// Image status tracking data structure
-type imageStatus struct {
-	pulling   bool
-	done      chan struct{}
-	succeeded bool
-}
-
-// Global image status tracker
-var (
-	// Mutex for protecting image status access
-	imageLock sync.Mutex
-	// Tracks images currently being pulled
-	imageStatuses = make(map[string]*imageStatus)
-)
-
-// CheckImageExists checks if an image exists locally
-func (s *Service) CheckImageExists(ctx context.Context, params *model.BoxCreateParams) (bool, string) {
-	image := params.Image
-	if image == "" {
-		image = DefaultImageName
-	}
-
-	// Use CheckImageTag to get standardized image name
-	imageWithTag := config.CheckImageTag(image)
-
-	// Parse repository and tag
-	repo, tag, ok := parseImageTag(imageWithTag)
-	if !ok {
-		return false, imageWithTag
-	}
-
-	// Recombine to ensure consistent format
-	imageWithTag = fmt.Sprintf("%s:%s", repo, tag)
-
-	// Try to check if image exists
-	_, _, err := s.client.ImageInspectWithRaw(ctx, imageWithTag)
-	return err == nil, imageWithTag
-}
-
-// EnsureImagePulling ensures an image is being pulled, starting the pull process if not already in progress
-func (s *Service) EnsureImagePulling(ctx context.Context, imageName string) {
-	imageLock.Lock()
-	status, exists := imageStatuses[imageName]
-
-	// If image is not being pulled, start pulling
-	if !exists || !status.pulling {
-		log.Infof("Starting async image pull for %s", imageName)
-		newStatus := &imageStatus{
-			pulling: true,
-			done:    make(chan struct{}),
-		}
-		imageStatuses[imageName] = newStatus
-		imageLock.Unlock()
-
-		// Start async pull
-		go func() {
-			// Create a new context with cancel function to avoid parent context cancellation affecting the pull
-			pullCtx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			log.Infof("Async image pull for %s started", imageName)
-
-			// Perform image pull - no progress output as this is a background operation
-			result := s.pullImage(pullCtx, imageName)
-
-			// Update pull status
-			imageLock.Lock()
-			if status, ok := imageStatuses[imageName]; ok {
-				status.pulling = false
-				status.succeeded = result.success
-				close(status.done)
-			}
-			imageLock.Unlock()
-
-			if result.success {
-				log.Infof("Async image pull for %s completed successfully", imageName)
-			} else {
-				log.Warnf("Async image pull for %s failed: %s", imageName, result.message)
-			}
-		}()
-	} else {
-		// Image already being pulled, release lock and return
-		log.Infof("Image %s is already being pulled, skipping duplicate pull", imageName)
-		imageLock.Unlock()
-	}
-}
-
-// WaitForImagePull returns a channel that is closed when image pull completes
-func (s *Service) WaitForImagePull(imageName string) <-chan struct{} {
-	imageLock.Lock()
-	defer imageLock.Unlock()
-
-	status, exists := imageStatuses[imageName]
-	if !exists {
-		// If no pull record exists, create a closed channel to indicate completion
-		log.Infof("No active pull found for image %s, returning completed channel", imageName)
-		ch := make(chan struct{})
-		close(ch)
-		return ch
-	}
-
-	if !status.pulling {
-		// Pull has already completed, check if successful
-		if status.succeeded {
-			log.Infof("Image %s pull already completed successfully", imageName)
-		} else {
-			log.Warnf("Image %s pull completed but failed", imageName)
-		}
-	} else {
-		log.Infof("Waiting for image %s pull to complete", imageName)
-	}
-
-	return status.done
-}
+// Image management methods removed - now handled by background ImageManager service
+// Image status tracking and individual pull methods are no longer needed
 
 // prepareImageUpdate does common setup for image update operations
 func (s *Service) prepareImageUpdate(ctx context.Context, params *model.ImageUpdateParams) (*model.ImageUpdateResponse, string, string, []image.Summary, error) {
@@ -157,8 +43,8 @@ func (s *Service) prepareImageUpdate(ctx context.Context, params *model.ImageUpd
 		image = DefaultImageName
 	}
 
-	// use CheckImageTag to parse image tag
-	imageWithTag := config.CheckImageTag(image)
+	// Ensure image has proper tag using unified logic
+	imageWithTag := EnsureImageTag(image)
 
 	// parse repo and tag from imageWithTag
 	repo, tag, ok := parseImageTag(imageWithTag)
@@ -182,43 +68,8 @@ func (s *Service) prepareImageUpdate(ctx context.Context, params *model.ImageUpd
 	return response, repo, tag, images, nil
 }
 
-// UpdateBoxImage implements the BoxService interface method for updating images
-func (s *Service) UpdateBoxImage(ctx context.Context, params *model.ImageUpdateParams) (*model.ImageUpdateResponse, error) {
-	response, repo, tag, images, err := s.prepareImageUpdate(ctx, params)
-	if err != nil || repo == "" {
-		return response, err
-	}
-
-	imageWithTag := fmt.Sprintf("%s:%s", repo, tag)
-
-	// Process target image
-	targetImageInfo, targetImageId := s.processTargetImage(ctx, repo, tag, imageWithTag, params.DryRun)
-	response.Images = append(response.Images, targetImageInfo)
-
-	// Process existing images (find outdated versions)
-	s.processOutdatedImages(ctx, images, repo, tag, targetImageId, params.DryRun, params.Force, &response.Images)
-
-	return response, nil
-}
-
-// UpdateBoxImageWithProgress implements the BoxService interface method for updating images with progress streaming
-func (s *Service) UpdateBoxImageWithProgress(ctx context.Context, params *model.ImageUpdateParams, progressWriter io.Writer) (*model.ImageUpdateResponse, error) {
-	response, repo, tag, images, err := s.prepareImageUpdate(ctx, params)
-	if err != nil || repo == "" {
-		return response, err
-	}
-
-	imageWithTag := fmt.Sprintf("%s:%s", repo, tag)
-
-	// Process target image with progress reporting
-	targetImageInfo, targetImageId := s.processTargetImageWithProgress(ctx, repo, tag, imageWithTag, params.DryRun, progressWriter)
-	response.Images = append(response.Images, targetImageInfo)
-
-	// Process existing images (find outdated versions)
-	s.processOutdatedImages(ctx, images, repo, tag, targetImageId, params.DryRun, params.Force, &response.Images)
-
-	return response, nil
-}
+// UpdateBoxImage and UpdateBoxImageWithProgress methods have been removed.
+// Image management is now handled by the background ImageManager service.
 
 // processTargetImage handles checking, pulling and preparing info for the target image
 func (s *Service) processTargetImage(ctx context.Context, repo string, tag string, imageWithTag string, dryRun bool) (model.ImageInfo, string) {

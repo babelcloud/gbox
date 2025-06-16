@@ -310,27 +310,48 @@ func GetEnvVars(env map[string]string) []string {
 	return vars
 }
 
+// EnsureImageTag ensures an image name has a tag, using various fallback strategies
+func EnsureImageTag(image string) string {
+	// Handle empty input - return empty to let GetImage handle defaults
+	if image == "" {
+		return ""
+	}
+
+	// If already has tag, return as-is
+	if strings.Contains(image, ":") {
+		return image
+	}
+
+	// Try to get tag from config/env vars
+	if resolvedWithTag := config.CheckImageTag(image); strings.Contains(resolvedWithTag, ":") {
+		return resolvedWithTag
+	}
+
+	// Fallback to latest
+	return image + ":latest"
+}
+
 func GetImage(image string) string {
-	// 1. Handle empty input: default to Python image
+	// Handle empty input: use default image with configured tag
 	if image == "" {
 		defaultImageTag := config.GetDefaultImageTag()
-		// Ensure default image also gets a tag if GetDefaultImageTag returns empty
 		if defaultImageTag == "" {
-			defaultImageTag = "latest" // Default to latest if no specific tag is configured
+			defaultImageTag = "latest"
 		}
 		return "babelcloud/gbox-playwright:" + defaultImageTag
 	}
 
-	// 2. Input is not empty, resolve using CheckImageTag (which handles env vars).
-	resolvedImg := config.CheckImageTag(image) // Use the fixed CheckImageTag
-
-	// 3. If CheckImageTag returned an image without a tag (original or unresolved), append ':latest'.
-	if !strings.Contains(resolvedImg, ":") {
-		return resolvedImg + ":latest"
+	// Use unified tag handling for non-empty inputs
+	ensuredImage := EnsureImageTag(image)
+	if ensuredImage == "" {
+		// If EnsureImageTag returned empty, apply default logic
+		defaultImageTag := config.GetDefaultImageTag()
+		if defaultImageTag == "" {
+			defaultImageTag = "latest"
+		}
+		return "babelcloud/gbox-playwright:" + defaultImageTag
 	}
-
-	// 4. Otherwise, CheckImageTag already added a tag (original or from env var).
-	return resolvedImg
+	return ensuredImage
 }
 
 // MapToEnv converts a map of environment variables to a slice of "key=value" strings
