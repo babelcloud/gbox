@@ -56,7 +56,7 @@ func NewBoxListCommand() *cobra.Command {
 func runList(opts *BoxListOptions) error {
 	queryParams := buildQueryParams(opts.Filters)
 
-	apiBase := config.GetAPIURL()
+	apiBase := config.GetLocalAPIURL()
 	apiURL := fmt.Sprintf("%s/api/v1/boxes%s", strings.TrimSuffix(apiBase, "/"), queryParams)
 
 	if os.Getenv("DEBUG") == "true" {

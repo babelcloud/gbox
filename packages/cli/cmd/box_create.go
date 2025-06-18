@@ -175,7 +175,7 @@ func runCreate(opts *BoxCreateOptions, args []string) error {
 		fmt.Fprintln(os.Stderr, prettyJSON.String())
 	}
 
-	apiBase := config.GetAPIURL()
+	apiBase := config.GetLocalAPIURL()
 	apiURL := fmt.Sprintf("%s/api/v1/boxes", strings.TrimSuffix(apiBase, "/"))
 
 	// Create a new HTTP request

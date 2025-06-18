@@ -87,7 +87,7 @@ func runReclaim(opts *BoxReclaimOptions) error {
 }
 
 func buildReclaimAPIURL(force bool) string {
-	apiBase := config.GetAPIURL()
+	apiBase := config.GetLocalAPIURL()
 	apiURL := fmt.Sprintf("%s/api/v1/boxes/reclaim", strings.TrimSuffix(apiBase, "/"))
 
 	if force {

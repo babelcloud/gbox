@@ -13,13 +13,15 @@ func init() {
 	v = viper.New()
 
 	// Set default values
-	v.SetDefault("api.endpoint", "http://localhost:28080")
+	v.SetDefault("api.endpoint.local", "http://localhost:28080")
+	v.SetDefault("api.endpoint.cloud", "http://gbox.localhost:2080")
 	v.SetDefault("project.root", "")
 	v.SetDefault("mcp.server.url", "http://localhost:28090/sse") // Default MCP server URL
 
 	// Environment variables
 	v.AutomaticEnv()
-	v.BindEnv("api.endpoint", "API_ENDPOINT")
+	v.BindEnv("api.endpoint.local", "API_ENDPOINT_LOCAL", "API_ENDPOINT")
+	v.BindEnv("api.endpoint.cloud", "API_ENDPOINT_CLOUD")
 	v.BindEnv("project.root", "PROJECT_ROOT")
 	v.BindEnv("mcp.server.url", "MCP_SERVER_URL") // Bind MCP server URL env var
 
@@ -49,9 +51,14 @@ func init() {
 	}
 }
 
-// GetAPIURL returns the API server URL
-func GetAPIURL() string {
-	return v.GetString("api.endpoint")
+// GetLocalAPIURL returns the local API server URL
+func GetLocalAPIURL() string {
+	return v.GetString("api.endpoint.local")
+}
+
+// GetCloudAPIURL returns the cloud API server URL
+func GetCloudAPIURL() string {
+	return v.GetString("api.endpoint.cloud")
 }
 
 // GetProjectRoot returns the project root directory

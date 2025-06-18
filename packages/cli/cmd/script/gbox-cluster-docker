@@ -7,6 +7,100 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common"
 
+# Check if jq is available
+if ! command -v jq &> /dev/null; then
+    echo "Error: jq is required but not installed."
+    echo "Please install jq to continue:"
+    echo "  macOS: brew install jq"
+    echo "  Ubuntu/Debian: sudo apt-get install jq"
+    echo "  CentOS/RHEL: sudo yum install jq"
+    exit 1
+fi
+
+# Profile management functions
+add_local_profile() {
+    local profile_file="$GBOX_HOME/profile.json"
+    local temp_file="$GBOX_HOME/profile.json.tmp"
+    
+    echo "Adding local profile to profiles file..."
+    
+    # Create profiles directory if it doesn't exist
+    mkdir -p "$GBOX_HOME"
+    
+    # Read existing profiles or create empty array
+    local profiles_json="[]"
+    if [[ -f "$profile_file" ]]; then
+        profiles_json=$(cat "$profile_file" 2>/dev/null || echo "[]")
+    fi
+    
+    # Check if local profile already exists
+    if echo "$profiles_json" | jq -e '.[] | select(.api_key_name == "local")' >/dev/null 2>&1; then
+        echo "Local profile already exists, skipping..."
+        return 0
+    fi
+    
+    # Add local profile
+    local new_profile='{
+        "api_key": "",
+        "api_key_name": "local",
+        "organization_name": "local",
+        "current": true
+    }'
+    
+    # Set all existing profiles to not current
+    local updated_profiles=$(echo "$profiles_json" | jq 'map(. + {"current": false})')
+    
+    # Add new local profile
+    local final_profiles=$(echo "$updated_profiles" | jq ". + [$new_profile]")
+    
+    # Write to temporary file first
+    echo "$final_profiles" > "$temp_file"
+    
+    # Move to final location
+    mv "$temp_file" "$profile_file"
+    
+    echo "Local profile added successfully"
+}
+
+remove_local_profile() {
+    local profile_file="$GBOX_HOME/profile.json"
+    local temp_file="$GBOX_HOME/profile.json.tmp"
+    
+    echo "Removing local profile from profiles file..."
+    
+    if [[ ! -f "$profile_file" ]]; then
+        echo "Profiles file does not exist, nothing to remove"
+        return 0
+    fi
+    
+    # Read existing profiles
+    local profiles_json=$(cat "$profile_file" 2>/dev/null || echo "[]")
+    
+    # Check if local profile exists
+    if ! echo "$profiles_json" | jq -e '.[] | select(.api_key_name == "local")' >/dev/null 2>&1; then
+        echo "Local profile does not exist, nothing to remove"
+        return 0
+    fi
+    
+    # Remove local profile and set first remaining profile as current
+    local updated_profiles=$(echo "$profiles_json" | jq '
+        map(select(.api_key_name != "local")) |
+        if length > 0 then
+            map(if . == .[0] then . + {"current": true} else . + {"current": false} end)
+        else
+            []
+        end
+    ')
+    
+    # Write to temporary file first
+    echo "$updated_profiles" > "$temp_file"
+    
+    # Move to final location
+    mv "$temp_file" "$profile_file"
+    
+    echo "Local profile removed successfully"
+}
+
 # Setup command
 setup() {
     echo "Setting up docker box environment..."
@@ -25,6 +119,9 @@ setup() {
     echo "Starting docker-compose services..."
     docker compose -f "$SCRIPT_DIR/../../../../manifests/docker/docker-compose.yml" up -d api-server cua-server
     
+    # Add local profile
+    add_local_profile
+    
     echo "Docker setup completed successfully"
 }
 
@@ -35,6 +132,9 @@ cleanup() {
     # Stop docker-compose services
     echo "Stopping docker-compose services..."
     docker compose -f "$SCRIPT_DIR/../../../../manifests/docker/docker-compose.yml" down api-server cua-server
+    
+    # Remove local profile
+    remove_local_profile
     
     echo "Docker cleanup completed successfully"
 }

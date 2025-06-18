@@ -22,7 +22,7 @@ type BoxListCompletionResponse struct {
 // completeBoxIDs provides completion for box IDs by fetching them from the API.
 func completeBoxIDs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	debug := os.Getenv("DEBUG") == "true"
-	apiBase := config.GetAPIURL()
+	apiBase := config.GetLocalAPIURL()
 	// Ensure apiBase is not empty before trying to use it
 	if apiBase == "" {
 		if debug {
@@ -99,7 +99,7 @@ func ResolveBoxIDPrefix(prefix string) (fullID string, matchedIDs []string, err 
 	}
 
 	// 1. Fetch all box IDs (similar to completeBoxIDs)
-	apiBase := config.GetAPIURL()
+	apiBase := config.GetLocalAPIURL()
 	if apiBase == "" {
 		if debug {
 			fmt.Fprintln(os.Stderr, "DEBUG: [ResolveBoxIDPrefix] API URL is not configured.")
@@ -114,7 +114,7 @@ func ResolveBoxIDPrefix(prefix string) (fullID string, matchedIDs []string, err 
 
 	// It's generally a good idea to use a client with a timeout.
 	// For simplicity here, we use a default client.
-	client := &http.Client{} 
+	client := &http.Client{}
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create request for box list: %w", err)
@@ -136,18 +136,18 @@ func ResolveBoxIDPrefix(prefix string) (fullID string, matchedIDs []string, err 
 		return "", nil, fmt.Errorf("failed to read response body for box list: %w", err)
 	}
 
-	// Assuming BoxListCompletionResponse is defined as in completeBoxIDs 
+	// Assuming BoxListCompletionResponse is defined as in completeBoxIDs
 	// which should be in the same file:
 	// type BoxListCompletionResponse struct {
 	// 	Boxes []struct {
 	// 		ID string `json:"id"`
 	// 	} `json:"boxes"`
 	// }
-	var response BoxListCompletionResponse 
+	var response BoxListCompletionResponse
 	if err := json.Unmarshal(body, &response); err != nil {
 		return "", nil, fmt.Errorf("failed to parse JSON for box list: %w\nBody: %s", err, string(body))
 	}
-	
+
 	if debug {
 		var allIDs []string
 		for _, box := range response.Boxes {
@@ -155,14 +155,14 @@ func ResolveBoxIDPrefix(prefix string) (fullID string, matchedIDs []string, err 
 		}
 		fmt.Fprintf(os.Stderr, "DEBUG: [ResolveBoxIDPrefix] All fetched IDs: %v\n", allIDs)
 	}
-	
+
 	// 2. Perform prefix matching
 	for _, box := range response.Boxes {
 		if strings.HasPrefix(box.ID, prefix) {
 			matchedIDs = append(matchedIDs, box.ID)
 		}
 	}
-	
+
 	if debug {
 		fmt.Fprintf(os.Stderr, "DEBUG: [ResolveBoxIDPrefix] Matched IDs for prefix '%s': %v\n", prefix, matchedIDs)
 	}

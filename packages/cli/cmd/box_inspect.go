@@ -48,7 +48,7 @@ func runInspect(boxIDPrefix string, opts *BoxInspectOptions) error {
 		return fmt.Errorf("failed to resolve box ID: %w", err) // Return error if resolution fails
 	}
 
-	apiBase := config.GetAPIURL()
+	apiBase := config.GetLocalAPIURL()
 	// Use resolvedBoxID for the API call
 	apiURL := fmt.Sprintf("%s/api/v1/boxes/%s", strings.TrimSuffix(apiBase, "/"), resolvedBoxID)
 

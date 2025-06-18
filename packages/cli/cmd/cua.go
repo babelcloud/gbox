@@ -74,7 +74,7 @@ func runAndroidTask(task string, opts *CuaAndroidOptions) error {
 		return fmt.Errorf("OPENAI_API_KEY environment variable is not set. Please set it before running the command")
 	}
 
-	apiBase := config.GetAPIURL()
+	apiBase := config.GetLocalAPIURL()
 	apiURL := fmt.Sprintf("%s/api/v1/cua/execute", strings.TrimSuffix(apiBase, "/"))
 
 	if os.Getenv("DEBUG") == "true" {

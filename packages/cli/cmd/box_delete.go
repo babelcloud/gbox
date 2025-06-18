@@ -72,7 +72,7 @@ func runDelete(opts *BoxDeleteOptions, args []string) error {
 }
 
 func deleteAllBoxes(opts *BoxDeleteOptions) error {
-	apiBase := config.GetAPIURL()
+	apiBase := config.GetLocalAPIURL()
 	apiURL := fmt.Sprintf("%s/api/v1/boxes", strings.TrimSuffix(apiBase, "/"))
 
 	resp, err := http.Get(apiURL)
@@ -180,7 +180,7 @@ func deleteBox(boxIDPrefix string, opts *BoxDeleteOptions) error {
 }
 
 func performBoxDeletion(boxID string) error {
-	apiBase := config.GetAPIURL()
+	apiBase := config.GetLocalAPIURL()
 	apiURL := fmt.Sprintf("%s/api/v1/boxes/%s", strings.TrimSuffix(apiBase, "/"), boxID)
 
 	req, err := http.NewRequest("DELETE", apiURL, strings.NewReader(`{"force":true}`))

@@ -63,7 +63,7 @@ type serverInfoResponse struct {
 
 // GetServerInfo retrieves version information from the API server
 func GetServerInfo() (map[string]string, error) {
-	apiURL := config.GetAPIURL()
+	apiURL := config.GetLocalAPIURL()
 	url := fmt.Sprintf("%s/api/v1/version", apiURL)
 
 	resp, err := http.Get(url)

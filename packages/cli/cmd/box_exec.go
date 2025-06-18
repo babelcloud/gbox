@@ -137,7 +137,7 @@ func runExec(opts *BoxExecOptions) error {
 	// opts.BoxID = resolvedBoxID // Optional: update opts if it's used elsewhere by reference
 
 	debug := os.Getenv("DEBUG") == "true"
-	apiBase := config.GetAPIURL()
+	apiBase := config.GetLocalAPIURL()
 	apiURL := fmt.Sprintf("%s/api/v1", strings.TrimSuffix(apiBase, "/"))
 
 	debugLog := func(msg string) {

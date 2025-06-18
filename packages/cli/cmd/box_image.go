@@ -86,7 +86,7 @@ Use the --force flag to forcefully remove old images, even if they are used by s
 // runImageUpdate executes the image update operation
 func runImageUpdate(opts *BoxImageUpdateOptions) error {
 	// Build API URL with query parameters
-	apiBase := config.GetAPIURL()
+	apiBase := config.GetLocalAPIURL()
 	apiURL := fmt.Sprintf("%s/api/v1/boxes/images/update", strings.TrimSuffix(apiBase, "/"))
 
 	// Add query parameters if provided
@@ -279,7 +279,7 @@ func handleStreamingResponse(body io.Reader, opts *BoxImageUpdateOptions) error 
 // fetchFinalResults makes a separate API call to get the current image status
 func fetchFinalResults(opts *BoxImageUpdateOptions) (*model.ImageUpdateResponse, error) {
 	// Build API URL with query parameters but without streaming
-	apiBase := config.GetAPIURL()
+	apiBase := config.GetLocalAPIURL()
 	apiURL := fmt.Sprintf("%s/api/v1/boxes/images/update", strings.TrimSuffix(apiBase, "/"))
 
 	// Add query parameters if provided
