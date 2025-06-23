@@ -2,15 +2,14 @@ package cmd
 
 import (
 	"bufio"
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"strings"
 
-	"github.com/babelcloud/gbox/packages/cli/config"
+	// 内部 SDK 客户端
+	sdk "github.com/babelcloud/gbox-sdk-go"
+	gboxclient "github.com/babelcloud/gbox/packages/cli/internal/gboxsdk"
 	"github.com/spf13/cobra"
 )
 
@@ -18,12 +17,6 @@ type BoxDeleteOptions struct {
 	OutputFormat string
 	DeleteAll    bool
 	Force        bool
-}
-
-type BoxListResponse struct {
-	Boxes []struct {
-		ID string `json:"id"`
-	} `json:"boxes"`
 }
 
 func NewBoxDeleteCommand() *cobra.Command {
@@ -72,36 +65,21 @@ func runDelete(opts *BoxDeleteOptions, args []string) error {
 }
 
 func deleteAllBoxes(opts *BoxDeleteOptions) error {
-	apiBase := config.GetLocalAPIURL()
-	apiURL := fmt.Sprintf("%s/api/v1/boxes", strings.TrimSuffix(apiBase, "/"))
+	// 创建 SDK 客户端
+	client, err := gboxclient.NewClientFromProfile()
+	if err != nil {
+		return fmt.Errorf("failed to initialize gbox client: %v", err)
+	}
 
-	resp, err := http.Get(apiURL)
+	// 获取所有 boxes
+	ctx := context.Background()
+	listParams := sdk.V1BoxListParams{}
+	resp, err := client.V1.Boxes.List(ctx, listParams)
 	if err != nil {
 		return fmt.Errorf("failed to get box list: %v", err)
 	}
-	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %v", err)
-	}
-
-	if os.Getenv("DEBUG") == "true" {
-		fmt.Fprintf(os.Stderr, "API response:\n")
-		var prettyJSON bytes.Buffer
-		if err := json.Indent(&prettyJSON, body, "", "  "); err == nil {
-			fmt.Fprintln(os.Stderr, prettyJSON.String())
-		} else {
-			fmt.Fprintln(os.Stderr, string(body))
-		}
-	}
-
-	var response BoxListResponse
-	if err := json.Unmarshal(body, &response); err != nil {
-		return fmt.Errorf("failed to parse JSON response: %v", err)
-	}
-
-	if len(response.Boxes) == 0 {
+	if len(resp.Data) == 0 {
 		if opts.OutputFormat == "json" {
 			fmt.Println(`{"status":"success","message":"No boxes to delete"}`)
 		} else {
@@ -111,7 +89,7 @@ func deleteAllBoxes(opts *BoxDeleteOptions) error {
 	}
 
 	fmt.Println("The following boxes will be deleted:")
-	for _, box := range response.Boxes {
+	for _, box := range resp.Data {
 		fmt.Printf("  - %s\n", box.ID)
 	}
 	fmt.Println()
@@ -136,8 +114,8 @@ func deleteAllBoxes(opts *BoxDeleteOptions) error {
 	}
 
 	success := true
-	for _, box := range response.Boxes {
-		if err := performBoxDeletion(box.ID); err != nil {
+	for _, box := range resp.Data {
+		if err := performBoxDeletion(client, box.ID); err != nil {
 			fmt.Printf("Error: Failed to delete box %s: %v\n", box.ID, err)
 			success = false
 		}
@@ -166,7 +144,13 @@ func deleteBox(boxIDPrefix string, opts *BoxDeleteOptions) error {
 		return fmt.Errorf("failed to resolve box ID: %w", err)
 	}
 
-	if err := performBoxDeletion(resolvedBoxID); err != nil {
+	// 创建 SDK 客户端
+	client, err := gboxclient.NewClientFromProfile()
+	if err != nil {
+		return fmt.Errorf("failed to initialize gbox client: %v", err)
+	}
+
+	if err := performBoxDeletion(client, resolvedBoxID); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		return nil
 	}
@@ -179,37 +163,20 @@ func deleteBox(boxIDPrefix string, opts *BoxDeleteOptions) error {
 	return nil
 }
 
-func performBoxDeletion(boxID string) error {
-	apiBase := config.GetLocalAPIURL()
-	apiURL := fmt.Sprintf("%s/api/v1/boxes/%s", strings.TrimSuffix(apiBase, "/"), boxID)
+func performBoxDeletion(client *sdk.Client, boxID string) error {
+	// 构建 SDK 参数
+	terminateParams := sdk.V1BoxTerminateParams{}
 
-	req, err := http.NewRequest("DELETE", apiURL, strings.NewReader(`{"force":true}`))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %v", err)
+	// 调试输出
+	if os.Getenv("DEBUG") == "true" {
+		fmt.Fprintf(os.Stderr, "Deleting box: %s\n", boxID)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	// 调用 SDK
+	ctx := context.Background()
+	err := client.V1.Boxes.Terminate(ctx, boxID, terminateParams)
 	if err != nil {
-		return fmt.Errorf("Failed to delete box. Make sure the API server is running and the ID '%s' is correct", boxID)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 && resp.StatusCode != 204 {
-		if resp.StatusCode == 404 {
-			return fmt.Errorf("Failed to delete box. Make sure the API server is running and the ID '%s' is correct", boxID)
-		}
-
-		errorMsg := fmt.Sprintf("failed to delete box, HTTP status code: %d", resp.StatusCode)
-
-		if os.Getenv("DEBUG") == "true" {
-			body, _ := io.ReadAll(resp.Body)
-			if len(body) > 0 {
-				errorMsg = fmt.Sprintf("%s\nResponse: %s", errorMsg, string(body))
-			}
-		}
-		return fmt.Errorf("%s", errorMsg)
+		return fmt.Errorf("failed to delete box: %v", err)
 	}
 
 	return nil

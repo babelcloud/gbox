@@ -3,7 +3,9 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"github.com/adrg/xdg"
 	"github.com/spf13/viper"
 )
 
@@ -14,16 +16,22 @@ func init() {
 
 	// Set default values
 	v.SetDefault("api.endpoint.local", "http://localhost:28080")
-	v.SetDefault("api.endpoint.cloud", "http://gbox.localhost:2080")
+	// v.SetDefault("api.endpoint.cloud", "http://gbox.localhost:2080")
+	v.SetDefault("api.endpoint.cloud", "https://gbox.ai")
+
 	v.SetDefault("project.root", "")
 	v.SetDefault("mcp.server.url", "http://localhost:28090/sse") // Default MCP server URL
+
+	// Set default profile file path
+	v.SetDefault("profile.path", filepath.Join(xdg.Home, ".gbox", "profile.json"))
 
 	// Environment variables
 	v.AutomaticEnv()
 	v.BindEnv("api.endpoint.local", "API_ENDPOINT_LOCAL", "API_ENDPOINT")
 	v.BindEnv("api.endpoint.cloud", "API_ENDPOINT_CLOUD")
 	v.BindEnv("project.root", "PROJECT_ROOT")
-	v.BindEnv("mcp.server.url", "MCP_SERVER_URL") // Bind MCP server URL env var
+	v.BindEnv("mcp.server.url", "MCP_SERVER_URL")  // Bind MCP server URL env var
+	v.BindEnv("profile.path", "GBOX_PROFILE_PATH") // Bind profile path env var
 
 	// Config file
 	v.SetConfigName("config")
@@ -69,4 +77,9 @@ func GetProjectRoot() string {
 // GetMcpServerUrl returns the MCP server URL
 func GetMcpServerUrl() string {
 	return v.GetString("mcp.server.url")
+}
+
+// GetProfilePath returns the profile file path
+func GetProfilePath() string {
+	return v.GetString("profile.path")
 }

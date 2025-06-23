@@ -1,14 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
-	"strings"
 
-	"github.com/babelcloud/gbox/packages/cli/config"
+	// 内部 SDK 客户端
+	sdk "github.com/babelcloud/gbox-sdk-go"
+	gboxclient "github.com/babelcloud/gbox/packages/cli/internal/gboxsdk"
 	"github.com/spf13/cobra"
 )
 
@@ -52,68 +52,33 @@ func runStart(boxIDPrefix string, opts *BoxStartOptions) error {
 		return fmt.Errorf("failed to resolve box ID: %w", err) // Return error if resolution fails
 	}
 
-	apiBase := config.GetLocalAPIURL()
-	// Use resolvedBoxID for the API call
-	apiURL := fmt.Sprintf("%s/api/v1/boxes/%s/start", strings.TrimSuffix(apiBase, "/"), resolvedBoxID)
+	// 创建 SDK 客户端
+	client, err := gboxclient.NewClientFromProfile()
+	if err != nil {
+		return fmt.Errorf("failed to initialize gbox client: %v", err)
+	}
 
+	// 构建 SDK 参数
+	startParams := sdk.V1BoxStartParams{}
+
+	// 调试输出
 	if os.Getenv("DEBUG") == "true" {
-		fmt.Fprintf(os.Stderr, "Request URL: %s\n", apiURL)
+		fmt.Fprintf(os.Stderr, "Starting box: %s\n", resolvedBoxID)
 	}
 
-	req, err := http.NewRequest("POST", apiURL, nil)
+	// 调用 SDK
+	ctx := context.Background()
+	box, err := client.V1.Boxes.Start(ctx, resolvedBoxID, startParams)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("API call failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %v", err)
+		return fmt.Errorf("failed to start box: %v", err)
 	}
 
-	if os.Getenv("DEBUG") == "true" {
-		fmt.Fprintf(os.Stderr, "Response status code: %d\n", resp.StatusCode)
-		fmt.Fprintf(os.Stderr, "Response content: %s\n", string(body))
-	}
-
-	// Pass resolvedBoxID to the handler
-	return handleStartResponse(resp.StatusCode, body, resolvedBoxID, opts.OutputFormat)
-}
-
-func handleStartResponse(statusCode int, body []byte, boxID, outputFormat string) error {
-	switch statusCode {
-	case 200:
-		if outputFormat == "json" {
-			fmt.Println(string(body))
-		} else {
-			var response BoxStartResponse
-			if err := json.Unmarshal(body, &response); err != nil {
-				fmt.Println("Box started successfully")
-			} else {
-				fmt.Println(response.Message)
-			}
-		}
-	case 404:
-		fmt.Printf("Box not found: %s\n", boxID)
-	case 400:
-		if strings.Contains(string(body), "already running") {
-			fmt.Printf("Box is already running: %s\n", boxID)
-		} else {
-			fmt.Printf("Error: Invalid request: %s\n", string(body))
-		}
-	default:
-		errorMsg := fmt.Sprintf("Error: Failed to start box (HTTP %d)", statusCode)
-		if os.Getenv("DEBUG") == "true" {
-			errorMsg = fmt.Sprintf("%s\nResponse: %s", errorMsg, string(body))
-		}
-		fmt.Println(errorMsg)
+	// 输出结果
+	if opts.OutputFormat == "json" {
+		boxJSON, _ := json.MarshalIndent(box, "", "  ")
+		fmt.Println(string(boxJSON))
+	} else {
+		fmt.Printf("Box started successfully: %s\n", resolvedBoxID)
 	}
 
 	return nil

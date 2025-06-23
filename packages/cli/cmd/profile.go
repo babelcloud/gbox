@@ -7,15 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/babelcloud/gbox/packages/cli/config"
 	"github.com/spf13/cobra"
-)
-
-const (
-	profileFile = "profile.json"
-)
-
-var (
-	profilePath = filepath.Join(configDir, profileFile)
 )
 
 // Profile represents a configuration item
@@ -36,7 +29,7 @@ type ProfileManager struct {
 func NewProfileManager() *ProfileManager {
 	return &ProfileManager{
 		profiles: []Profile{},
-		path:     profilePath,
+		path:     config.GetProfilePath(),
 	}
 }
 
@@ -214,8 +207,8 @@ func (pm *ProfileManager) GetCurrent() *Profile {
 
 var profileCmd = &cobra.Command{
 	Use:   "profile",
-	Short: "Manage gbox configuration information",
-	Long:  `Manage configuration information in ~/.gbox/profile.json file, including API key, organization name, etc.`,
+	Short: "Manage configuration profiles",
+	Long:  `Manage configuration information in profile file, including API key, organization name, etc.`,
 }
 
 var profileListCmd = &cobra.Command{

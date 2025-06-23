@@ -1,14 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
-	"strings"
 
-	"github.com/babelcloud/gbox/packages/cli/config"
+	// 内部 SDK 客户端
+
+	gboxclient "github.com/babelcloud/gbox/packages/cli/internal/gboxsdk"
 	"github.com/spf13/cobra"
 )
 
@@ -48,78 +48,58 @@ func runInspect(boxIDPrefix string, opts *BoxInspectOptions) error {
 		return fmt.Errorf("failed to resolve box ID: %w", err) // Return error if resolution fails
 	}
 
-	apiBase := config.GetLocalAPIURL()
-	// Use resolvedBoxID for the API call
-	apiURL := fmt.Sprintf("%s/api/v1/boxes/%s", strings.TrimSuffix(apiBase, "/"), resolvedBoxID)
-
-	if os.Getenv("DEBUG") == "true" {
-		fmt.Fprintf(os.Stderr, "Request URL: %s\n", apiURL)
-	}
-
-	resp, err := http.Get(apiURL) // GET request for inspect
+	// 创建 SDK 客户端
+	client, err := gboxclient.NewClientFromProfile()
 	if err != nil {
-		return fmt.Errorf("API call failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %v", err)
+		return fmt.Errorf("failed to initialize gbox client: %v", err)
 	}
 
+	// 调试输出
 	if os.Getenv("DEBUG") == "true" {
-		fmt.Fprintf(os.Stderr, "Response status code: %d\n", resp.StatusCode)
-		fmt.Fprintf(os.Stderr, "Response content: %s\n", string(body))
+		fmt.Fprintf(os.Stderr, "Inspecting box: %s\n", resolvedBoxID)
 	}
 
-	// Pass resolvedBoxID to the handler
-	return handleInspectResponse(resp.StatusCode, body, resolvedBoxID, opts.OutputFormat)
-}
+	// 调用 SDK
+	ctx := context.Background()
+	box, err := client.V1.Boxes.Get(ctx, resolvedBoxID)
+	if err != nil {
+		return fmt.Errorf("failed to get box details: %v", err)
+	}
 
-func handleInspectResponse(statusCode int, body []byte, boxID, outputFormat string) error {
-	switch statusCode {
-	case 200:
-		if outputFormat == "json" {
-			// Output JSON directly
-			fmt.Printf("%s\n", string(body))
-		} else {
-			// Output in text format
-			fmt.Println("Box details:")
-			fmt.Println("------------")
+	// 输出结果
+	if opts.OutputFormat == "json" {
+		boxJSON, _ := json.MarshalIndent(box, "", "  ")
+		fmt.Println(string(boxJSON))
+	} else {
+		// 输出文本格式
+		fmt.Println("Box details:")
+		fmt.Println("------------")
 
-			// Parse JSON and format output
-			var data map[string]interface{}
-			if err := json.Unmarshal(body, &data); err != nil {
-				return fmt.Errorf("failed to parse JSON response: %v", err)
-			}
+		// 将 box 转换为 map 以便格式化输出
+		boxBytes, _ := json.Marshal(box)
+		var data map[string]interface{}
+		if err := json.Unmarshal(boxBytes, &data); err != nil {
+			return fmt.Errorf("failed to parse box data: %v", err)
+		}
 
-			// Define the desired order of keys
-			orderedKeys := []string{"id", "image", "status", "created_at", "extra_labels"}
-			printedKeys := make(map[string]bool)
+		// 定义期望的键顺序
+		orderedKeys := []string{"id", "image", "status", "createdAt", "extra_labels"}
+		printedKeys := make(map[string]bool)
 
-			// Print keys in the desired order
-			for _, key := range orderedKeys {
-				if value, exists := data[key]; exists {
-					printKeyValue(key, value, outputFormat) // Use a helper function for printing
-					printedKeys[key] = true
-				}
-			}
-
-			// Print any remaining keys (that were not in the ordered list)
-			for key, value := range data {
-				if !printedKeys[key] {
-					printKeyValue(key, value, outputFormat) // Use the same helper function
-				}
+		// 按期望顺序打印键
+		for _, key := range orderedKeys {
+			if value, exists := data[key]; exists {
+				printKeyValue(key, value, opts.OutputFormat)
+				printedKeys[key] = true
 			}
 		}
-	case 404:
-		fmt.Printf("Box not found: %s\n", boxID)
-	default:
-		errorMsg := fmt.Sprintf("Error: Failed to get box details (HTTP %d)", statusCode)
-		if os.Getenv("DEBUG") == "true" {
-			errorMsg = fmt.Sprintf("%s\nResponse: %s", errorMsg, string(body))
+
+		// 打印任何剩余的键
+		for key, value := range data {
+			if !printedKeys[key] {
+				printKeyValue(key, value, opts.OutputFormat)
+			}
 		}
-		fmt.Println(errorMsg)
 	}
 
 	return nil

@@ -1,7 +1,7 @@
 .env
 
 # ignore gbox binary
-gbox*
 gbox-darwin-*
 gbox-linux-*
 gbox
+gbox-test

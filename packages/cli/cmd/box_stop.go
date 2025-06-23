@@ -1,14 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
-	"strings"
 
-	"github.com/babelcloud/gbox/packages/cli/config"
+	// 内部 SDK 客户端
+	sdk "github.com/babelcloud/gbox-sdk-go"
+	gboxclient "github.com/babelcloud/gbox/packages/cli/internal/gboxsdk"
 	"github.com/spf13/cobra"
 )
 
@@ -48,79 +48,33 @@ func runStop(boxIDPrefix string, opts *BoxStopOptions) error {
 		return fmt.Errorf("failed to resolve box ID: %w", err) // Return error if resolution fails
 	}
 
-	apiBase := config.GetLocalAPIURL()
-	// Use resolvedBoxID for the API call
-	apiURL := fmt.Sprintf("%s/api/v1/boxes/%s/stop", strings.TrimSuffix(apiBase, "/"), resolvedBoxID)
+	// 创建 SDK 客户端
+	client, err := gboxclient.NewClientFromProfile()
+	if err != nil {
+		return fmt.Errorf("failed to initialize gbox client: %v", err)
+	}
 
+	// 构建 SDK 参数
+	stopParams := sdk.V1BoxStopParams{}
+
+	// 调试输出
 	if os.Getenv("DEBUG") == "true" {
-		fmt.Fprintf(os.Stderr, "Request URL: %s\n", apiURL)
+		fmt.Fprintf(os.Stderr, "Stopping box: %s\n", resolvedBoxID)
 	}
 
-	req, err := http.NewRequest("POST", apiURL, nil)
+	// 调用 SDK
+	ctx := context.Background()
+	box, err := client.V1.Boxes.Stop(ctx, resolvedBoxID, stopParams)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("API call failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %v", err)
+		return fmt.Errorf("failed to stop box: %v", err)
 	}
 
-	if os.Getenv("DEBUG") == "true" {
-		fmt.Fprintf(os.Stderr, "Response status code: %d\n", resp.StatusCode)
-		fmt.Fprintf(os.Stderr, "Response content: %s\n", string(body))
-	}
-
-	// Pass resolvedBoxID to the handler
-	return handleStopResponse(resp.StatusCode, body, resolvedBoxID, opts.OutputFormat)
-}
-
-// Define a local struct to unmarshal the response
-type stopResponse struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
-}
-
-func handleStopResponse(statusCode int, body []byte, boxID, outputFormat string) error {
-	switch statusCode {
-	case http.StatusOK: // Use http.StatusOK constant
-		// Attempt to parse the response body
-		var response stopResponse
-		if err := json.Unmarshal(body, &response); err != nil {
-			// Handle JSON parsing error - maybe print raw body or generic message?
-			if outputFormat == "json" {
-				// If JSON output requested but parsing failed, print the raw body anyway?
-				fmt.Println(string(body))
-			} else {
-				fmt.Fprintf(os.Stderr, "Error parsing server response: %v\nFalling back to generic message.\n", err)
-				fmt.Println("Box stop command successful (could not parse server message)")
-			}
-			return nil // Or return err?
-		}
-
-		if outputFormat == "json" {
-			// Print the original JSON body for JSON output
-			fmt.Println(string(body))
-		} else {
-			// Use the message from the parsed response for text output
-			fmt.Println(response.Message)
-		}
-	case http.StatusNotFound: // Use http.StatusNotFound constant
-		fmt.Printf("Box not found: %s\n", boxID)
-	default:
-		errorMsg := fmt.Sprintf("Error: Failed to stop box (HTTP %d)", statusCode)
-		if os.Getenv("DEBUG") == "true" {
-			errorMsg = fmt.Sprintf("%s\nResponse: %s", errorMsg, string(body))
-		}
-		fmt.Println(errorMsg)
+	// 输出结果
+	if opts.OutputFormat == "json" {
+		boxJSON, _ := json.MarshalIndent(box, "", "  ")
+		fmt.Println(string(boxJSON))
+	} else {
+		fmt.Printf("Box stopped successfully: %s\n", resolvedBoxID)
 	}
 
 	return nil

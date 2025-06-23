@@ -1,18 +1,16 @@
 package cmd
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
-	"sort"
 	"strings"
-	"time"
 
+	// 内部 SDK 客户端
+	sdk "github.com/babelcloud/gbox-sdk-go"
 	model "github.com/babelcloud/gbox/packages/api-server/pkg/box"
-	"github.com/babelcloud/gbox/packages/cli/config"
+	gboxclient "github.com/babelcloud/gbox/packages/cli/internal/gboxsdk"
 	"github.com/spf13/cobra"
 )
 
@@ -123,359 +121,112 @@ Command arguments can be specified directly in the command line or added after t
 }
 
 func runCreate(opts *BoxCreateOptions, args []string) error {
-	request := model.BoxCreateParams{}
+	// 创建 SDK 客户端
+	client, err := gboxclient.NewClientFromProfile()
+	if err != nil {
+		return fmt.Errorf("failed to initialize gbox client: %v", err)
+	}
 
-	request.Image = opts.Image
-	request.ImagePullSecret = opts.ImagePullSecret
-
+	// 解析环境变量
 	envMap, err := parseKeyValuePairs(opts.Env, "environment variable")
 	if err != nil {
 		return err
 	}
-	request.Env = envMap
 
+	// 解析标签
 	labelMap, err := parseKeyValuePairs(opts.Labels, "label")
 	if err != nil {
 		return err
 	}
-	request.ExtraLabels = labelMap
 
-	if opts.WorkingDir != "" {
-		request.WorkingDir = opts.WorkingDir
-	}
-
-	// Parse volume mounts
+	// 解析卷挂载
 	volumes, err := parseVolumes(opts.Volumes)
 	if err != nil {
 		return err
 	}
-	request.Volumes = volumes
 
+	// 构建命令和参数
+	var cmd string
+	var cmdArgs []string
 	if len(opts.Command) > 0 {
-		request.Cmd = opts.Command[0]
+		cmd = opts.Command[0]
 		if len(opts.Command) > 1 {
-			request.Args = opts.Command[1:]
+			cmdArgs = opts.Command[1:]
 		}
 	} else if len(args) > 0 {
-		request.Cmd = args[0]
+		cmd = args[0]
 		if len(args) > 1 {
-			request.Args = args[1:]
+			cmdArgs = args[1:]
 		}
 	}
 
-	requestBody, err := json.Marshal(request)
-	if err != nil {
-		return fmt.Errorf("unable to serialize request: %v", err)
+	// 构建 SDK 参数
+	createParams := sdk.V1BoxNewLinuxParams{
+		CreateLinuxBox: sdk.CreateLinuxBoxParam{
+			Wait: sdk.Bool(true), // 等待操作完成
+			Config: sdk.CreateBoxConfigParam{
+				Envs:   envMap,
+				Labels: labelMap,
+			},
+		},
 	}
 
+	// 如果有工作目录，添加到标签中（因为 SDK 配置中没有直接的工作目录字段）
+	if opts.WorkingDir != "" {
+		if createParams.CreateLinuxBox.Config.Labels == nil {
+			createParams.CreateLinuxBox.Config.Labels = make(map[string]interface{})
+		}
+		createParams.CreateLinuxBox.Config.Labels.(map[string]interface{})["working_dir"] = opts.WorkingDir
+	}
+
+	// 如果有命令，添加到标签中
+	if cmd != "" {
+		if createParams.CreateLinuxBox.Config.Labels == nil {
+			createParams.CreateLinuxBox.Config.Labels = make(map[string]interface{})
+		}
+		createParams.CreateLinuxBox.Config.Labels.(map[string]interface{})["cmd"] = cmd
+		if len(cmdArgs) > 0 {
+			createParams.CreateLinuxBox.Config.Labels.(map[string]interface{})["args"] = cmdArgs
+		}
+	}
+
+	// 如果有镜像，添加到标签中
+	if opts.Image != "" {
+		if createParams.CreateLinuxBox.Config.Labels == nil {
+			createParams.CreateLinuxBox.Config.Labels = make(map[string]interface{})
+		}
+		createParams.CreateLinuxBox.Config.Labels.(map[string]interface{})["image"] = opts.Image
+	}
+
+	// 如果有卷挂载，添加到标签中
+	if len(volumes) > 0 {
+		if createParams.CreateLinuxBox.Config.Labels == nil {
+			createParams.CreateLinuxBox.Config.Labels = make(map[string]interface{})
+		}
+		createParams.CreateLinuxBox.Config.Labels.(map[string]interface{})["volumes"] = volumes
+	}
+
+	// 调试输出
 	if os.Getenv("DEBUG") == "true" {
-		fmt.Fprintf(os.Stderr, "Request body:\n")
-		var prettyJSON bytes.Buffer
-		json.Indent(&prettyJSON, requestBody, "", "  ")
-		fmt.Fprintln(os.Stderr, prettyJSON.String())
+		fmt.Fprintf(os.Stderr, "Request params:\n")
+		requestJSON, _ := json.MarshalIndent(createParams, "", "  ")
+		fmt.Fprintln(os.Stderr, string(requestJSON))
 	}
 
-	apiBase := config.GetLocalAPIURL()
-	apiURL := fmt.Sprintf("%s/api/v1/boxes", strings.TrimSuffix(apiBase, "/"))
-
-	// Create a new HTTP request
-	httpRequest, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(requestBody))
+	// 调用 SDK
+	ctx := context.Background()
+	box, err := client.V1.Boxes.NewLinux(ctx, createParams)
 	if err != nil {
-		return fmt.Errorf("unable to create request: %v", err)
-	}
-	httpRequest.Header.Set("Content-Type", "application/json")
-	httpRequest.Header.Set("Accept", "application/json-stream") // Explicitly request streaming response
-
-	// Send the request using the default client
-	client := &http.Client{}
-	resp, err := client.Do(httpRequest)
-	if err != nil {
-		return fmt.Errorf("unable to connect to API server: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// Check if response is a streaming response
-	contentType := resp.Header.Get("Content-Type")
-	if contentType == "application/json-stream" {
-		return handleBoxCreateStreamingResponse(resp.Body, opts.OutputFormat)
+		return fmt.Errorf("failed to create box: %v", err)
 	}
 
-	// Handle standard (non-streaming) response for backward compatibility
-	responseBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %v", err)
-	}
-
-	if resp.StatusCode != 201 {
-		errMsg := fmt.Sprintf("API server returned HTTP %d", resp.StatusCode)
-		if len(responseBody) > 0 {
-			errMsg += fmt.Sprintf("\nResponse: %s", string(responseBody))
-		}
-		return fmt.Errorf("%s", errMsg)
-	}
-
+	// 输出结果
 	if opts.OutputFormat == "json" {
-		fmt.Println(string(responseBody))
+		boxJSON, _ := json.MarshalIndent(box, "", "  ")
+		fmt.Println(string(boxJSON))
 	} else {
-		var response BoxCreateResponse
-		if err := json.Unmarshal(responseBody, &response); err != nil {
-			return fmt.Errorf("failed to parse response: %v", err)
-		}
-		fmt.Printf("Box created with ID \"%s\"\n", response.ID)
-	}
-	return nil
-}
-
-// handleBoxCreateStreamingResponse processes a streaming response with progress updates for box creation
-func handleBoxCreateStreamingResponse(body io.Reader, outputFormat string) error {
-	fmt.Println("Creating box...")
-
-	// Store the layers being downloaded and their progress
-	layers := make(map[string]struct {
-		ID       string
-		Status   string
-		Progress string
-		Complete bool
-	})
-
-	var lastOutput time.Time
-	var totalLayers int
-	var completedLayers int
-	var finalResponse []byte
-
-	// Buffer to store the complete response for final parsing
-	responseBuffer := new(bytes.Buffer)
-	teeReader := io.TeeReader(body, responseBuffer)
-
-	decoder := json.NewDecoder(teeReader)
-	var box *model.Box
-
-	for {
-		var rawMessage json.RawMessage
-		if err := decoder.Decode(&rawMessage); err != nil {
-			if err == io.EOF {
-				// At EOF, the responseBuffer contains the full response
-				finalResponse = responseBuffer.Bytes()
-				break
-			}
-			return fmt.Errorf("error reading response stream: %v", err)
-		}
-
-		// Try to parse as a Docker pull progress message
-		var pullProgress struct {
-			ID             string          `json:"id"`
-			Status         string          `json:"status"`
-			Progress       string          `json:"progress"`
-			ProgressDetail json.RawMessage `json:"progressDetail"`
-			Error          string          `json:"error"`
-		}
-
-		if err := json.Unmarshal(rawMessage, &pullProgress); err == nil {
-			if pullProgress.Error != "" {
-				return fmt.Errorf("error from server: %s", pullProgress.Error)
-			}
-
-			// Update progress for this layer
-			if pullProgress.ID != "" {
-				// Update or add this layer
-				layer := layers[pullProgress.ID]
-				layer.ID = pullProgress.ID
-				layer.Status = pullProgress.Status
-
-				if pullProgress.Progress != "" {
-					layer.Progress = pullProgress.Progress
-				}
-
-				// Check if layer is complete
-				isNowCompleteEvent := (pullProgress.Status == "Download complete" || pullProgress.Status == "Pull complete")
-
-				if isNowCompleteEvent {
-					if !layer.Complete { // If it was not already marked as complete
-						layer.Complete = true // Mark it as complete now
-						completedLayers++     // Increment the count of completed layers
-					} else {
-						layer.Complete = true
-					}
-				}
-
-				layers[pullProgress.ID] = layer
-
-				// Update total count whenever we discover new layers
-				if len(layers) > totalLayers {
-					totalLayers = len(layers)
-				}
-			}
-
-			// Update the display (but rate limit to avoid flicker)
-			if time.Since(lastOutput) > 100*time.Millisecond || pullProgress.ID == "" {
-				lastOutput = time.Now()
-
-				// Only redraw if there's any layer information
-				if len(layers) > 0 {
-					displayImagePullProgress(layers, completedLayers, totalLayers)
-				} else if pullProgress.Status != "" {
-					fmt.Printf("\r\033[K%s", pullProgress.Status)
-					if pullProgress.Progress != "" {
-						fmt.Printf(" %s", pullProgress.Progress)
-					}
-				}
-			}
-
-			continue
-		}
-
-		// Try to parse as a custom status message
-		var statusMessage struct {
-			Status  string     `json:"status"`
-			Message string     `json:"message"`
-			Error   string     `json:"error"`
-			Box     *model.Box `json:"box"`
-		}
-
-		if err := json.Unmarshal(rawMessage, &statusMessage); err == nil {
-			if statusMessage.Error != "" {
-				return fmt.Errorf("error from server: %s", statusMessage.Error)
-			}
-
-			if statusMessage.Status == "complete" && statusMessage.Box != nil {
-				// Found the box info in the stream
-				box = statusMessage.Box
-				fmt.Printf("\r\033[KBox created successfully\n")
-			} else if statusMessage.Status == "prepare" {
-				fmt.Printf("\r\033[KPreparing: %s", statusMessage.Message)
-			} else if statusMessage.Message != "" {
-				fmt.Printf("\r\033[K%s: %s", statusMessage.Status, statusMessage.Message)
-			}
-		}
-	}
-
-	// Ensure we have a blank line after all the progress output
-	fmt.Print("\n")
-
-	// If box is still nil, try to parse the final response for box information
-	if box == nil && len(finalResponse) > 0 {
-		// Try to parse final response as a standard response first
-		var createResponse BoxCreateResponse
-		if err := json.Unmarshal(finalResponse, &createResponse); err == nil && createResponse.ID != "" {
-			// Simple ID-only response
-			if outputFormat == "json" {
-				fmt.Println(string(finalResponse))
-			} else {
-				fmt.Printf("Box created with ID \"%s\"\n", createResponse.ID)
-			}
-			return nil
-		}
-
-		// Try parsing as complete box object
-		var boxResponse struct {
-			Box *model.Box `json:"box"`
-		}
-		if err := json.Unmarshal(finalResponse, &boxResponse); err == nil && boxResponse.Box != nil {
-			box = boxResponse.Box
-		} else {
-			// Try parsing directly as a Box
-			var directBox model.Box
-			if err := json.Unmarshal(finalResponse, &directBox); err == nil && directBox.ID != "" {
-				box = &directBox
-			}
-		}
-	}
-
-	// Output the final result
-	if box != nil {
-		if outputFormat == "json" {
-			boxJSON, _ := json.MarshalIndent(box, "", "  ")
-			fmt.Println(string(boxJSON))
-		} else {
-			fmt.Printf("Box created with ID \"%s\"\n", box.ID)
-		}
-	} else {
-		fmt.Println("Box created successfully, but no details received")
+		fmt.Printf("Box created with ID \"%s\"\n", box.ID)
 	}
 
 	return nil
-}
-
-// displayImagePullProgress prints the current download progress for all layers
-func displayImagePullProgress(layers map[string]struct {
-	ID       string
-	Status   string
-	Progress string
-	Complete bool
-}, completed, total int) {
-	// Clear line and move to beginning
-	fmt.Print("\r\033[K")
-
-	// Show overall progress
-	if total > 0 {
-		percentage := (float64(completed) / float64(total)) * 100
-		fmt.Printf("Overall progress: [%d/%d] %.1f%%\n", completed, total, percentage)
-	}
-
-	// Limit how many layers we display to avoid cluttering the screen
-	const maxDisplayLayers = 5
-
-	// Convert map to slice for better display control
-	layerSlice := make([]struct {
-		ID       string
-		Status   string
-		Progress string
-		Complete bool
-	}, 0, len(layers))
-
-	for _, layer := range layers {
-		layerSlice = append(layerSlice, layer)
-	}
-
-	// Prioritize incomplete layers
-	sort.Slice(layerSlice, func(i, j int) bool {
-		if layerSlice[i].Complete != layerSlice[j].Complete {
-			return !layerSlice[i].Complete // Incomplete layers first
-		}
-		return layerSlice[i].ID < layerSlice[j].ID // Then sort by ID
-	})
-
-	// Display up to maxDisplayLayers layers
-	displayCount := len(layerSlice)
-	if displayCount > maxDisplayLayers {
-		displayCount = maxDisplayLayers
-	}
-
-	for i := 0; i < displayCount; i++ {
-		layer := layerSlice[i]
-		if layer.Complete {
-			fmt.Printf("\r\033[K[✓] %s: %s\n",
-				shortenImageLayerID(layer.ID),
-				layer.Status)
-		} else {
-			fmt.Printf("\r\033[K[↓] %s: %s %s\n",
-				shortenImageLayerID(layer.ID),
-				layer.Status,
-				layer.Progress)
-		}
-	}
-
-	// If we're not showing all layers, indicate how many more there are
-	if len(layerSlice) > maxDisplayLayers {
-		remaining := len(layerSlice) - maxDisplayLayers
-		fmt.Printf("\r\033[K... and %d more layers ...\n", remaining)
-	}
-
-	// Move cursor back up to overwrite on next update
-	moveCursorUp := displayCount + 1 // +1 for the overall progress line
-	if len(layerSlice) > maxDisplayLayers {
-		moveCursorUp++ // +1 for the "and X more" line
-	}
-
-	for i := 0; i < moveCursorUp; i++ {
-		fmt.Print("\033[1A")
-	}
-}
-
-// shortenImageLayerID shortens a layer ID for display
-func shortenImageLayerID(id string) string {
-	if len(id) <= 12 {
-		return id
-	}
-	return id[:12]
 }
