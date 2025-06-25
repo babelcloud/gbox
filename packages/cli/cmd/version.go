@@ -54,6 +54,26 @@ func runVersion(opts *VersionOptions) error {
 		return nil
 	}
 
+	// Display GBOX ASCII art banner with gradient colors
+	// Primary color #704FED (purple)
+	purple := "\033[38;2;112;79;237m"       // 经典紫
+	lightPurple := "\033[38;2;142;109;255m" // 浅紫
+	darkPurple := "\033[38;2;82;49;207m"    // 深紫
+	// 为字母 G 单独准备的高亮颜色（比 primary 更明亮一些的渐变紫）
+	glowPurple := "\033[38;2;180;130;255m" // Glow 紫
+	reset := "\033[0m"
+	bold := "\033[1m"
+
+	gboxBanner := bold + `
+` + darkPurple + `   ██████╗ ` + lightPurple + `██████   ` + purple + `██████  ` + lightPurple + `██   ██ 
+` + purple + `  ██╔════╝ ` + lightPurple + `██   ██ ` + purple + `██    ██ ` + lightPurple + ` ██ ██  
+` + darkPurple + `  ██║  ███╗` + purple + `██████  ` + glowPurple + `██    ██ ` + purple + `  ███   
+` + darkPurple + `  ██║   ██║` + purple + `██   ██ ` + glowPurple + `██    ██ ` + purple + ` ██ ██  
+` + purple + `  ╚██████╔╝` + lightPurple + `██████  ` + purple + ` ██████  ` + lightPurple + `██   ██
+` + glowPurple + `   ╚═════╝ ` + lightPurple + `       ` + purple + `         ` + lightPurple + `        ` + reset
+
+	fmt.Println(gboxBanner)
+
 	// Try to get server info but don't fail if server is not available
 	serverInfo, serverErr := version.GetServerInfo()
 

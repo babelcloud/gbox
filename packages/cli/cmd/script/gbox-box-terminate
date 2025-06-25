@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# gbox-box-delete - Deletes a box by its ID
+# gbox-box-terminate - Terminates a box by its ID
 
 set -e
 
@@ -8,22 +8,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common"
 
 # Command specific help content
-CMD_NAME="gbox box delete"
-CMD_SHORT_DESC="Delete a box by its ID"
-CMD_USAGE="gbox box delete [options] <id>"
+CMD_NAME="gbox box terminate"
+CMD_SHORT_DESC="Terminate a box by its ID"
+CMD_USAGE="gbox box terminate [options] <id>"
 
 CMD_COMMANDS=$(cat <<'EOF'
     --output          Output format (json or text, default: text)
-    --all            Delete all boxes
-    --force          Force delete without confirmation
+    --all            Terminate all boxes
+    --force          Force terminate without confirmation
 EOF
 )
 
 CMD_EXAMPLES=$(cat <<'EOF'
-    gbox box delete 550e8400-e29b-41d4-a716-446655440000              # Delete a box
-    gbox box delete --all --force                                     # Delete all boxes without confirmation
-    gbox box delete --all                                            # Delete all boxes with confirmation
-    gbox box delete 550e8400-e29b-41d4-a716-446655440000 --output json  # Delete a box and output JSON
+    gbox box terminate 550e8400-e29b-41d4-a716-446655440000              # Terminate a box
+    gbox box terminate --all --force                                     # Terminate all boxes without confirmation
+    gbox box terminate --all                                            # Terminate all boxes with confirmation
+    gbox box terminate 550e8400-e29b-41d4-a716-446655440000 --output json  # Terminate a box and output JSON
 EOF
 )
 
@@ -32,21 +32,21 @@ help() {
     show_help "${1:-all}" "$CMD_NAME" "$CMD_SHORT_DESC" "$CMD_USAGE" "$CMD_COMMANDS" "$CMD_EXAMPLES"
 }
 
-# Box delete command
-delete() {
+# Box terminate command
+terminate() {
     local output_format="text"
     local box_id=""
-    local delete_all=false
+    local terminate_all=false
     local force=false
     
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --help)
-                show_help "$2" "gbox box delete" "Delete a box by its ID" \
-                    "gbox box delete [options] <id>" \
-                    "    <id>            ID of the box to delete\n    --output          Output format (json or text, default: text)\n    --all            Delete all boxes\n    --force          Force delete without confirmation" \
-                    "    gbox box delete 550e8400-e29b-41d4-a716-446655440000              # Delete a box\n    gbox box delete --all --force                                     # Delete all boxes without confirmation\n    gbox box delete --all                                            # Delete all boxes with confirmation\n    gbox box delete 550e8400-e29b-41d4-a716-446655440000 --output json  # Delete a box and output JSON"
+                show_help "$2" "gbox box terminate" "Terminate a box by its ID" \
+                    "gbox box terminate [options] <id>" \
+                    "    <id>            ID of the box to terminate\n    --output          Output format (json or text, default: text)\n    --all            Terminate all boxes\n    --force          Force terminate without confirmation" \
+                    "    gbox box terminate 550e8400-e29b-41d4-a716-446655440000              # Terminate a box\n    gbox box terminate --all --force                                     # Terminate all boxes without confirmation\n    gbox box terminate --all                                            # Terminate all boxes with confirmation\n    gbox box terminate 550e8400-e29b-41d4-a716-446655440000 --output json  # Terminate a box and output JSON"
                 return
                 ;;
             --output)
@@ -59,7 +59,7 @@ delete() {
                 shift
                 ;;
             --all)
-                delete_all=true
+                terminate_all=true
                 shift
                 ;;
             --force)
@@ -83,18 +83,18 @@ delete() {
     done
 
     # Validate arguments
-    if [[ "$delete_all" == "true" && -n "$box_id" ]]; then
+    if [[ "$terminate_all" == "true" && -n "$box_id" ]]; then
         echo "Error: Cannot specify both --all and a box ID"
         exit 1
     fi
 
-    if [[ "$delete_all" == "false" && -z "$box_id" ]]; then
+    if [[ "$terminate_all" == "false" && -z "$box_id" ]]; then
         echo "Error: Either --all or a box ID must be specified"
         exit 1
     fi
 
-    # Handle delete all
-    if [[ "$delete_all" == "true" ]]; then
+    # Handle terminate all
+    if [[ "$terminate_all" == "true" ]]; then
         # Get list of all boxes
         local api_url="http://localhost:28080/api/v1/boxes"
         local response
@@ -120,23 +120,23 @@ delete() {
         
         if [[ -z "$box_ids" ]]; then
             if [[ "$output_format" == "json" ]]; then
-                echo "{\"status\":\"success\",\"message\":\"No boxes to delete\"}"
+                echo "{\"status\":\"success\",\"message\":\"No boxes to terminate\"}"
             else
-                echo "No boxes to delete"
+                echo "No boxes to terminate"
             fi
             return
         fi
 
-        # Show boxes to be deleted
-        echo "The following boxes will be deleted:"
+        # Show boxes to be terminated
+        echo "The following boxes will be terminated:"
         echo "$box_ids" | while read -r id; do
             echo "  - $id"
         done
         echo
 
-        # Confirm deletion if not forced
+        # Confirm termination if not forced
         if [[ "$force" == "false" ]]; then
-            read -p "Are you sure you want to delete all boxes? [y/N] " -n 1 -r
+            read -p "Are you sure you want to terminate all boxes? [y/N] " -n 1 -r
             echo
             if [[ ! $REPLY =~ ^[Yy]$ ]]; then
                 if [[ "$output_format" == "json" ]]; then
@@ -148,39 +148,39 @@ delete() {
             fi
         fi
 
-        # Delete all boxes
+        # Terminate all boxes
         local success=true
         echo "$box_ids" | while read -r id; do
             if ! curl -s -f -X DELETE -H "Content-Type: application/json" -d '{"force":true}' "http://localhost:28080/api/v1/boxes/$id" > /dev/null; then
-                echo "Error: Failed to delete box $id" >&2
+                echo "Error: Failed to terminate box $id" >&2
                 success=false
             fi
         done
 
         if [[ "$success" == "true" ]]; then
             if [[ "$output_format" == "json" ]]; then
-                echo "{\"status\":\"success\",\"message\":\"All boxes deleted successfully\"}"
+                echo "{\"status\":\"success\",\"message\":\"All boxes terminated successfully\"}"
             else
-                echo "All boxes deleted successfully"
+                echo "All boxes terminated successfully"
             fi
         else
             if [[ "$output_format" == "json" ]]; then
-                echo "{\"status\":\"error\",\"message\":\"Some boxes failed to delete\"}"
+                echo "{\"status\":\"error\",\"message\":\"Some boxes failed to terminate\"}"
             else
-                echo "Some boxes failed to delete"
+                echo "Some boxes failed to terminate"
             fi
             exit 1
         fi
         return
     fi
 
-    # Delete single box
+    # Terminate single box
     local api_url="http://localhost:28080/api/v1/boxes/$box_id"
     local response
     
     # Make API call and handle potential errors
     if ! response=$(curl -s -f -X DELETE -H "Content-Type: application/json" -d '{"force":true}' "$api_url"); then
-        echo "Error: Failed to delete box. Make sure the API server is running and the ID '$box_id' is correct" >&2
+        echo "Error: Failed to terminate box. Make sure the API server is running and the ID '$box_id' is correct" >&2
         if [[ "$DEBUG" == "true" ]]; then
             echo "Response:" >&2
             echo "$response" >&2
@@ -189,9 +189,9 @@ delete() {
     fi
 
     if [[ "$output_format" == "json" ]]; then
-        echo "{\"status\":\"success\",\"message\":\"Box deleted successfully\"}"
+        echo "{\"status\":\"success\",\"message\":\"Box terminated successfully\"}"
     else
-        echo "Box deleted successfully"
+        echo "Box terminated successfully"
     fi
 }
 
@@ -202,6 +202,6 @@ case "$1" in
         exit 0
         ;;
     *)
-        delete "$@"
+        terminate "$@"
         ;;
 esac 
