@@ -79,38 +79,36 @@ gbox mcp export --merge-to claude
 The project provides a command-line tool `gbox` for managing sandbox containers:
 
 ```bash
-# login and profile management for gbox.cloud
-gbox login # login to gbox.cloud
-gbox logout # logout from gbox.cloud
+# Login to gbox.cloud
+gbox login
 
-gbox profile create <profile-name> # create a new profile
-gbox profile delete <profile-name> # delete a profile
+# Profile management
+gbox profile import --api-key <key> --api-key-name <name>   # add profile
+gbox profile list                                           # list all profiles
+gbox profile use [index]                                    # switch current profile (interactive if index omitted)
+gbox profile delete <index>                                 # delete profile
+gbox profile current                                        # show current profile
 
-# Setup local environment
-gbox local setup    # Setup local environment
-gbox local cleanup  # Cleanup local environment
+# Local environment
+gbox setup                                                  # initialize local runtime environment (alias: cluster setup)
+gbox cleanup                                                # clean up local runtime environment (alias: cluster cleanup)
 
-# Container management for both local and gbox.cloud
-gbox box newlinux --env "DEBUG=true"                                               # Create container
-gbox box list                                                                      # List containers
-gbox box start <box-id>                                                            # Start container
-gbox box stop <box-id>                                                             # Stop container
-gbox box delete <box-id>                                                           # Delete container
-gbox box exec <box-id> -- python -c "print('Hello')"                               # Execute command
-gbox box inspect <box-id>  
-gbox box cp <box-id> <local-path> <container-path>                                 # copy file from container to local
+# Container (Box) management
+gbox box create --image python:3.9 --env DEBUG=true -- python -c "print('hello')"  # create a box
+gbox box list                                               # list boxes
+gbox box terminate <box-id>                                 # terminate box
+gbox box exec <box-id> -- ls /                              # execute command inside box
+gbox box cp <box-id>:<container-path> <local-path>          # file copy
+gbox box inspect <box-id>                                   # inspect box
 
-# only for gbox.cloud
-gbox <box-id>  # open a box in browser                                             # switch to the target environment
-gbox switch                                                                        # switch to gbox cloud dashboard
-
-# To use the Computer-Using Agent for Android, an OPENAI_API_KEY is required.
-gbox cua android "Open Uber and order a ride to The Chinese University of Hong Kong."
+# Android CUA (requires OPENAI_API_KEY)
+gbox cua android "Open Uber and order a ride to CUHK"
 
 # MCP configuration
-gbox mcp export                          # Export MCP configuration
-gbox mcp export --merge-to claude        # Export and merge into Claude Desktop config
-gbox mcp export --dry-run                # Preview merge result without applying changes
+gbox mcp export                                             # export config only
+gbox mcp export --merge-to claude                           # merge into Claude Desktop
+gbox mcp export --merge-to cursor                           # merge into Cursor
+gbox mcp export --dry-run                                   # preview merge result
 ```
 
 ## Computer-Using Agent on Android
