@@ -58,7 +58,7 @@ func NewCuaAndroidCommand() *cobra.Command {
 	}
 
 	flags := cmd.Flags()
-	flags.StringVar(&opts.OutputFormat, "output", "text", "Output format (json or text)")
+	flags.StringVarP(&opts.OutputFormat, "output", "o", "text", "Output format (json or text)")
 
 	cmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"json", "text"}, cobra.ShellCompDirectiveNoFileComp

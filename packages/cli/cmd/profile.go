@@ -14,7 +14,7 @@ import (
 // Profile represents a configuration item
 type Profile struct {
 	APIKey           string `json:"api_key"`
-	APIKeyName       string `json:"api_key_name"`
+	Name             string `json:"name"`
 	OrganizationName string `json:"organization_name"`
 	Current          bool   `json:"current"`
 }
@@ -89,15 +89,15 @@ func (pm *ProfileManager) List() {
 		if profile.Current {
 			current = " (*)"
 		}
-		fmt.Printf("%d. %s - %s%s\n", i+1, profile.APIKeyName, profile.OrganizationName, current)
+		fmt.Printf("%d. %s - %s%s\n", i+1, profile.Name, profile.OrganizationName, current)
 	}
 }
 
 // Add adds a new profile
-func (pm *ProfileManager) Add(apiKey, apiKeyName, organizationName string) error {
+func (pm *ProfileManager) Add(apiKey, name, organizationName string) error {
 	// Check if the same profile already exists
 	for _, profile := range pm.profiles {
-		if profile.APIKey == apiKey && profile.APIKeyName == apiKeyName && profile.OrganizationName == organizationName {
+		if profile.APIKey == apiKey && profile.Name == name && profile.OrganizationName == organizationName {
 			return fmt.Errorf("same profile already exists")
 		}
 	}
@@ -110,7 +110,7 @@ func (pm *ProfileManager) Add(apiKey, apiKeyName, organizationName string) error
 	// Add new profile and set as current
 	newProfile := Profile{
 		APIKey:           apiKey,
-		APIKeyName:       apiKeyName,
+		Name:             name,
 		OrganizationName: organizationName,
 		Current:          true,
 	}
@@ -135,7 +135,7 @@ func (pm *ProfileManager) Use(index int) error {
 			if profile.Current {
 				current = " (*)"
 			}
-			fmt.Printf("%d. %s - %s%s\n", i+1, profile.APIKeyName, profile.OrganizationName, current)
+			fmt.Printf("%d. %s - %s%s\n", i+1, profile.Name, profile.OrganizationName, current)
 		}
 		fmt.Print("\nPlease select a profile (enter number): ")
 
@@ -224,9 +224,9 @@ var profileListCmd = &cobra.Command{
 	},
 }
 
-// importManually manually input profile information
-func importManually(pm *ProfileManager) error {
-	var apiKey, apiKeyName, orgName string
+// addManually manually input profile information
+func addManually(pm *ProfileManager) error {
+	var apiKey, name, orgName string
 
 	fmt.Print("Please enter API Key: ")
 	fmt.Scanln(&apiKey)
@@ -234,10 +234,10 @@ func importManually(pm *ProfileManager) error {
 		return fmt.Errorf("API Key cannot be empty")
 	}
 
-	fmt.Print("Please enter API Key name: ")
-	fmt.Scanln(&apiKeyName)
-	if apiKeyName == "" {
-		return fmt.Errorf("API Key name cannot be empty")
+	fmt.Print("Please enter profile name: ")
+	fmt.Scanln(&name)
+	if name == "" {
+		return fmt.Errorf("Profile name cannot be empty")
 	}
 
 	fmt.Print("Please enter organization name (optional, default is 'default'): ")
@@ -248,86 +248,68 @@ func importManually(pm *ProfileManager) error {
 
 	// Check if the same profile already exists
 	for _, profile := range pm.profiles {
-		if profile.APIKey == apiKey && profile.APIKeyName == apiKeyName && profile.OrganizationName == orgName {
+		if profile.APIKey == apiKey && profile.Name == name && profile.OrganizationName == orgName {
 			return fmt.Errorf("same profile already exists")
 		}
 	}
 
 	// Add new profile
-	if err := pm.Add(apiKey, apiKeyName, orgName); err != nil {
+	if err := pm.Add(apiKey, name, orgName); err != nil {
 		return err
 	}
 
-	fmt.Println("Profile imported successfully")
+	fmt.Println("Profile added successfully")
 	return nil
 }
 
-var profileImportCmd = &cobra.Command{
-	Use:   "import [--api-key KEY] [--api-key-name NAME] [--org-name ORG]",
-	Short: "Import profile, supports importing from credentials.json or manual input",
-	Long: `Import profile supports two methods:
-1. Import from existing credentials.json file (default behavior)
-2. Manually input API key, API key name, and organization name
+var profileAddCmd = &cobra.Command{
+	Use:   "add [--key|-k KEY] [--name|-n NAME] [--org-name|-o ORG]",
+	Short: "Add profile via API key",
+	Long: `Add a profile by providing an API key, profile name and (optionally) an organization name. You can either pass them through command-line flags or enter them interactively.
 
 Examples:
-  gbox profile import                                    # Interactive selection of import method
-  gbox profile import --api-key xxx --api-key-name test  # Direct manual input (org-name optional)`,
+  gbox profile add --key xxx --name test          # Direct add (org-name optional)
+  gbox profile add                                    # Interactive mode`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pm := NewProfileManager()
 		if err := pm.Load(); err != nil {
 			return err
 		}
 
-		// Get command line arguments
-		apiKey, _ := cmd.Flags().GetString("api-key")
-		apiKeyName, _ := cmd.Flags().GetString("api-key-name")
+		// Retrieve CLI arguments
+		apiKey, _ := cmd.Flags().GetString("key")
+		name, _ := cmd.Flags().GetString("name")
 		orgName, _ := cmd.Flags().GetString("org-name")
 
-		// If API key parameter is provided, use manual input mode
-		if apiKey != "" {
-			if apiKeyName == "" {
-				return fmt.Errorf("--api-key-name must be provided when using --api-key")
-			}
-
-			// If organization name is empty, set to default value
-			if orgName == "" {
-				orgName = "default"
-			}
-
-			// Check if the same profile already exists
-			for _, profile := range pm.profiles {
-				if profile.APIKey == apiKey && profile.APIKeyName == apiKeyName && profile.OrganizationName == orgName {
-					return fmt.Errorf("same profile already exists")
-				}
-			}
-
-			// Add new profile
-			if err := pm.Add(apiKey, apiKeyName, orgName); err != nil {
-				return err
-			}
-
-			fmt.Println("Profile imported successfully")
-			return nil
+		// Enter interactive mode when --key is not provided
+		if apiKey == "" {
+			return addManually(pm)
 		}
 
-		// Interactive selection of import method
-		fmt.Println("Please select import method:")
-		fmt.Println("1. Import from credentials.json file")
-		fmt.Println("2. Manual input")
-		fmt.Print("Please select (1-2): ")
-
-		var choice string
-		fmt.Scanln(&choice)
-
-		switch choice {
-		case "1":
-			// TODO Let user select which org to import, then automatically create new api key?
-			return nil
-		case "2":
-			return importManually(pm)
-		default:
-			return fmt.Errorf("invalid choice: %s", choice)
+		// --name is required when --key is provided
+		if name == "" {
+			return fmt.Errorf("--name must be provided when using --key")
 		}
+
+		// Default organization name when not provided
+		if orgName == "" {
+			orgName = "default"
+		}
+
+		// Check duplicate profiles
+		for _, profile := range pm.profiles {
+			if profile.APIKey == apiKey && profile.Name == name && profile.OrganizationName == orgName {
+				return fmt.Errorf("same profile already exists")
+			}
+		}
+
+		// Add new profile
+		if err := pm.Add(apiKey, name, orgName); err != nil {
+			return err
+		}
+
+		fmt.Println("Profile added successfully")
+		return nil
 	},
 }
 
@@ -408,7 +390,7 @@ var profileCurrentCmd = &cobra.Command{
 		}
 
 		fmt.Println("Current Profile:")
-		fmt.Printf("  API Key Name: %s\n", current.APIKeyName)
+		fmt.Printf("  Profile Name: %s\n", current.Name)
 		fmt.Printf("  Organization Name: %s\n", current.OrganizationName)
 		fmt.Printf("  API Key: %s\n", current.APIKey)
 		return nil
@@ -416,13 +398,13 @@ var profileCurrentCmd = &cobra.Command{
 }
 
 func init() {
-	// Add command line arguments for profileImportCmd
-	profileImportCmd.Flags().String("api-key", "", "API key")
-	profileImportCmd.Flags().String("api-key-name", "", "API key name")
-	profileImportCmd.Flags().String("org-name", "", "Organization name (optional, default is 'default')")
+	// Add command line arguments for profileAddCmd
+	profileAddCmd.Flags().StringP("key", "k", "", "API key")
+	profileAddCmd.Flags().StringP("name", "n", "", "Profile name")
+	profileAddCmd.Flags().StringP("org-name", "o", "", "Organization name (optional, default is 'default')")
 
 	profileCmd.AddCommand(profileListCmd)
-	profileCmd.AddCommand(profileImportCmd)
+	profileCmd.AddCommand(profileAddCmd)
 	profileCmd.AddCommand(profileUseCmd)
 	profileCmd.AddCommand(profileDeleteCmd)
 	profileCmd.AddCommand(profileCurrentCmd)

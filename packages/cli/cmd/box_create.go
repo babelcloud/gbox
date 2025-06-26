@@ -106,8 +106,8 @@ Command arguments can be specified directly in the command line or added after t
 	}
 
 	flags := cmd.Flags()
-	flags.StringVar(&opts.OutputFormat, "output", "text", "Output format (json or text)")
-	flags.StringVar(&opts.Image, "image", "", "Container image to use")
+	flags.StringVarP(&opts.OutputFormat, "output", "o", "text", "Output format (json or text)")
+	flags.StringVarP(&opts.Image, "image", "i", "", "Container image to use")
 	flags.StringArrayVar(&opts.Env, "env", []string{}, "Environment variables in KEY=VALUE format")
 	flags.StringArrayVarP(&opts.Labels, "label", "l", []string{}, "Custom labels in KEY=VALUE format")
 	flags.StringVarP(&opts.WorkingDir, "work-dir", "w", "", "Working directory")

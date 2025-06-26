@@ -40,8 +40,8 @@ func NewMcpExportCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&mergeTo, "merge-to", "", "Merge configuration into target config file (claude|cursor)")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview merge result without applying changes")
+	cmd.Flags().StringVarP(&mergeTo, "merge-to", "m", "", "Merge configuration into target config file (claude|cursor)")
+	cmd.Flags().BoolVarP(&dryRun, "dry-run", "d", false, "Preview merge result without applying changes")
 
 	return cmd
 }

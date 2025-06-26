@@ -37,9 +37,9 @@ func NewBoxTerminateCommand() *cobra.Command {
 	}
 
 	flags := cmd.Flags()
-	flags.StringVar(&opts.OutputFormat, "output", "text", "Output format (json or text)")
-	flags.BoolVar(&opts.TerminateAll, "all", false, "Terminate all boxes")
-	flags.BoolVar(&opts.Force, "force", false, "Force termination without confirmation")
+	flags.StringVarP(&opts.OutputFormat, "output", "o", "text", "Output format (json or text)")
+	flags.BoolVarP(&opts.TerminateAll, "all", "a", false, "Terminate all boxes")
+	flags.BoolVarP(&opts.Force, "force", "f", false, "Force termination without confirmation")
 
 	cmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"json", "text"}, cobra.ShellCompDirectiveNoFileComp

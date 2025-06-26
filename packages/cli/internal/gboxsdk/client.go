@@ -16,7 +16,7 @@ import (
 // Only the fields we care about are defined.
 type profile struct {
 	APIKey           string `json:"api_key"`
-	APIKeyName       string `json:"api_key_name"`
+	Name             string `json:"name"`
 	OrganizationName string `json:"organization_name"`
 	Current          bool   `json:"current"`
 }
@@ -27,7 +27,7 @@ type profile struct {
 // If the active profile's organization is "local" then the client will be
 // created without an API key.
 func NewClientFromProfile() (*sdk.Client, error) {
-	// 环境变量优先: 如果显式设置了 API_ENDPOINT，则直接使用该地址
+	// Environment variable takes precedence: if API_ENDPOINT is set, use it directly
 	if endpoint := os.Getenv("API_ENDPOINT"); endpoint != "" {
 		base := strings.TrimSuffix(endpoint, "/") + "/api/v1"
 		client := sdk.NewClient(option.WithBaseURL(base))
