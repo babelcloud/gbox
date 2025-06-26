@@ -83,7 +83,7 @@ The project provides a command-line tool `gbox` for managing sandbox containers:
 gbox login
 
 # Profile management
-gbox profile import --api-key <key> --api-key-name <name>   # add profile
+gbox profile import --api-key <key> --name <name>   # add profile
 gbox profile list                                           # list all profiles
 gbox profile use [index]                                    # switch current profile (interactive if index omitted)
 gbox profile delete <index>                                 # delete profile
