@@ -91,7 +91,6 @@ func ResolveBoxIDPrefix(prefix string) (fullID string, matchedIDs []string, err 
 		}
 		fmt.Fprintf(os.Stderr, "DEBUG: [ResolveBoxIDPrefix] All fetched IDs: %v\n", allIDs)
 	}
-	fmt.Fprintf(os.Stderr, "DEBUG: [ResolveBoxIDPrefix] resp.Data: %v\n", resp.Data)
 	// 执行前缀匹配
 	for _, box := range resp.Data {
 		if strings.HasPrefix(box.ID, prefix) {

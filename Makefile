@@ -104,6 +104,37 @@ dist-%: ## Create package for specific platform and architecture (e.g., dist-dar
 		exit 1; \
 	fi
 
+# Brew distribution directory
+BREW_DIST_DIR := brew
+
+.PHONY: brew-dist
+brew-dist: ## Create a distribution for Homebrew
+	@echo "Creating Homebrew distribution in $(BREW_DIST_DIR)..."
+	@rm -rf $(BREW_DIST_DIR)
+	@mkdir -p $(BREW_DIST_DIR)/bin
+	@mkdir -p $(BREW_DIST_DIR)/packages
+	@mkdir -p $(BREW_DIST_DIR)/packages/cli
+	@mkdir -p $(BREW_DIST_DIR)/packages/cli/cmd/script
+
+	@echo "Building gbox binary..."
+	@(cd packages/cli && go build -ldflags="-s -w" -o ../../$(BREW_DIST_DIR)/packages/cli/gbox .)
+
+	@echo "Copying packages and manifests..."
+	@cp LICENSE $(BREW_DIST_DIR)/
+	@cp -r manifests $(BREW_DIST_DIR)/
+	@rsync -a --exclude='node_modules' packages/mcp-server/ $(BREW_DIST_DIR)/packages/mcp-server/
+	@rsync -a --exclude='node_modules' packages/api-server/ $(BREW_DIST_DIR)/packages/api-server/
+	@rsync -a --exclude='node_modules' packages/cua-server/ $(BREW_DIST_DIR)/packages/cua-server/
+	@cp -r packages/cli/cmd/script $(BREW_DIST_DIR)/packages/cli/cmd/
+
+	@echo "Creating .env file for Homebrew..."
+	@echo "PW_IMG_TAG=7614d46" > $(BREW_DIST_DIR)/manifests/docker/.env
+
+	@echo "Creating symlink for gbox executable..."
+	@(cd $(BREW_DIST_DIR)/bin && ln -sf ../packages/cli/gbox gbox)
+
+	@echo "Homebrew distribution is ready at $(BREW_DIST_DIR)"
+
 # Create all distribution packages
 .PHONY: dist
 dist: build ## Create all distribution packages

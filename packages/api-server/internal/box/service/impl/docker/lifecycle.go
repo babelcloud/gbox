@@ -338,6 +338,13 @@ func (s *Service) Delete(ctx context.Context, id string, req *model.BoxDeletePar
 		return nil, err
 	}
 
+	if containerInfo.State == "running" {
+		_, err = s.Stop(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	err = s.client.ContainerRemove(ctx, containerInfo.ID, types.ContainerRemoveOptions{
 		Force: req.Force,
 	})

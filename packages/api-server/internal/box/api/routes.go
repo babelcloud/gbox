@@ -58,6 +58,13 @@ func RegisterRoutes(ws *restful.WebService, boxHandler *BoxHandler) {
 		Returns(404, "Not Found", model.BoxError{}).
 		Returns(500, "Internal Server Error", model.BoxError{}))
 
+	ws.Route(ws.POST("/boxes/{id}/terminate").To(boxHandler.DeleteBox).
+		Doc("terminate a box").
+		Param(ws.PathParameter("id", "identifier of the box").DataType("string")).
+		Returns(200, "OK", model.BoxDeleteResult{}).
+		Returns(404, "Not Found", model.BoxError{}).
+		Returns(500, "Internal Server Error", model.BoxError{}))
+
 	// ws.Route(ws.DELETE("/boxes").To(boxHandler.DeleteBoxes).
 	// 	Doc("delete all boxes").
 	// 	Reads(model.BoxesDeleteParams{}).
