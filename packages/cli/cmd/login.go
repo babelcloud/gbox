@@ -85,8 +85,8 @@ func getLocalToken(githubToken string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
-	apiURL := config.GetCloudAPIURL() + "/api/v1/auth/github/callback/token"
+	
+	apiURL := config.GetCloudAPIURL() + "/api/public/v1/auth/github/callback/token"
 	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", err
