@@ -1,5 +1,25 @@
-# Get version from environment variable or git commit
-VERSION ?= $(shell git rev-parse --short HEAD)
+# ==============================================================================
+# Build Variables
+# ==============================================================================
+MODULE_PREFIX := github.com/babelcloud/gbox
+
+# Check if .git directory exists to determine version from git
+ifneq ($(wildcard .git),)
+  VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+  COMMIT_ID ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+else
+  VERSION ?= dev
+  COMMIT_ID ?= unknown
+endif
+
+BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "unknown")
+
+# LDFLAGS for embedding version information. These variables can be overridden from the command line.
+LDFLAGS := -ldflags "-s -w -X '$(MODULE_PREFIX)/packages/cli/internal/version.Version=$(VERSION)' \
+                     -X '$(MODULE_PREFIX)/packages/cli/internal/version.BuildTime=$(BUILD_TIME)' \
+                     -X '$(MODULE_PREFIX)/packages/cli/internal/version.CommitID=$(COMMIT_ID)'"
+# ==============================================================================
+
 
 # Distribution directory
 DIST_DIR := dist
@@ -117,7 +137,7 @@ brew-dist: ## Create a distribution for Homebrew
 	@mkdir -p $(BREW_DIST_DIR)/packages/cli/cmd/script
 
 	@echo "Building gbox binary..."
-	@(cd packages/cli && go build -ldflags="-s -w" -o $(abspath $(BREW_DIST_DIR))/packages/cli/gbox .)
+	@(cd packages/cli && go build $(LDFLAGS) -o $(abspath $(BREW_DIST_DIR))/packages/cli/gbox .)
 
 	@echo "Copying packages and manifests..."
 	@cp LICENSE $(BREW_DIST_DIR)/
@@ -150,7 +170,7 @@ dist: build ## Create all distribution packages
 # Install for Homebrew
 .PHONY: install
 install: ## Install for Homebrew
-	@$(MAKE) brew-dist BREW_DIST_DIR=$(prefix)
+	@$(MAKE) brew-dist BREW_DIST_DIR=$(prefix) VERSION=$(VERSION) COMMIT_ID=$(COMMIT_ID) BUILD_TIME=$(BUILD_TIME)
 
 # Build and push docker images
 .PHONY: docker-push
@@ -195,4 +215,4 @@ e2e: ## Run e2e tests
 	@make -C packages/cli e2e
 
 # Default target
-.DEFAULT_GOAL := help 
+.DEFAULT_GOAL := help

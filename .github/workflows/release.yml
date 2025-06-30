@@ -22,6 +22,9 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
+      - name: Write commit sha to file
+        run: git rev-parse HEAD > COMMIT
+
       - name: Extract version from tag
         shell: bash
         run: |
