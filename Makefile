@@ -105,7 +105,7 @@ dist-%: ## Create package for specific platform and architecture (e.g., dist-dar
 	fi
 
 # Brew distribution directory
-BREW_DIST_DIR := brew
+BREW_DIST_DIR ?= brew
 
 .PHONY: brew-dist
 brew-dist: ## Create a distribution for Homebrew
@@ -117,7 +117,7 @@ brew-dist: ## Create a distribution for Homebrew
 	@mkdir -p $(BREW_DIST_DIR)/packages/cli/cmd/script
 
 	@echo "Building gbox binary..."
-	@(cd packages/cli && go build -ldflags="-s -w" -o ../../$(BREW_DIST_DIR)/packages/cli/gbox .)
+	@(cd packages/cli && go build -ldflags="-s -w" -o $(abspath $(BREW_DIST_DIR))/packages/cli/gbox .)
 
 	@echo "Copying packages and manifests..."
 	@cp LICENSE $(BREW_DIST_DIR)/
@@ -146,6 +146,11 @@ dist: build ## Create all distribution packages
 	done
 	@echo "All distribution packages created:"
 	@ls -1 $(DIST_PACKAGES) 2>/dev/null || echo "No packages were created"
+
+# Install for Homebrew
+.PHONY: install
+install: ## Install for Homebrew
+	@$(MAKE) brew-dist BREW_DIST_DIR=$(prefix)
 
 # Build and push docker images
 .PHONY: docker-push
