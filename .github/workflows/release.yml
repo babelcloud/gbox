@@ -22,9 +22,6 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Write commit sha to file
-        run: git rev-parse HEAD > COMMIT
-
       - name: Extract version from tag
         shell: bash
         run: |
@@ -64,8 +61,11 @@ jobs:
           pnpm install
           pnpm build
 
-      - name: Build and create distribution
+      - name: Build and create binary distributions
         run: make dist VERSION=${{ env.VERSION }}
+
+      - name: Build source distribution for Homebrew
+        run: make dist-source VERSION=${{ env.VERSION }}
 
       - name: Create Release
         id: create_release
@@ -74,6 +74,8 @@ jobs:
           files: |
             dist/gbox-*.tar.gz
             dist/gbox-*.tar.gz.sha256
+            dist/gbox-v*.tar.gz
+            dist/gbox-v*.tar.gz.sha256
           draft: true
           prerelease: false
           generate_release_notes: true

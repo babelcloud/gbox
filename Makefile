@@ -167,6 +167,23 @@ dist: build ## Create all distribution packages
 	@echo "All distribution packages created:"
 	@ls -1 $(DIST_PACKAGES) 2>/dev/null || echo "No packages were created"
 
+.PHONY: dist-source
+dist-source: ## Create a source code distribution package
+	@echo "Creating source distribution..."
+	@git rev-parse HEAD > COMMIT
+	@rm -rf $(DIST_DIR)/gbox-$(VERSION)
+	@mkdir -p $(DIST_DIR)/gbox-$(VERSION)
+	@echo "Copying source files..."
+	@git archive HEAD | tar -x -C $(DIST_DIR)/gbox-$(VERSION)
+	@cp COMMIT $(DIST_DIR)/gbox-$(VERSION)/COMMIT
+	@echo "Creating source archive..."
+	@(cd $(DIST_DIR) && tar -czf gbox-v$(VERSION).tar.gz gbox-$(VERSION))
+	@rm -rf $(DIST_DIR)/gbox-$(VERSION)
+	@rm COMMIT
+	@(cd $(DIST_DIR) && sha256sum gbox-v$(VERSION).tar.gz > gbox-v$(VERSION).tar.gz.sha256)
+	@echo "Source distribution package created: $(DIST_DIR)/gbox-v$(VERSION).tar.gz"
+	@echo "SHA256 checksum created: $(DIST_DIR)/gbox-v$(VERSION).tar.gz.sha256"
+
 # Install for Homebrew
 .PHONY: install
 install: ## Install for Homebrew
