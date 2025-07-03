@@ -52,3 +52,18 @@ services:
       - TZ=Asia/Shanghai
       - API_SERVER_URL=${MCP_API_SERVER_URL:-http://api-server:28080/api/v1}
     restart: unless-stopped 
+
+  mcp-android-server:
+    container_name: ${PREFIX}${PREFIX:+-}gbox-mcp-android-server
+    build:
+      context: ../../packages/mcp-android-server
+      dockerfile: ../../packages/mcp-android-server/Dockerfile
+    image: babelcloud/gbox-mcp-android-server:${MCP_ANDROID_SERVER_IMG_TAG:-latest}
+    ports:
+      - "${MCP_ANDROID_SERVICE_PORT:-28091}:28091"
+    volumes:
+      - ${GBOX_HOME:-$HOME/.gbox}:/var/gbox
+    environment:
+      - TZ=Asia/Shanghai
+      - API_SERVER_URL=${MCP_API_SERVER_URL:-http://api-server:28080/api/v1}
+    restart: unless-stopped
