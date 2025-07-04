@@ -85,7 +85,7 @@ func getLocalToken(githubToken string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	apiURL := config.GetCloudAPIURL() + "/api/public/v1/auth/github/callback/token"
 	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
@@ -93,14 +93,30 @@ func getLocalToken(githubToken string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	// Attempt to obtain the token either from the response body (JSON) or the 'token' cookie.
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}
 
 	var tokenResp TokenResponse
-	if err := json.Unmarshal(body, &tokenResp); err != nil {
-		return "", fmt.Errorf("failed to parse response: %v, response content: %s", err, string(body))
+	// 1. Try to parse token from JSON body (backward compatibility).
+	if len(body) > 0 {
+		_ = json.Unmarshal(body, &tokenResp) // ignore error; we'll fall back to cookie if needed
+	}
+
+	// 2. Fallback to 'token' cookie if JSON body didn't contain it.
+	if tokenResp.Token == "" {
+		for _, c := range resp.Cookies() {
+			if c.Name == "token" {
+				tokenResp.Token = c.Value
+				break
+			}
+		}
+	}
+
+	if tokenResp.Token == "" {
+		return "", fmt.Errorf("failed to obtain token from response, body: %s", string(body))
 	}
 
 	// Get organization list and let user select

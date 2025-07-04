@@ -49,12 +49,15 @@ func NewClient(token string) (*Client, error) {
 }
 
 func (c *Client) GetMyOrganizationList() ([]Organization, error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/organization/get_my_organization_list", c.baseURL), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/dashboard/v1/organization/get_my_organization_list", c.baseURL), nil)
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.AddCookie(&http.Cookie{
+		Name:  "token",
+		Value: c.token,
+	})
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
@@ -87,12 +90,15 @@ func (c *Client) CreateAPIKey(keyName, orgID string) (*CreateAPIKeyResponse, err
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/api_key/create_an_api_key", c.baseURL), bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/dashboard/v1/api_key/create_an_api_key", c.baseURL), bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.AddCookie(&http.Cookie{
+		Name:  "token",
+		Value: c.token,
+	})
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
