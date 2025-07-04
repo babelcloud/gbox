@@ -147,6 +147,7 @@ brew-dist: ## Create a distribution for Homebrew
 	@cp LICENSE $(BREW_DIST_DIR)/
 	@cp -r manifests $(BREW_DIST_DIR)/
 	@rsync -a --exclude='node_modules' packages/mcp-server/ $(BREW_DIST_DIR)/packages/mcp-server/
+	@rsync -a --exclude='node_modules' packages/mcp-android-server/ $(BREW_DIST_DIR)/packages/mcp-android-server/
 	@rsync -a --exclude='node_modules' packages/api-server/ $(BREW_DIST_DIR)/packages/api-server/
 	@rsync -a --exclude='node_modules' packages/cua-server/ $(BREW_DIST_DIR)/packages/cua-server/
 	@cp -r packages/cli/cmd/script $(BREW_DIST_DIR)/packages/cli/cmd/

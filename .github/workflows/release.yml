@@ -38,7 +38,9 @@ jobs:
         with:
           node-version: "20"
           cache: "pnpm"
-          cache-dependency-path: packages/mcp-server/pnpm-lock.yaml
+          cache-dependency-path: |
+            packages/mcp-server/pnpm-lock.yaml
+            packages/mcp-android-server/pnpm-lock.yaml
 
       - name: Get pnpm store directory
         shell: bash
@@ -51,13 +53,19 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('packages/mcp-server/pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('packages/mcp-server/pnpm-lock.yaml', 'packages/mcp-android-server/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
-      - name: Install dependencies
+      - name: Install dependencies and build mcp-server
         run: |
           cd packages/mcp-server
+          pnpm install
+          pnpm build
+
+      - name: Install dependencies and build mcp-android-server
+        run: |
+          cd packages/mcp-android-server
           pnpm install
           pnpm build
 
