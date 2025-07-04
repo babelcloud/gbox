@@ -9,16 +9,19 @@ export default {
     dts: true,
     splitting: false,
     keepNames: true,
+    bundle: true,
     external: [
         'node:*',
-        'gbox-sdk',
-        '@modelcontextprotocol/sdk',
-        'fastmcp',
-        'dotenv',
-        'zod'
     ],
     banner: {
         js: `import { createRequire } from 'module'; const require = createRequire(import.meta.url);`,
     },
     outDir: 'dist',
+    noExternal: [
+        '@modelcontextprotocol/sdk',
+        'dotenv',
+        'express',
+        'gbox-sdk',
+        'zod',
+    ],
 }

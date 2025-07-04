@@ -9,15 +9,27 @@ export default {
     dts: true,
     splitting: false,
     keepNames: true,
+    bundle: true,
     external: [
         'node:*',
-        'playwright',
-        'playwright-core',
-        'chromium-bidi',
-        '@playwright/test'
     ],
     banner: {
         js: `import { createRequire } from 'module'; const require = createRequire(import.meta.url);`,
     },
     outDir: 'dist',
+    noExternal: [
+        '@gru.ai/gbox',
+        '@modelcontextprotocol/sdk',
+        'axios',
+        'dotenv-defaults',
+        'dotenv-expand', 
+        'express',
+        'gbox-sdk',
+        'playwright',
+        'playwright-core',
+        'chromium-bidi/lib/cjs/bidiMapper/BidiMapper',
+        'chromium-bidi/lib/cjs/cdp/CdpConnection',
+        '@playwright/test',
+        'zod',
+    ],
 } 
