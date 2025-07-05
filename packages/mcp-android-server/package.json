@@ -1,0 +1,30 @@
+{
+  "name": "mcp-android-server",
+  "version": "0.0.1",
+  "description": "MCP server exposing Gbox Android control tools via Model Context Protocol",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsup",
+    "start": "node dist/index.js",
+    "inspect": "npx @modelcontextprotocol/inspector tsx src/index.ts",
+    "dev": "node --loader ts-node/esm --no-warnings src/index.ts"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.7.0",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "gbox-sdk": "^0.16.0",
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.1",
+    "@types/node": "^20.4.2",
+    "ts-node": "^10.9.1",
+    "tsup": "^8.4.0",
+    "tsx": "^4.7.1",
+    "typescript": "^5.2.0"
+  }
+}

@@ -2,7 +2,6 @@ import { z } from "zod";
 import { withLogging } from "../utils.js";
 import type { Logger } from '../mcp-logger.js';
 import { Gbox } from "../gboxsdk/index.js";
-import { chromium } from "playwright";
 import type { Browser, Page } from "playwright";
 
 // Define the Zod schema for the tool's parameters, including name and description
@@ -132,6 +131,8 @@ async function _handleViewUrlAs(
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     // Connect to browser via CDP
+    const { chromium } = await import("playwright");
+
     browser = await chromium.connectOverCDP(cdpUrl);
     page = await browser.newPage();
 

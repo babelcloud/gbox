@@ -18,18 +18,10 @@ export default {
     },
     outDir: 'dist',
     noExternal: [
-        '@gru.ai/gbox',
         '@modelcontextprotocol/sdk',
-        'axios',
-        'dotenv-defaults',
-        'dotenv-expand', 
+        'dotenv',
         'express',
         'gbox-sdk',
-        'playwright',
-        'playwright-core',
-        'chromium-bidi/lib/cjs/bidiMapper/BidiMapper',
-        'chromium-bidi/lib/cjs/cdp/CdpConnection',
-        '@playwright/test',
         'zod',
     ],
-} 
+}
