@@ -2,6 +2,7 @@ import { z } from "zod";
 import { attachBox } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { ActionPressKey } from "gbox-sdk";
+import { sanitizeResult } from "./utils.js";
 
 export const PRESS_KEY_TOOL = "press_key";
 
@@ -115,10 +116,10 @@ export function handlePressKey(logger: MCPLogger) {
       // Build content array with text and images
       const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [];
 
-      // Add text result
+      // Add text result with sanitized data
       content.push({
         type: "text" as const,
-        text: JSON.stringify(result, null, 2),
+        text: JSON.stringify(sanitizeResult(result), null, 2),
       });
 
       // Add all images

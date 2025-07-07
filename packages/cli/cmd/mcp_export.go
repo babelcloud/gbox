@@ -215,7 +215,7 @@ func exportConfig(mergeTo string, dryRun bool, serverType string) error {
 
 		// Handle claude-code option by outputting claude mcp add command
 		if mergeTo == "claude-code" {
-			return outputClaudeCodeCommand(serverType, serverScriptAbs, mcpServerDir, dryRun)
+			return outputClaudeCodeCommand(serverType, serverScriptAbs, mcpServerDir)
 		}
 
 		targetConfig := claudeConfig
@@ -326,7 +326,7 @@ func mergeAndMarshalConfigs(targetPath string, newConfig McpConfig) ([]byte, err
 }
 
 // outputClaudeCodeCommand outputs the claude mcp add command for claude-code integration
-func outputClaudeCodeCommand(serverType, serverScriptAbs, mcpServerDir string, dryRun bool) error {
+func outputClaudeCodeCommand(serverType, serverScriptAbs, mcpServerDir string) error {
 	serverName := "gbox"
 	if serverType == "android" {
 		serverName = "gbox-android"
