@@ -10,7 +10,7 @@ export const PRESS_KEY_DESCRIPTION = "Simulates pressing a specific key by trigg
 // Extract supported keys type from SDK
 type SupportedKey = ActionPressKey['keys'][number];
 
-// Create supported keys array from SDK type
+// Create supported keys array from SDK type - this ensures type safety with the SDK
 const SUPPORTED_KEYS = [
   'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
   'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',

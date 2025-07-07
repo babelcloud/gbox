@@ -56,11 +56,15 @@ export {
   CLOSE_APP_DESCRIPTION,
   closeAppParamsSchema,
   handleCloseApp,
+} from "./apk-management.js";
+
+// Live View
+export {
   OPEN_LIVE_VIEW_TOOL,
   OPEN_LIVE_VIEW_DESCRIPTION,
   openLiveViewParamsSchema,
   handleOpenLiveView,
-} from "./apk-management.js";
+} from "./live-view.js";
 
 // Press Key
 export {

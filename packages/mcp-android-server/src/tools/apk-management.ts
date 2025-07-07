@@ -15,9 +15,6 @@ export const OPEN_APP_DESCRIPTION = "Launch an installed application by package 
 export const CLOSE_APP_TOOL = "close_app";
 export const CLOSE_APP_DESCRIPTION = "Close an installed application by package name on the Android box.";
 
-export const OPEN_LIVE_VIEW_TOOL = "open_live_view";
-export const OPEN_LIVE_VIEW_DESCRIPTION = "Open the live view URL for an Android box in the default browser.";
-
 export const installApkParamsSchema = {
   boxId: z.string().describe("ID of the box"),
   apk: z
@@ -43,16 +40,11 @@ export const closeAppParamsSchema = {
   packageName: z.string().describe("Android package name to close, for example: 'com.android.settings'"),
 };
 
-export const openLiveViewParamsSchema = {
-  boxId: z.string().describe("ID of the box"),
-};
-
 // Define parameter types - infer from the Zod schemas
 type InstallApkParams = z.infer<z.ZodObject<typeof installApkParamsSchema>>;
 type UninstallApkParams = z.infer<z.ZodObject<typeof uninstallApkParamsSchema>>;
 type OpenAppParams = z.infer<z.ZodObject<typeof openAppParamsSchema>>;
 type CloseAppParams = z.infer<z.ZodObject<typeof closeAppParamsSchema>>;
-type OpenLiveViewParams = z.infer<z.ZodObject<typeof openLiveViewParamsSchema>>;
 
 export function handleInstallApk(logger: MCPLogger) {
   return async (args: InstallApkParams) => {
@@ -197,38 +189,4 @@ export function handleCloseApp(logger: MCPLogger) {
       };
     }
   }
-}
-
-export function handleOpenLiveView(logger: MCPLogger) {
-  return async (args: OpenLiveViewParams) => {
-    try {
-      const { boxId } = args;
-      await logger.info("Opening live view", { boxId });
-      
-      const box = await attachBox(boxId);
-      const liveViewUrl = await box.liveView();
-
-      await logger.info("Live view opened successfully", { boxId, url: liveViewUrl });
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ boxId, liveViewUrl, status: "opened" }),
-          },
-        ],
-      };
-    } catch (error) {
-      await logger.error("Failed to open live view", { boxId: args?.boxId, error });
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      };
-    }
-  };
 }

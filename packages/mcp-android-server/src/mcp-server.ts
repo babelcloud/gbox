@@ -105,12 +105,7 @@ const logger = new MCPLogger(log);
 // Add prompt for APK testing rules
 const ANDROID_APK_TESTING_RULES = "android-apk-testing-rules";
 const ANDROID_APK_TESTING_RULES_DESCRIPTION = "Test the Android project on a virtual or physical device.";
-const ANDROID_APK_TESTING_RULES_CONTENT = `---
-description: Test the Android project on a virtual or physical device.
-globs: 
-alwaysApply: false
----
-# Gbox APK-Testing Rule
+const ANDROID_APK_TESTING_RULES_CONTENT = `# Gbox APK-Testing Rule
 
 ## Critical Rules
 - Immediately after creating or starting a Gbox Android box, open its live-view URL (\`open_live_view\`) in the default browser.
