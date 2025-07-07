@@ -41,10 +41,8 @@ func NewMcpExportCommand() *cobra.Command {
 
 Supports both Linux and Android MCP servers. The Linux server provides general 
 box management capabilities, while the Android server provides Android-specific 
-automation tools including screenshot capture, AI-powered UI actions, and APK management.
+automation tools including screenshot capture, AI-powered UI actions, and APK management.`,
 
-Note: For Android server type, you must have an active profile with API key configured.
-Use 'gbox profile add' to set up a profile first.`,
 		Example: `  # Export Linux MCP server configuration (default)
   gbox mcp export --type linux --merge-to claude
   
@@ -134,26 +132,6 @@ func exportConfig(mergeTo string, dryRun bool, serverType string) error {
 		return fmt.Errorf("invalid server type '%s', must be either 'linux' or 'android'", serverType)
 	}
 
-	// Get current profile for API key (needed for Android server)
-	var currentAPIKey string
-	if serverType == "android" {
-		pm := NewProfileManager()
-		if err := pm.Load(); err != nil {
-			return fmt.Errorf("failed to load profile: %w", err)
-		}
-
-		current := pm.GetCurrent()
-		if current == nil {
-			return fmt.Errorf("no active profile found. Please run 'gbox profile add' to add a profile first")
-		}
-
-		if current.APIKey == "" {
-			return fmt.Errorf("current profile has no API key. Please check your profile configuration")
-		}
-
-		currentAPIKey = current.APIKey
-	}
-
 	packagesRoot, err := getPackagesRootPath()
 	if err != nil {
 		return fmt.Errorf("failed to find project root: %w", err)
@@ -191,26 +169,13 @@ func exportConfig(mergeTo string, dryRun bool, serverType string) error {
 
 	var configToExport McpConfig
 
-	// Prepare environment variables for Android server
-	var serverEnv map[string]string
-	if serverType == "android" && currentAPIKey != "" {
-		serverEnv = map[string]string{
-			"GBOX_API_KEY": currentAPIKey,
-		}
-	}
-
 	if os.Getenv("DEBUG") == "true" {
-		entry := McpServerEntry{
-			Command: "bash",
-			Args:    []string{"-c", fmt.Sprintf("cd %s && pnpm --silent dev", mcpServerDir)},
-		}
-		if serverEnv != nil {
-			entry.Env = serverEnv
-		}
-
 		configToExport = McpConfig{
 			McpServers: map[string]McpServerEntry{
-				serverName: entry,
+				serverName: {
+					Command: "bash",
+					Args:    []string{"-c", fmt.Sprintf("cd %s && pnpm --silent dev", mcpServerDir)},
+				},
 			},
 		}
 
@@ -224,31 +189,21 @@ func exportConfig(mergeTo string, dryRun bool, serverType string) error {
 			sseUrl = config.GetMcpServerUrl()
 		}
 
-		entry := McpServerEntry{
-			Command: "npx",
-			Args:    []string{"mcp-remote", sseUrl},
-		}
-		if serverEnv != nil {
-			entry.Env = serverEnv
-		}
-
 		configToExport = McpConfig{
 			McpServers: map[string]McpServerEntry{
-				serverName: entry,
+				serverName: {
+					Command: "npx",
+					Args:    []string{"mcp-remote", sseUrl},
+				},
 			},
 		}
 	} else {
-		entry := McpServerEntry{
-			Command: "node",
-			Args:    []string{serverScriptAbs},
-		}
-		if serverEnv != nil {
-			entry.Env = serverEnv
-		}
-
 		configToExport = McpConfig{
 			McpServers: map[string]McpServerEntry{
-				serverName: entry,
+				serverName: {
+					Command: "node",
+					Args:    []string{serverScriptAbs},
+				},
 			},
 		}
 	}
@@ -260,7 +215,7 @@ func exportConfig(mergeTo string, dryRun bool, serverType string) error {
 
 		// Handle claude-code option by outputting claude mcp add command
 		if mergeTo == "claude-code" {
-			return outputClaudeCodeCommand(serverType, currentAPIKey, serverScriptAbs, mcpServerDir, dryRun)
+			return outputClaudeCodeCommand(serverType, serverScriptAbs, mcpServerDir, dryRun)
 		}
 
 		targetConfig := claudeConfig
@@ -310,10 +265,10 @@ func exportConfig(mergeTo string, dryRun bool, serverType string) error {
 		fmt.Println()
 		fmt.Println("Available server types:")
 		fmt.Println("  --type linux    # Export Linux MCP server configuration (default)")
-		fmt.Println("  --type android  # Export Android MCP server configuration (requires active profile)")
+		fmt.Println("  --type android  # Export Android MCP server configuration (using profile or manually set GBOX_API_KEY env)")
 		if serverType == "android" {
 			fmt.Println()
-			fmt.Printf("Note: Using API key from current profile: %s\n", currentAPIKey[:8]+"...")
+			fmt.Println("Note: Android server will automatically use API key from current profile or GBOX_API_KEY env var")
 		}
 	}
 
@@ -371,7 +326,7 @@ func mergeAndMarshalConfigs(targetPath string, newConfig McpConfig) ([]byte, err
 }
 
 // outputClaudeCodeCommand outputs the claude mcp add command for claude-code integration
-func outputClaudeCodeCommand(serverType, apiKey, serverScriptAbs, mcpServerDir string, dryRun bool) error {
+func outputClaudeCodeCommand(serverType, serverScriptAbs, mcpServerDir string, dryRun bool) error {
 	serverName := "gbox"
 	if serverType == "android" {
 		serverName = "gbox-android"
@@ -379,9 +334,6 @@ func outputClaudeCodeCommand(serverType, apiKey, serverScriptAbs, mcpServerDir s
 
 	// Prepare environment variables
 	var envArgs []string
-	if serverType == "android" && apiKey != "" {
-		envArgs = append(envArgs, "-e", fmt.Sprintf("GBOX_API_KEY=%s", apiKey))
-	}
 	envArgs = append(envArgs, "-e", "MODE=stdio")
 
 	// Check if we're in debug mode
@@ -407,15 +359,8 @@ func outputClaudeCodeCommand(serverType, apiKey, serverScriptAbs, mcpServerDir s
 
 	fmt.Println()
 	if serverType == "android" {
-		maskedKey := apiKey
-		if len(apiKey) > 8 {
-			maskedKey = apiKey[:8] + "..."
-		} else if len(apiKey) > 4 {
-			maskedKey = apiKey[:4] + "..."
-		}
-		fmt.Printf("Note: Using API key %s from current profile\n", maskedKey)
+		fmt.Println("Note: Android mcp server will automatically use API key from current profile.")
 	}
-	fmt.Println("Run this command in your target project directory.")
 
 	return nil
 }
