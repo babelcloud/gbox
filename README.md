@@ -28,7 +28,8 @@ As MCP is getting more and more popular, we also implemented a MCP server to mak
    - Typescript SDK Installing using `npm install gbox-sdk`, see [Gbox SDK Reference](https://docs.gbox.cloud/api-reference) for details.
 7. MCP
    - Standard MCP support
-   - Integrate Claude Desktop & Cursor
+   - Android device automation (APK management, AI action, key press, screenshot capture, live view)
+   - Integrate Claude Code & Claude Desktop & Cursor
 
 ## Use gbox as a CLI
 
@@ -106,8 +107,9 @@ gbox cua android "Open Uber and order a ride to CUHK"
 
 # MCP configuration
 gbox mcp export                                             # export config only
-gbox mcp export --merge-to claude                           # merge into Claude Desktop
-gbox mcp export --merge-to cursor                           # merge into Cursor
+gbox mcp export --merge-to claude                           # integrate linux mcp server into Claude Desktop
+gbox mcp export --merge-to cursor                           # integrate linux mcp server into Cursor
+gbox mcp export --merge-to claude-code --type android       # integrate android mcp server into Claude Code
 gbox mcp export --dry-run                                   # preview merge result
 ```
 
@@ -171,7 +173,7 @@ ADB (Android Debug Bridge) is required for gbox to communicate with your Android
 #### 2. Use DoorDash/Foodpanda to order food delivery.
 <img src="https://i.imghippo.com/files/hYdz1413YaE.jpg" width="40%" height="40%">
 
-## MCP Use Cases
+## Linux MCP Use Cases
 
 Your AI client such as Claude Desktop can use gbox MCP to deliver better results, such as
 
@@ -198,6 +200,14 @@ https://claude.ai/share/70c335b7-9fff-4ee7-8459-e6b7462d8994
 Download youtube video:
 ![Image](https://i.imghippo.com/files/TI9396Rjg.png)
 https://claude.ai/share/c2ab6bcb-7032-489f-87d5-cc38f72c2ca9
+
+## Android MCP Use Cases
+
+### 1. Test android apk
+
+Test [geoquiz](https://github.com/babelcloud/geoquiz) apk:
+![Image](https://i.imghippo.com/files/DOop9372TM.jpeg)
+https://claude.ai/share/78242bf9-201b-40cc-9af8-7f2cdca36e56
 
 ## Develop gbox
 
