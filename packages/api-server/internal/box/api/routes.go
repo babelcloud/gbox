@@ -23,16 +23,6 @@ func RegisterRoutes(ws *restful.WebService, boxHandler *BoxHandler) {
 		Returns(404, "Not Found", model.BoxError{}).
 		Returns(500, "Internal Server Error", model.BoxError{}))
 
-	// ws.Route(ws.POST("/boxes").To(boxHandler.CreateBox).
-	// 	Doc("create a box").
-	// 	Reads(model.BoxCreateParams{}).
-	// 	Produces("application/json", "application/json-stream").
-	// 	Param(ws.QueryParameter("timeout", "timeout duration for image pull (e.g. 30s, 1m)").DataType("string").Required(false)).
-	// 	Returns(201, "Created", model.Box{}).
-	// 	Returns(202, "Accepted", model.BoxError{}).
-	// 	Returns(400, "Bad Request", model.BoxError{}).
-	// 	Returns(500, "Internal Server Error", model.BoxError{}))
-
 	ws.Route(ws.POST("/boxes/linux").To(boxHandler.CreateLinuxBox).
 		Doc("create a linux box").
 		Reads(model.LinuxAndroidBoxCreateParam{}).

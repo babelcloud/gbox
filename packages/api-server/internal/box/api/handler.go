@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/babelcloud/gbox/packages/api-server/internal/box/service"
 	model "github.com/babelcloud/gbox/packages/api-server/pkg/box"
@@ -155,68 +154,6 @@ func (h *BoxHandler) GetBox(req *restful.Request, resp *restful.Response) {
 	resp.WriteEntity(box)
 }
 
-// CreateBox creates a new box
-//
-// If a timeout query parameter is provided and the image doesn't exist locally,
-// the API will pull the image asynchronously and return a 202 response
-// after the timeout, informing the user that the image is being pulled.
-// The user can retry creating the box later.
-//
-// Accepts the following query parameters:
-// - timeout: Image pull timeout duration, e.g. "30s", "1m", etc. If not provided, it will wait for the image pull to complete.
-func (h *BoxHandler) CreateBox(req *restful.Request, resp *restful.Response) {
-	// Read request body directly into the internal model type
-	var createParams model.BoxCreateParams
-	if err := req.ReadEntity(&createParams); err != nil {
-		writeError(resp, http.StatusBadRequest, "InvalidRequest", err.Error())
-		return
-	}
-
-	// Parse timeout parameter, default to 0 (wait indefinitely)
-	timeoutStr := req.QueryParameter("timeout")
-	if timeoutStr != "" {
-		var err error
-		createParams.Timeout, err = time.ParseDuration(timeoutStr)
-		if err != nil {
-			writeError(resp, http.StatusBadRequest, "InvalidTimeout", "Invalid timeout format. Use a valid duration (e.g., 30s, 1m)")
-			return
-		}
-	}
-
-	// check if the client wants a stream response
-	acceptHeader := req.HeaderParameter("Accept")
-	streamRequest := acceptHeader == "application/json-stream"
-
-	if streamRequest {
-		// Define the service call for CreateBox compatible with streamServiceOperation
-		createBoxServiceCall := func(ctx context.Context, params interface{}, progressWriter io.Writer) (interface{}, error) {
-			cp, ok := params.(*model.BoxCreateParams)
-			if !ok {
-				return nil, fmt.Errorf("internal error: invalid params type for CreateBox service call")
-			}
-			// h.service.Create will use progressWriter for image pull progress (if any)
-			// and return the created Box object or an error.
-			return h.service.Create(ctx, cp, progressWriter)
-		}
-		h.streamServiceOperation(req, resp, &createParams, createBoxServiceCall, true)
-		return
-	}
-
-	// standard JSON response (non-streaming) - wait for operation to complete
-	box, err := h.service.Create(req.Request.Context(), &createParams, nil)
-	if err != nil {
-		// Check if error is about image resources being prepared
-		if strings.Contains(err.Error(), "image resources are being prepared") {
-			writeError(resp, http.StatusServiceUnavailable, "ImageResourcesPreparing", err.Error())
-			return
-		}
-		writeError(resp, http.StatusInternalServerError, "CreateBoxError", err.Error())
-		return
-	}
-
-	resp.WriteHeaderAndEntity(http.StatusCreated, box)
-}
-
 func (h *BoxHandler) CreateLinuxBox(req *restful.Request, resp *restful.Response) {
 	// Read request body directly into the internal model type
 	var createParams model.LinuxAndroidBoxCreateParam
@@ -225,14 +162,9 @@ func (h *BoxHandler) CreateLinuxBox(req *restful.Request, resp *restful.Response
 		return
 	}
 
-	// Wrap in LinuxBoxCreateParam for service call compatibility
-	linuxBoxParams := &model.LinuxBoxCreateParam{
-		CreateLinuxBox: createParams,
-	}
-
 	// CreateLinuxBox no longer supports streaming or progressWriter
 	// Call the service directly
-	box, err := h.service.CreateLinuxBox(req.Request.Context(), linuxBoxParams)
+	box, err := h.service.CreateLinuxBox(req.Request.Context(), &createParams)
 	if err != nil {
 		// Check if error is about image resources being prepared
 		if strings.Contains(err.Error(), "image resources are being prepared") {

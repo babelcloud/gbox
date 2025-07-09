@@ -2,9 +2,7 @@ package docker
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -22,155 +20,8 @@ import (
 
 const defaultStopTimeout = 10 * time.Second
 
-// Create implements Service.Create
-func (s *Service) Create(ctx context.Context, params *model.BoxCreateParams, progressWriter io.Writer) (*model.Box, error) {
-	// Handle legacy format (individual parameters)
-	s.logger.Info("Creating box with legacy parameters: %+v", params)
-	// Original logic continues if both new parameters are nil
-	// Get image name - This now handles defaults, env var resolution, and adding :latest if needed.
-	img := GetImage(params.Image)
-
-	// Check if image exists - return error if not available
-	_, _, err := s.client.ImageInspectWithRaw(ctx, img)
-	if err != nil {
-		// Image not found, return resource preparation status
-		s.logger.Warn("Image %s not available locally, resources are being prepared", img)
-		return nil, fmt.Errorf("image resources are being prepared, please try again later (image: %s)", img)
-	}
-
-	// Generate box ID
-	boxID := id.GenerateBoxID()
-	containerName := containerName(boxID)
-
-	// Prepare labels
-	labels := PrepareLabels(boxID, params)
-
-	// Create share directory for the box
-	shareDir := filepath.Join(config.GetInstance().File.Share, boxID)
-	if err := os.MkdirAll(shareDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create share directory: %w", err)
-	}
-
-	// Prepare mounts
-	var mounts []mount.Mount
-
-	// Add default mounts
-	mounts = append(mounts, mount.Mount{
-		Type:   mount.TypeBind,
-		Source: filepath.Join(config.GetInstance().File.HostShare, boxID),
-		Target: common.DefaultShareDirPath,
-	})
-
-	// Add user-specified mounts
-	for _, v := range params.Volumes {
-		mounts = append(mounts, mount.Mount{
-			Type:     mount.TypeBind,
-			Source:   v.Source,
-			Target:   v.Target,
-			ReadOnly: v.ReadOnly,
-			BindOptions: &mount.BindOptions{
-				Propagation: mount.Propagation(v.Propagation),
-			},
-		})
-	}
-
-	// Create container
-	containerConfig := &container.Config{
-		Image:      img,
-		Cmd:        GetCommand(params.Cmd, params.Args),
-		Env:        MapToEnv(params.Env),
-		WorkingDir: params.WorkingDir,
-		Labels:     labels,
-	}
-
-	hostConfig := &container.HostConfig{
-		Mounts:          mounts,
-		PublishAllPorts: true,
-	}
-
-	resp, err := s.client.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, containerName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create container: %w", err)
-	}
-
-	// Start container
-	if err := s.client.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		return nil, fmt.Errorf("failed to start container: %w", err)
-	}
-
-	// --- Wait for container to be healthy if requested ---
-	if params.WaitForReady {
-		const defaultReadyTimeout = 60 // Default timeout 60 seconds
-		const checkInterval = 1 * time.Second
-
-		timeoutDuration := time.Duration(params.WaitForReadyTimeoutSeconds) * time.Second
-		if params.WaitForReadyTimeoutSeconds <= 0 {
-			timeoutDuration = time.Duration(defaultReadyTimeout) * time.Second
-		}
-
-		s.logger.Info("Waiting up to %v for box %s to become healthy...", timeoutDuration, boxID)
-		timeoutCtx, cancel := context.WithTimeout(ctx, timeoutDuration)
-		defer cancel()
-
-		startTime := time.Now()
-		for {
-			select {
-			case <-timeoutCtx.Done():
-				s.logger.Error("Timeout waiting for box %s to become healthy", boxID)
-				// Attempt to stop/remove the unhealthy container on timeout
-				_, _ = s.Stop(context.Background(), boxID)                                        // Ignore both return values
-				_, _ = s.Delete(context.Background(), boxID, &model.BoxDeleteParams{Force: true}) // Ignore both return values
-				return nil, fmt.Errorf("timeout waiting for box %s to become healthy after %v", boxID, timeoutDuration)
-			default:
-				inspectData, err := s.client.ContainerInspect(timeoutCtx, resp.ID)
-				if err != nil {
-					// Handle context cancellation specifically
-					if errors.Is(err, context.DeadlineExceeded) {
-						// This case is handled by the select statement, just log
-						s.logger.Warn("Context deadline exceeded while inspecting box %s health", boxID)
-					} else {
-						s.logger.Error("Error inspecting container %s for health check: %v", boxID, err)
-						// Consider if we should stop/delete here or let timeout handle it
-					}
-					// Wait before retrying inspection on error
-					time.Sleep(checkInterval)
-					continue
-				}
-
-				if inspectData.State != nil && inspectData.State.Health != nil {
-					s.logger.Debug("Box %s health status: %s", boxID, inspectData.State.Health.Status)
-					if inspectData.State.Health.Status == "healthy" {
-						s.logger.Info("Box %s is healthy after %v.", boxID, time.Since(startTime))
-						goto HealthCheckDone // Exit the loop
-					}
-					// If status is unhealthy, we could potentially exit early, but let's wait for timeout or healthy
-				} else {
-					// Health check might not be configured or running yet
-					s.logger.Debug("Box %s health status not available yet.", boxID)
-				}
-
-				// Wait before the next check
-				time.Sleep(checkInterval)
-			}
-		}
-	HealthCheckDone:
-	}
-	// --- End of wait logic ---
-
-	// Get container details (now potentially after waiting)
-	containerInfo, err := s.getContainerByID(ctx, boxID) // Use original ctx
-	if err != nil {
-		return nil, fmt.Errorf("failed to get container details after start: %w", err)
-	}
-
-	// Update access time on successful creation/readiness
-	s.accessTracker.Update(boxID)
-
-	return containerToBox(containerInfo), nil
-}
-
-// createLinuxBox creates an Alpine Linux box with specific parameters
-func (s *Service) createLinuxBox(ctx context.Context, params *model.LinuxAndroidBoxCreateParam) (*model.Box, error) {
+// CreateLinuxBox creates an Alpine Linux box with specific parameters
+func (s *Service) CreateLinuxBox(ctx context.Context, params *model.LinuxAndroidBoxCreateParam) (*model.Box, error) {
 	// Use Alpine Linux as the default image
 	img := GetImage("")
 
@@ -186,22 +37,20 @@ func (s *Service) createLinuxBox(ctx context.Context, params *model.LinuxAndroid
 	boxID := id.GenerateBoxID()
 	containerName := containerName(boxID)
 
-	// Create a BoxCreateParams struct to use PrepareLabels function
-	// This ensures consistent labeling with the Create method
-	tempParams := &model.BoxCreateParams{
-		Image:       img,
-		Env:         params.Config.Envs,
-		ExtraLabels: params.Config.Labels,
+	tempParams := &model.LinuxAndroidBoxCreateParam{
+		Type: "linux",
+		Config: model.CreateBoxConfigParam{
+			ExpiresIn: params.Config.ExpiresIn,
+			Envs:      params.Config.Envs,
+			Labels:    params.Config.Labels,
+		},
 	}
 
 	// Use the same PrepareLabels function as Create method
 	labels := PrepareLabels(boxID, tempParams)
 
-	// Add Linux-specific labels
-	labels["gbox.type"] = "linux"
-	if params.Config.ExpiresIn != "" {
-		labels["gbox.expires_in"] = params.Config.ExpiresIn
-	}
+	//image labels
+	labels["gbox.image"] = img
 
 	// Create share directory for the box
 	shareDir := filepath.Join(config.GetInstance().File.Share, boxID)
@@ -250,10 +99,6 @@ func (s *Service) createLinuxBox(ctx context.Context, params *model.LinuxAndroid
 	s.accessTracker.Update(boxID)
 
 	return containerToBox(containerInfo), nil
-}
-
-func (s *Service) CreateLinuxBox(ctx context.Context, params *model.LinuxBoxCreateParam) (*model.Box, error) {
-	return s.createLinuxBox(ctx, &params.CreateLinuxBox)
 }
 
 // not implemented

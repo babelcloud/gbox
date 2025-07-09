@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,7 +24,6 @@ import (
 	"github.com/babelcloud/gbox/packages/api-server/internal/box/service"
 	"github.com/babelcloud/gbox/packages/api-server/internal/tracker"
 	model "github.com/babelcloud/gbox/packages/api-server/pkg/box"
-	"github.com/babelcloud/gbox/packages/api-server/pkg/id"
 	"github.com/babelcloud/gbox/packages/api-server/pkg/logger"
 	"github.com/gorilla/websocket"
 )
@@ -104,7 +102,6 @@ func (s *Service) List(ctx context.Context, params *model.BoxListParams) (*model
 	for _, deployment := range deployments.Items {
 		boxes = append(boxes, model.Box{
 			ID:     deployment.Labels[labelInstance],
-			Image:  deployment.Spec.Template.Spec.Containers[0].Image,
 			Status: string(deployment.Status.AvailableReplicas),
 		})
 	}
@@ -116,114 +113,8 @@ func (s *Service) List(ctx context.Context, params *model.BoxListParams) (*model
 	}, nil
 }
 
-// Create creates a new box
-func (s *Service) Create(ctx context.Context, req *model.BoxCreateParams, progressWriter io.Writer) (*model.Box, error) {
-	// Send progress information if writer is provided
-	if progressWriter != nil {
-		encoder := json.NewEncoder(progressWriter)
-		encoder.Encode(map[string]string{
-			"status":  "prepare",
-			"message": fmt.Sprintf("Preparing to create Kubernetes box with image: %s", req.Image),
-		})
-	}
-
-	boxID := id.GenerateBoxID()
-	s.logger.Info("Creating new box with ID: %s", boxID)
-	s.accessTracker.Update(boxID)
-
-	labels := map[string]string{
-		labelName:      "gbox",           // The application name
-		labelInstance:  boxID,            // Unique instance identifier
-		labelVersion:   "v1",             // Version of the box
-		labelComponent: "sandbox",        // Component type
-		labelPartOf:    "gru-sandbox",    // Part of the gru-sandbox system
-		labelManagedBy: "gru-api-server", // Managed by this API server
-	}
-
-	// Prepare annotations
-	annotations := map[string]string{}
-
-	// Add shell configuration to annotations
-	if req.Cmd != "" {
-		annotations[annotationCmd] = req.Cmd
-	}
-	if len(req.Args) > 0 {
-		annotations[annotationArgs] = joinArgs(req.Args)
-	}
-	if req.WorkingDir != "" {
-		annotations[annotationWorkDir] = req.WorkingDir
-	}
-
-	// Create deployment
-	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        boxID,
-			Namespace:   tenantNamespace,
-			Labels:      labels,
-			Annotations: annotations,
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: int32Ptr(1),
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					labelName:     "gbox",
-					labelInstance: boxID,
-				},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:       "box",
-							Image:      getImage(req.Image),
-							Command:    []string{req.Cmd},
-							Args:       req.Args,
-							Env:        getEnvVars(req.Env),
-							WorkingDir: req.WorkingDir,
-						},
-					},
-					ImagePullSecrets: getImagePullSecrets(req.ImagePullSecret),
-				},
-			},
-		},
-	}
-
-	result, err := s.client.AppsV1().Deployments(tenantNamespace).Create(ctx, deployment, metav1.CreateOptions{})
-
-	// Send progress information about result if writer is provided
-	if progressWriter != nil {
-		encoder := json.NewEncoder(progressWriter)
-		if err != nil {
-			encoder.Encode(map[string]string{
-				"status":  "error",
-				"message": err.Error(),
-			})
-		} else {
-			encoder.Encode(map[string]string{
-				"status":  "creating",
-				"message": fmt.Sprintf("Box %s created, waiting for pod to start...", boxID),
-			})
-		}
-	}
-
-	if err != nil {
-		s.logger.Error("Failed to create deployment: %v", err)
-		return nil, fmt.Errorf("failed to create deployment: %v", err)
-	}
-
-	s.logger.Info("Box created successfully with ID: %s", boxID)
-	return &model.Box{
-		ID:     boxID,
-		Image:  req.Image,
-		Status: string(result.Status.AvailableReplicas),
-	}, nil
-}
-
 // CreateLinuxBox creates a new linux box
-func (s *Service) CreateLinuxBox(ctx context.Context, req *model.LinuxBoxCreateParam) (*model.Box, error) {
+func (s *Service) CreateLinuxBox(ctx context.Context, req *model.LinuxAndroidBoxCreateParam) (*model.Box, error) {
 	return nil, fmt.Errorf("CreateLinuxBox not implemented")
 }
 
@@ -312,7 +203,6 @@ func (s *Service) Get(ctx context.Context, id string) (*model.Box, error) {
 	return &model.Box{
 		ID:     id,
 		Status: status,
-		Image:  pod.Spec.Containers[0].Image,
 	}, nil
 }
 

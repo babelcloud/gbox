@@ -91,33 +91,47 @@ func handleContainerError(err error, id string) error {
 
 // containerToBox converts a Docker container to a Box
 func containerToBox(c interface{}) *model.Box {
-	var id, status, image string
+	var id, status string
 	var labels map[string]string
 	var env []string
 	var createdAt time.Time
+	var cpu, memory, storage float64
 
 	switch c := c.(type) {
 	case types.ContainerJSON:
 		id = c.Config.Labels[labelID]
 		status = mapContainerState(c.State.Status)
-		image = c.Config.Image
 		labels = c.Config.Labels
 		env = c.Config.Env
 		if t, err := time.Parse(time.RFC3339, c.Created); err == nil {
 			createdAt = t
 		}
+		// Extract resource limits from HostConfig
+		if c.HostConfig != nil && c.HostConfig.Resources.Memory > 0 {
+			memory = float64(c.HostConfig.Resources.Memory) / (1024 * 1024) // Convert bytes to MB
+		}
+		if c.HostConfig != nil && c.HostConfig.Resources.CPUQuota > 0 && c.HostConfig.Resources.CPUPeriod > 0 {
+			cpu = float64(c.HostConfig.Resources.CPUQuota) / float64(c.HostConfig.Resources.CPUPeriod) // CPU cores as decimal
+		}
+		// Storage limits are typically handled by storage drivers and not directly in Resources
+		// For now, we'll keep storage as 0.0 unless we implement storage driver-specific logic
+		storage = 0.0
 	case types.Container:
 		id = c.Labels[labelID]
 		status = mapContainerState(c.State)
-		image = c.Image
 		labels = c.Labels
 		createdAt = time.Unix(c.Created, 0)
+		// Note: types.Container doesn't include detailed resource info like ContainerJSON
+		// These will remain 0.0 for this case
+		cpu, memory, storage = 0.0, 0.0, 0.0
 	case *types.Container:
 		id = c.Labels[labelID]
 		status = mapContainerState(c.State)
-		image = c.Image
 		labels = c.Labels
 		createdAt = time.Unix(c.Created, 0)
+		// Note: types.Container doesn't include detailed resource info like ContainerJSON
+		// These will remain 0.0 for this case
+		cpu, memory, storage = 0.0, 0.0, 0.0
 	}
 
 	// --- Restored Original logic ---
@@ -169,34 +183,23 @@ func containerToBox(c interface{}) *model.Box {
 		}
 	}
 
-	// TODO: better way to determine box type
-	boxType := "linux" // default
-	if t, exists := labels["gbox.type"]; exists {
-		boxType = t
-	} else if strings.Contains(image, "android") {
-		boxType = "android"
-	}
-
 	// Use current time as UpdatedAt (could be enhanced to track actual updates)
 	updatedAt := time.Now()
 
 	return &model.Box{
-		ID:          id,
-		Status:      status,
-		Image:       image,
-		CreatedAt:   createdAt,
-		ExpiresAt:   expiresAt,
-		Type:        boxType,
-		UpdatedAt:   updatedAt,
-		ExtraLabels: extraLabels,
+		ID:        id,
+		Status:    status,
+		CreatedAt: createdAt,
+		ExpiresAt: expiresAt,
+		UpdatedAt: updatedAt,
 		Config: model.LinuxAndroidBoxConfig{
 			Envs:       envMap,
 			Labels:     extraLabels, // Use the cleaned extra labels
 			WorkingDir: workingDir,
-			// TODO: extract from container limits if available
-			CPU:     0.0,
-			Memory:  0.0,
-			Storage: 0.0,
+			// Resource limits extracted from container configuration
+			CPU:     cpu,
+			Memory:  memory,
+			Storage: storage,
 			Browser: model.LinuxAndroidBoxConfigBrowser{
 				Type:    "",
 				Version: "",
@@ -234,7 +237,7 @@ func mapContainerState(state string) string {
 	}
 }
 
-func PrepareLabels(boxID string, p *model.BoxCreateParams) map[string]string {
+func PrepareLabels(boxID string, p *model.LinuxAndroidBoxCreateParam) map[string]string {
 	labels := map[string]string{
 		labelID:        boxID,
 		labelName:      "gbox",
@@ -250,20 +253,24 @@ func PrepareLabels(boxID string, p *model.BoxCreateParams) map[string]string {
 		"com.docker.compose.oneoff":  "False",
 	}
 
-	// Add command configuration to labels if provided
-	if p.Cmd != "" {
-		labels[labelPrefix+".cmd"] = p.Cmd
+	// Type
+	labels[labelPrefix+".type"] = p.Type
+
+	// Expires in
+	if p.Config.ExpiresIn != "" {
+		labels[labelPrefix+".expires_in"] = p.Config.ExpiresIn
 	}
-	if len(p.Args) > 0 {
-		labels[labelPrefix+".args"] = JoinArgs(p.Args)
-	}
-	if p.WorkingDir != "" {
-		labels[labelPrefix+".working-dir"] = p.WorkingDir
+
+	// Environment variables
+	if p.Config.Envs != nil {
+		for k, v := range p.Config.Envs {
+			labels[labelPrefix+".env."+k] = v
+		}
 	}
 
 	// Add custom labels with prefix
-	if p.ExtraLabels != nil {
-		for k, v := range p.ExtraLabels {
+	if p.Config.Labels != nil {
+		for k, v := range p.Config.Labels {
 			labels[labelPrefix+".extra."+k] = v
 		}
 	}

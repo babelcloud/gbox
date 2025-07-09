@@ -6,17 +6,21 @@ import (
 
 // Box represents a sandbox box
 type Box struct {
-	ID          string            `json:"id"`
-	Status      string            `json:"status"`
-	Image       string            `json:"image"`
-	ExtraLabels map[string]string `json:"extra_labels,omitempty"`
-	// This field is a union of [LinuxBoxConfig], [AndroidBoxConfig]
+	ID        string                `json:"id"`
 	Config    LinuxAndroidBoxConfig `json:"config"`
 	CreatedAt time.Time             `json:"createdAt"`
-	ExpiresAt time.Time             `json:"expiresAt"`
-	Type      string                `json:"type"`
+	Status    string                `json:"status"`
 	UpdatedAt time.Time             `json:"updatedAt"`
+	ExpiresAt time.Time             `json:"expiresAt"`
+	Type      BoxType               `json:"type"`
 }
+
+type BoxType string
+
+const (
+	BoxTypeLinux   BoxType = "linux"
+	BoxTypeAndroid BoxType = "android"
+)
 
 type LinuxAndroidBoxConfig struct {
 	// This field is a union of [LinuxBoxConfigBrowser], [AndroidBoxConfigBrowser]

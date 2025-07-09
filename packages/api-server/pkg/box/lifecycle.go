@@ -1,10 +1,5 @@
 package model
 
-import (
-	"io"
-	"time"
-)
-
 // ProgressStatus defines the type for progress statuses.
 // These are used in ProgressUpdate messages.
 type ProgressStatus string
@@ -26,33 +21,10 @@ type ProgressUpdate struct {
 	ImageID string         `json:"imageId,omitempty"` // Image ID, if relevant (e.g., after a successful image pull)
 }
 
-// BoxCreateParams represents a request to create a box
-type BoxCreateParams struct {
-	// Legacy parameters for backwards compatibility
-	Image                      string            `json:"image,omitempty"`
-	ImagePullSecret            string            `json:"image_pull_secret,omitempty"` // For docker: base64 encoded auth string, for k8s: secret name
-	Env                        map[string]string `json:"env,omitempty"`
-	Cmd                        string            `json:"cmd,omitempty"`
-	Args                       []string          `json:"args,omitempty"`
-	WorkingDir                 string            `json:"working_dir,omitempty"`
-	ExtraLabels                map[string]string `json:"extra_labels,omitempty"`
-	Volumes                    []VolumeMount     `json:"volumes,omitempty"`                        // Volume mounts for the container
-	WaitForReady               bool              `json:"wait_for_ready,omitempty"`                 // + Wait for box to be ready (healthy)
-	WaitForReadyTimeoutSeconds int               `json:"wait_for_ready_timeout_seconds,omitempty"` // + Timeout for readiness check
-	CreateTimeoutSeconds       int               `json:"create_timeout_seconds,omitempty"`         // Timeout for the create operation itself, specifically for non-streaming image pulls
-
-	// Internal fields (not serialized)
-	Timeout        time.Duration `json:"-"` // Timeout duration for image pull operation (from query param, not serialized)
-	ProgressWriter io.Writer     `json:"-"` // Writer for progress updates (not serialized)
-
-	// SDK format support - inline fields for Linux/Android box creation
-	*LinuxAndroidBoxCreateParam `json:",inline"`
-}
-
 // LinuxAndroidBoxCreateParam represents parameters for creating Linux or Android boxes
 // This struct is used inline in BoxCreateParams to support SDK format
 type LinuxAndroidBoxCreateParam struct {
-	Timeout string               `json:"timeout,omitempty"` // Timeout for the box operation (e.g., "30s")
+	Type    string               `json:"type"`              // Type of box to create (linux, android)
 	Wait    bool                 `json:"wait,omitempty"`    // Wait for the box operation to complete
 	Config  CreateBoxConfigParam `json:"config"`            // Box configuration
 }

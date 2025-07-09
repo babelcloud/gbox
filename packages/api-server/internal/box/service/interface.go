@@ -15,9 +15,7 @@ type BoxService interface {
 	// Box lifecycle operations
 	List(ctx context.Context, params *model.BoxListParams) (*model.BoxListResult, error)
 	Get(ctx context.Context, id string) (*model.Box, error)
-	Create(ctx context.Context, params *model.BoxCreateParams, progressWriter io.Writer) (*model.Box, error)
-	// these are only supported for cloud version
-	CreateLinuxBox(ctx context.Context, params *model.LinuxBoxCreateParam) (*model.Box, error)
+	CreateLinuxBox(ctx context.Context, params *model.LinuxAndroidBoxCreateParam) (*model.Box, error)
 	CreateAndroidBox(ctx context.Context, params *model.AndroidBoxCreateParam) (*model.Box, error)
 	Delete(ctx context.Context, id string, params *model.BoxDeleteParams) (*model.BoxDeleteResult, error)
 	DeleteAll(ctx context.Context, params *model.BoxesDeleteParams) (*model.BoxesDeleteResult, error)
