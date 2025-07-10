@@ -18,10 +18,10 @@ import {
   GET_SCREENSHOT_DESCRIPTION,
   getScreenshotParamsSchema,
   handleGetScreenshot,
-  AI_ACTION_TOOL,
-  AI_ACTION_DESCRIPTION,
-  aiActionParamsSchema,
-  handleAiAction,
+  UI_ACTION_TOOL,
+  UI_ACTION_DESCRIPTION,
+  uiActionParamsSchema,
+  handleUiAction,
   INSTALL_APK_TOOL,
   INSTALL_APK_DESCRIPTION,
   installApkParamsSchema,
@@ -46,6 +46,10 @@ import {
   PRESS_KEY_DESCRIPTION,
   pressKeyParamsSchema,
   handlePressKey,
+  handleTypeText,
+  TYPE_TEXT_TOOL,
+  TYPE_TEXT_DESCRIPTION,
+  typeTextParamsSchema,
 } from "./tools/index.js";
 import type { LogFn } from "./types.js";
 import type { LoggingMessageNotification } from "@modelcontextprotocol/sdk/types.js";
@@ -178,10 +182,10 @@ mcpServer.tool(
 );
 
 mcpServer.tool(
-  AI_ACTION_TOOL,
-  AI_ACTION_DESCRIPTION,
-  aiActionParamsSchema,
-  handleAiAction(logger)
+  UI_ACTION_TOOL,
+  UI_ACTION_DESCRIPTION,
+  uiActionParamsSchema,
+  handleUiAction(logger)
 );
 
 mcpServer.tool(
@@ -224,6 +228,13 @@ mcpServer.tool(
   PRESS_KEY_DESCRIPTION,
   pressKeyParamsSchema,
   handlePressKey(logger)
+);
+
+mcpServer.tool(
+  TYPE_TEXT_TOOL,
+  TYPE_TEXT_DESCRIPTION,
+  typeTextParamsSchema,
+  handleTypeText(logger)
 );
 
 export { mcpServer, logger };

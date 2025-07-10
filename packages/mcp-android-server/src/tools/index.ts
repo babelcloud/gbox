@@ -32,11 +32,11 @@ export {
 
 // AI Action
 export {
-  AI_ACTION_TOOL,
-  AI_ACTION_DESCRIPTION,
-  aiActionParamsSchema,
-  handleAiAction,
-} from "./ai-action.js";
+  UI_ACTION_TOOL,
+  UI_ACTION_DESCRIPTION,
+  uiActionParamsSchema,
+  handleUiAction,
+} from "./ui-action.js";
 
 // APK Management
 export {
@@ -73,3 +73,11 @@ export {
   pressKeyParamsSchema,
   handlePressKey,
 } from "./press-key.js";
+
+// Type Text
+export {
+  TYPE_TEXT_TOOL,
+  TYPE_TEXT_DESCRIPTION,
+  typeTextParamsSchema,
+  handleTypeText,
+} from "./type-text.js";

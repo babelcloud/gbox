@@ -23,6 +23,10 @@ export const installApkParamsSchema = {
     .describe(
       "Local file path or HTTP(S) URL of the APK to install, for example: '/Users/jack/abc.apk', if local file provided, Gbox SDK will upload it to the box and install it. if apk is a url, Gbox SDK will download it to the box and install it(please make sure the url is public internet accessible)."
     ),
+  open: z
+    .boolean()
+    .optional()
+    .describe("Whether to open the app after installation. Will find and launch the launcher activity of the installed app. If there are multiple launcher activities, only one will be opened. If the installed APK has no launcher activity, this parameter will have no effect.")
 };
 
 export const uninstallApkParamsSchema = {
@@ -49,7 +53,7 @@ type CloseAppParams = z.infer<z.ZodObject<typeof closeAppParamsSchema>>;
 export function handleInstallApk(logger: MCPLogger) {
   return async (args: InstallApkParams) => {
     try {
-      const { boxId, apk } = args;
+      const { boxId, apk, open } = args;
       await logger.info("Installing APK", { boxId, apk });
       
       const box = await attachBox(boxId);
@@ -61,6 +65,10 @@ export function handleInstallApk(logger: MCPLogger) {
       // Map to SDK AndroidInstall type
       const installParams: AndroidInstall = { apk: apkPath! };
       const appOperator = await box.app.install(installParams);
+
+      if (open) {
+        await appOperator.open();
+      }
 
       await logger.info("APK installed successfully", { boxId, apk: apkPath });
 
