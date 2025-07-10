@@ -43,7 +43,6 @@ export const uiActionParamsSchema = {
       systemPrompt: z
         .string()
         .default("You are a helpful assistant that can operate Android devices. You are given an instruction and a background of the task to perform. You can see the current screen in the image. Analyze what you see and determine the next action needed to complete the task. Take your time to analyze the screen and plan your actions carefully. Tips: - You should execute the action directly by the instruction. - If you see the ADB Keyboard on the bottom of the screen, that means the field you should type is already focused. You should type directly no need to focus on the field. - You don't need to take screenshot before or after the action as it will be taken automatically by the action executor.")
-        .optional()
         .describe(
           "System prompt that defines the AI's behavior and capabilities when executing UI actions. This prompt instructs the AI on how to interpret the screen, understand user instructions, and determine the appropriate UI actions to take. A well-crafted system prompt can significantly improve the accuracy and reliability of AI-driven UI automation. If not provided, uses the default computer use instruction template that includes basic screen interaction guidelines."
         ),
