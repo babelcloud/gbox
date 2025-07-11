@@ -336,11 +336,15 @@ func outputClaudeCodeCommand(serverType, serverScriptAbs, mcpServerDir string) e
 	var envArgs []string
 	envArgs = append(envArgs, "-e", "MODE=stdio")
 
+	// Show clear warning and instructions
+	fmt.Println("⚠️  IMPORTANT: Claude Code MCP configuration is not complete, one final step required")
+	fmt.Println("📋 Copy the following command and execute it in your target project directory:")
+	fmt.Println("═══════════════════════════════════════════════════════════════════════")
+	fmt.Println()
+
 	// Check if we're in debug mode
 	if os.Getenv("DEBUG") == "true" {
 		// For debug mode, use pnpm dev
-		fmt.Println("Copy and execute the following command in your target directory:")
-		fmt.Println("----------------------------------------")
 		fmt.Printf("claude mcp add %s", serverName)
 		for _, arg := range envArgs {
 			fmt.Printf(" %s", arg)
@@ -348,8 +352,6 @@ func outputClaudeCodeCommand(serverType, serverScriptAbs, mcpServerDir string) e
 		fmt.Printf(" -- bash -c \"cd %s && pnpm --silent dev\"\n", mcpServerDir)
 	} else {
 		// For production mode, use the built script
-		fmt.Println("Copy and execute the following command in your target directory:")
-		fmt.Println("----------------------------------------")
 		fmt.Printf("claude mcp add %s", serverName)
 		for _, arg := range envArgs {
 			fmt.Printf(" %s", arg)
@@ -358,8 +360,10 @@ func outputClaudeCodeCommand(serverType, serverScriptAbs, mcpServerDir string) e
 	}
 
 	fmt.Println()
+	fmt.Println("═══════════════════════════════════════════════════════════════════════")
+
 	if serverType == "android" {
-		fmt.Println("Note: Android mcp server will automatically use API key from current profile.")
+		fmt.Println("Android server will automatically use API key from current profile")
 	}
 
 	return nil
