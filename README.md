@@ -95,7 +95,8 @@ gbox setup                                                  # initialize local r
 gbox cleanup                                                # clean up local runtime environment (alias: cluster cleanup)
 
 # Container (Box) management
-gbox box create --image python:3.9 --env DEBUG=true -- python -c "print('hello')"  # create a box
+gbox box create linux --label project=myapp                 # create a linux box
+gbox box create android --device-type virtual               # create a android box
 gbox box list                                               # list boxes
 gbox box terminate <box-id>                                 # terminate box
 gbox box exec <box-id> -- ls /                              # execute command inside box
