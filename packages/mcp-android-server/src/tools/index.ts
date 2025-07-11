@@ -73,3 +73,11 @@ export {
   pressKeyParamsSchema,
   handlePressKey,
 } from "./press-key.js";
+
+// Type Text
+export {
+  TYPE_TEXT_TOOL,
+  TYPE_TEXT_DESCRIPTION,
+  typeTextParamsSchema,
+  handleTypeText,
+} from "./type-text.js";
