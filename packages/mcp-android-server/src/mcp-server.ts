@@ -108,7 +108,8 @@ const logger = new MCPLogger(log);
 
 // Add prompt for APK testing rules
 const ANDROID_APK_TESTING_RULES = "android-apk-testing-rules";
-const ANDROID_APK_TESTING_RULES_DESCRIPTION = "Test the Android project on a virtual or physical device.";
+const ANDROID_APK_TESTING_RULES_DESCRIPTION =
+  "Test the Android project on a virtual or physical device.";
 const ANDROID_APK_TESTING_RULES_CONTENT = `# Gbox APK-Testing Rule
 
 ## Critical Rules
@@ -124,7 +125,7 @@ const ANDROID_APK_TESTING_RULES_CONTENT = `# Gbox APK-Testing Rule
 2. Open live-view for \`boxId\`.
 3. Install APK with absolute path \`/abs/path/to/repo/geoquiz/app/build/outputs/apk/debug/app-debug.apk\`.
 4. Launch the app.
-5. Use the ai_action tool to perform UI actions.
+5. Use the ui_action tool to perform UI actions.
 6. Keep reviewing the screenshots after the operation to determine if it is as expected.
 7. Keep action-review loop until all test done.
 </example>

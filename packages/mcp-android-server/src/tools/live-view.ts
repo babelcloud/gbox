@@ -4,7 +4,8 @@ import { attachBox } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 
 export const OPEN_LIVE_VIEW_TOOL = "open_live_view";
-export const OPEN_LIVE_VIEW_DESCRIPTION = "Open the live view URL for an Android box in the default browser.";
+export const OPEN_LIVE_VIEW_DESCRIPTION =
+  "Open the live view URL for an Android box in the default browser.";
 
 export const openLiveViewParamsSchema = {
   boxId: z.string().describe("ID of the box"),
@@ -18,7 +19,7 @@ export function handleOpenLiveView(logger: MCPLogger) {
     try {
       const { boxId } = args;
       await logger.info("Opening live view", { boxId });
-      
+
       const box = await attachBox(boxId);
       const liveViewUrl = await box.liveView();
 
@@ -33,11 +34,17 @@ export function handleOpenLiveView(logger: MCPLogger) {
       // Execute the command to open the browser
       exec(command, (err) => {
         if (err) {
-          console.error(`Failed to open browser for URL ${liveViewUrl.url}:`, err);
+          console.error(
+            `Failed to open browser for URL ${liveViewUrl.url}:`,
+            err
+          );
         }
       });
 
-      await logger.info("Live view opened successfully", { boxId, url: liveViewUrl.url });
+      await logger.info("Live view opened successfully", {
+        boxId,
+        url: liveViewUrl.url,
+      });
 
       return {
         content: [
@@ -48,12 +55,17 @@ export function handleOpenLiveView(logger: MCPLogger) {
         ],
       };
     } catch (error) {
-      await logger.error("Failed to open live view", { boxId: args?.boxId, error });
+      await logger.error("Failed to open live view", {
+        boxId: args?.boxId,
+        error,
+      });
       return {
         content: [
           {
             type: "text" as const,
-            text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            text: `Error: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
           },
         ],
         isError: true,

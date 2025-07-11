@@ -4,22 +4,32 @@ import type { MCPLogger } from "../mcp-logger.js";
 import type { ActionAI } from "gbox-sdk";
 import { sanitizeResult } from "./utils.js";
 
-
 export const UI_ACTION_TOOL = "ui_action";
-export const UI_ACTION_DESCRIPTION = "Use natural language instructions to perform UI operations on the box. You can describe what you want to do in plain language (e.g., ‘click the login button’, ‘scroll down to find settings’, ‘input my email address’), and the AI will automatically convert your instruction into the appropriate UI action and execute it on the box. But make sure the instruction is one step every time.";
-
+export const UI_ACTION_DESCRIPTION =
+  "Perform an action on the UI of the android box (natural language instruction). Here's some example instructions: \n\n" +
+  "Tap the email input field\n" +
+  "Tap the submit button\n" +
+  "Tap the plus button in the upper right corner\n" +
+  "Scroll up to next \n" +
+  "Fill the search field with text: 'gbox ai' \n" +
+  "Swipe to next screen\n" +
+  "Swipe up to next video\n" +
+  "Press back button\n" +
+  "Double click the video\n" +
+  "Slide the top slide to the next screen\n" +
+  "Pull down to refresh the page";
 export const uiActionParamsSchema = {
   boxId: z.string().describe("ID of the box"),
   instruction: z
     .string()
     .describe(
-      "Direct instruction of the UI action to perform, e.g. 'click the login button'"
+      "Direct instruction of the UI action to perform, e.g. 'Tap the login button'"
     ),
   background: z
     .string()
     .optional()
     .describe(
-      "Contextual background for the action, to help the AI understand previous steps"
+      "Contextual background for the action, to help the AI understand previous steps and the current state of the UI."
     ),
   includeScreenshot: z
     .boolean()
@@ -31,21 +41,23 @@ export const uiActionParamsSchema = {
     .enum(["base64", "storageKey"])
     .optional()
     .describe("Output format for screenshot URIs (default 'base64')"),
-  screenshotDelay: z
-    .string()
-    .regex(/^[0-9]+(ms|s|m|h)$/)
-    .optional()
-    .describe(
-      "Delay after performing the action before the final screenshot, e.g. '500ms'"
-    ),
   settings: z
     .object({
       systemPrompt: z
         .string()
-        .default("You are a helpful assistant that can operate Android devices. You are given an instruction and a background of the task to perform. You can see the current screen in the image. Analyze what you see and determine the next action needed to complete the task. Take your time to analyze the screen and plan your actions carefully. Tips: - You should execute the action directly by the instruction. - If you see the ADB Keyboard on the bottom of the screen, that means the field you should type is already focused. You should type directly no need to focus on the field. - You don't need to take screenshot before or after the action as it will be taken automatically by the action executor.")
+        .default(
+          "You are a helpful assistant that can operate Android devices. \n" +
+            "You are given an instruction and a background of the task to perform. \n" +
+            "You can see the current screen in the image. Analyze what you see and determine the next action needed to complete the task. \n" +
+            "Take your time to analyze the screen and plan your actions carefully. Tips: - You should execute the action directly by the instruction. \n" +
+            "- If you see the Keyboard on the bottom of the screen, that means the field you should type is already focused. You should type directly no need to focus on the field."
+        )
         .optional()
         .describe(
-          "System prompt that defines the AI's behavior and capabilities when executing UI actions. This prompt instructs the AI on how to interpret the screen, understand user instructions, and determine the appropriate UI actions to take. A well-crafted system prompt can significantly improve the accuracy and reliability of AI-driven UI automation. If not provided, uses the default computer use instruction template that includes basic screen interaction guidelines."
+          "System prompt that defines the AI's behavior and capabilities when executing UI actions. \n" +
+            "This prompt instructs the AI on how to interpret the screen, understand user instructions, and determine the appropriate UI actions to take. \n" +
+            "A well-crafted system prompt can significantly improve the accuracy and reliability of AI-driven UI automation. \n" +
+            "If not provided, uses the default computer use instruction template that includes basic screen interaction guidelines."
         ),
     })
     .optional()
@@ -58,9 +70,16 @@ type UiActionParams = z.infer<z.ZodObject<typeof uiActionParamsSchema>>;
 export function handleUiAction(logger: MCPLogger) {
   return async (args: UiActionParams) => {
     try {
-      const { boxId, instruction, background, includeScreenshot, outputFormat, screenshotDelay, settings } = args;
-      await logger.info("Performing AI action", { boxId, instruction });
-      
+      const {
+        boxId,
+        instruction,
+        background,
+        includeScreenshot,
+        outputFormat,
+        settings,
+      } = args;
+      await logger.info("Performing UI action", { boxId, instruction });
+
       const box = await attachBox(boxId);
 
       // Map to SDK ActionAI type
@@ -68,15 +87,17 @@ export function handleUiAction(logger: MCPLogger) {
         instruction,
         ...(background && { background }),
         includeScreenshot: includeScreenshot ?? false,
+        // cursor can handle base64 only.
         outputFormat: outputFormat ?? "base64",
-        ...(screenshotDelay && { screenshotDelay: screenshotDelay as ActionAI['screenshotDelay'] }),
-        ...(settings && { settings })
+        // 500ms meet most ui action cases.
+        screenshotDelay: "500ms",
       };
 
-      const result = await box.action.ai(actionParams) as any;
+      const result = (await box.action.ai(actionParams)) as any;
 
       // Prepare image contents for before and after screenshots
-      const images: Array<{ type: "image"; data: string; mimeType: string }> = [];
+      const images: Array<{ type: "image"; data: string; mimeType: string }> =
+        [];
 
       const parseUri = (uri: string) => {
         let mimeType = "image/png";
@@ -103,10 +124,16 @@ export function handleUiAction(logger: MCPLogger) {
         images.push({ type: "image", data: base64Data, mimeType });
       }
 
-      await logger.info("AI action completed", { boxId, imageCount: images.length });
+      await logger.info("UI action completed", {
+        boxId,
+        imageCount: images.length,
+      });
 
       // Build content array with text and images
-      const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [];
+      const content: Array<
+        | { type: "text"; text: string }
+        | { type: "image"; data: string; mimeType: string }
+      > = [];
 
       // Add text result with sanitized data
       content.push({
@@ -115,22 +142,27 @@ export function handleUiAction(logger: MCPLogger) {
       });
 
       // Add all images
-      images.forEach(img => {
+      images.forEach((img) => {
         content.push({
           type: "image" as const,
           data: img.data,
           mimeType: img.mimeType,
         });
       });
-      
+
       return { content };
     } catch (error) {
-      await logger.error("Failed to perform AI action", { boxId: args?.boxId, error });
+      await logger.error("Failed to perform AI action", {
+        boxId: args?.boxId,
+        error,
+      });
       return {
         content: [
           {
             type: "text" as const,
-            text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            text: `Error: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
           },
         ],
         isError: true,

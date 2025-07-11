@@ -3,7 +3,8 @@ import { gboxSDK } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 
 export const LIST_BOXES_TOOL = "list_boxes";
-export const LIST_BOXES_DESCRIPTION = "List all current boxes belonging to this API Key.";
+export const LIST_BOXES_DESCRIPTION =
+  "List all current boxes belonging to the current organization(API Key).";
 
 // Zod schema derived from BoxListParams in gbox-sdk
 export const listBoxesParamsSchema = {
@@ -40,10 +41,12 @@ export function handleListBoxes(logger: MCPLogger) {
   return async (args: ListBoxesParams) => {
     try {
       await logger.info("Listing boxes", args);
-      
+
       const boxes = await gboxSDK.listInfo(args);
 
-      await logger.info("Retrieved boxes list", { count: boxes?.data?.length || 0 });
+      await logger.info("Retrieved boxes list", {
+        count: boxes?.data?.length || 0,
+      });
 
       return {
         content: [
@@ -59,7 +62,9 @@ export function handleListBoxes(logger: MCPLogger) {
         content: [
           {
             type: "text" as const,
-            text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            text: `Error: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
           },
         ],
         isError: true,

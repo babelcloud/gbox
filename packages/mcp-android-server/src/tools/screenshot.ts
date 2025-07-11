@@ -4,7 +4,8 @@ import type { MCPLogger } from "../mcp-logger.js";
 import type { ActionScreenshot } from "gbox-sdk";
 
 export const GET_SCREENSHOT_TOOL = "get_screenshot";
-export const GET_SCREENSHOT_DESCRIPTION = "Take a screenshot of the current display for a given box.";
+export const GET_SCREENSHOT_DESCRIPTION =
+  "Take a screenshot of the current display for a given box.";
 
 export const getScreenshotParamsSchema = {
   boxId: z.string().describe("ID of the box"),
@@ -16,21 +17,23 @@ export const getScreenshotParamsSchema = {
 };
 
 // Define parameter types - infer from the Zod schema
-type GetScreenshotParams = z.infer<z.ZodObject<typeof getScreenshotParamsSchema>>;
+type GetScreenshotParams = z.infer<
+  z.ZodObject<typeof getScreenshotParamsSchema>
+>;
 
 export function handleGetScreenshot(logger: MCPLogger) {
   return async (args: GetScreenshotParams) => {
     try {
       const { boxId, outputFormat } = args;
       await logger.info("Taking screenshot", { boxId, outputFormat });
-      
+
       const box = await attachBox(boxId);
-      
+
       // Map to SDK ActionScreenshot type
       const actionParams: ActionScreenshot = {
-        outputFormat: outputFormat ?? "base64"
+        outputFormat: outputFormat ?? "base64",
       };
-      
+
       const result = await box.action.screenshot(actionParams);
 
       // The SDK returns a `uri` string. It may be a bare base64 string or a data URI.
@@ -58,12 +61,17 @@ export function handleGetScreenshot(logger: MCPLogger) {
         ],
       };
     } catch (error) {
-      await logger.error("Failed to take screenshot", { boxId: args?.boxId, error });
+      await logger.error("Failed to take screenshot", {
+        boxId: args?.boxId,
+        error,
+      });
       return {
         content: [
           {
             type: "text" as const,
-            text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            text: `Error: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
           },
         ],
         isError: true,

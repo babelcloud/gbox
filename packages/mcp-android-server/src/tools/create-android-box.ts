@@ -4,7 +4,8 @@ import { gboxSDK } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 
 export const CREATE_ANDROID_BOX_TOOL = "create_android_box";
-export const CREATE_ANDROID_BOX_DESCRIPTION = "Create a fresh Android box and return its metadata.";
+export const CREATE_ANDROID_BOX_DESCRIPTION =
+  "Create a fresh Android box and return its metadata.";
 
 export const createAndroidBoxParamsSchema = {
   config: z
@@ -34,23 +35,27 @@ export const createAndroidBoxParamsSchema = {
   wait: z
     .boolean()
     .optional()
-    .describe("Wait for the box operation to be completed, default is true"),
+    .describe("Waiting for Box to be assigned an instance, default is true"),
 };
 
 // Define parameter types - infer from the Zod schema
-type CreateAndroidBoxParams = z.infer<z.ZodObject<typeof createAndroidBoxParamsSchema>>;
+type CreateAndroidBoxParams = z.infer<
+  z.ZodObject<typeof createAndroidBoxParamsSchema>
+>;
 
 export function handleCreateAndroidBox(logger: MCPLogger) {
   return async (args: CreateAndroidBoxParams) => {
     try {
       await logger.info("Creating Android box", args);
-      
+
       const created = await gboxSDK.create({
         type: "android",
         ...args,
       } as CreateAndroid);
 
-      await logger.info("Android box created successfully", { boxId: created.data?.id });
+      await logger.info("Android box created successfully", {
+        boxId: created.data?.id,
+      });
 
       return {
         content: [
@@ -66,7 +71,9 @@ export function handleCreateAndroidBox(logger: MCPLogger) {
         content: [
           {
             type: "text" as const,
-            text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            text: `Error: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
           },
         ],
         isError: true,

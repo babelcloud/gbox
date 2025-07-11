@@ -30,7 +30,7 @@ export {
   handleGetScreenshot,
 } from "./screenshot.js";
 
-// AI Action
+// UI Action
 export {
   UI_ACTION_TOOL,
   UI_ACTION_DESCRIPTION,
@@ -73,11 +73,3 @@ export {
   pressKeyParamsSchema,
   handlePressKey,
 } from "./press-key.js";
-
-// Type Text
-export {
-  TYPE_TEXT_TOOL,
-  TYPE_TEXT_DESCRIPTION,
-  typeTextParamsSchema,
-  handleTypeText,
-} from "./type-text.js";
