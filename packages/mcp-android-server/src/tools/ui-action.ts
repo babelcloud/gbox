@@ -52,7 +52,6 @@ export const uiActionParamsSchema = {
             "Take your time to analyze the screen and plan your actions carefully. Tips: - You should execute the action directly by the instruction. \n" +
             "- If you see the Keyboard on the bottom of the screen, that means the field you should type is already focused. You should type directly no need to focus on the field."
         )
-        .optional()
         .describe(
           "System prompt that defines the AI's behavior and capabilities when executing UI actions. \n" +
             "This prompt instructs the AI on how to interpret the screen, understand user instructions, and determine the appropriate UI actions to take. \n" +
