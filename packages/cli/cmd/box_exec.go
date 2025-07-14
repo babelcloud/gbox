@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"syscall"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
+	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -26,6 +28,7 @@ type BoxExecOptions struct {
 	Tty         bool
 	BoxID       string
 	Command     []string
+	WorkingDir  string
 }
 
 // BoxExecRequest represents the request to execute a command in a box
@@ -121,6 +124,7 @@ options:
 	// Add flags
 	cmd.Flags().BoolVarP(&opts.Interactive, "interactive", "i", false, "Enable interactive mode (with stdin)")
 	cmd.Flags().BoolVarP(&opts.Tty, "tty", "t", false, "Force TTY allocation")
+	cmd.Flags().StringVarP(&opts.WorkingDir, "workdir", "w", "", "Working directory inside the container")
 
 	return cmd
 }
@@ -135,6 +139,11 @@ func runExec(opts *BoxExecOptions) error {
 	// Update opts.BoxID to the fully resolved ID for subsequent use if needed,
 	// though for this function, we will primarily use resolvedBoxID directly.
 	// opts.BoxID = resolvedBoxID // Optional: update opts if it's used elsewhere by reference
+
+	// 如果需要交互式/TTY，则直接走 WebSocket 分支
+	if opts.Interactive || opts.Tty {
+		return runExecWebSocket(opts, resolvedBoxID)
+	}
 
 	debug := os.Getenv("DEBUG") == "true"
 	apiBase := config.GetLocalAPIURL()
@@ -164,12 +173,13 @@ func runExec(opts *BoxExecOptions) error {
 	}
 
 	request := BoxExecRequest{
-		Cmd:    []string{opts.Command[0]},
-		Args:   opts.Command[1:],
-		Stdin:  stdinAvailable,
-		Stdout: true,
-		Stderr: true,
-		Tty:    opts.Tty,
+		Cmd:     []string{opts.Command[0]},
+		Args:    opts.Command[1:],
+		Stdin:   stdinAvailable,
+		Stdout:  true,
+		Stderr:  true,
+		Tty:     opts.Tty,
+		WorkDir: opts.WorkingDir,
 	}
 
 	if opts.Tty {
@@ -258,6 +268,166 @@ func runExec(opts *BoxExecOptions) error {
 	} else {
 		return handleMultiplexedStream(hijacker, stdinAvailable)
 	}
+}
+
+// runExecWebSocket 通过新的 WebSocket API 执行交互式命令
+func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
+
+	apiBase := strings.TrimSuffix(config.GetCloudAPIURL(), "/")
+	// 将 http(s):// 转成 ws(s)://
+	wsBase := apiBase
+	if strings.HasPrefix(apiBase, "https://") {
+		wsBase = "wss://" + strings.TrimPrefix(apiBase, "https://")
+	} else if strings.HasPrefix(apiBase, "http://") {
+		wsBase = "ws://" + strings.TrimPrefix(apiBase, "http://")
+	}
+
+	wsURL := fmt.Sprintf("%s/api/v1/boxes/%s/exec", wsBase, resolvedBoxID)
+
+	// 解析 URL 以确保合法
+	parsedURL, err := url.Parse(wsURL)
+	if err != nil {
+		return fmt.Errorf("invalid websocket url: %v", err)
+	}
+
+	headers := http.Header{}
+	// Try to set API Key header if available
+	apiKey := os.Getenv("GBOX_API_KEY")
+	if apiKey == "" {
+		pm := NewProfileManager()
+		if err := pm.Load(); err == nil {
+			if cur := pm.GetCurrent(); cur != nil {
+				apiKey = cur.APIKey
+			}
+		}
+	}
+	if apiKey != "" {
+		headers.Set("X-API-Key", apiKey)
+	}
+
+	conn, _, err := websocket.DefaultDialer.Dial(parsedURL.String(), headers)
+	if err != nil {
+		return fmt.Errorf("failed to connect websocket: %v", err)
+	}
+	defer conn.Close()
+
+	// 发送初始化指令
+	initPayload := map[string]interface{}{
+		"command": map[string]interface{}{
+			"commands":    opts.Command,
+			"interactive": true,
+			"workingDir":  opts.WorkingDir,
+		},
+	}
+	// TODO If workingDir is not exists, it should be created by the server.
+	if err := conn.WriteJSON(initPayload); err != nil {
+		return fmt.Errorf("failed to send init payload: %v", err)
+	}
+
+	// 若开启 TTY，切换终端到 raw
+	var oldState *term.State
+	if opts.Tty {
+		state, err := term.MakeRaw(int(os.Stdin.Fd()))
+		if err != nil {
+			return fmt.Errorf("failed to set terminal raw mode: %v", err)
+		}
+		oldState = state
+		defer term.Restore(int(os.Stdin.Fd()), oldState)
+	}
+
+	errChan := make(chan error, 2)
+	// 读取远端输出
+	go func() {
+		for {
+			msgType, data, err := conn.ReadMessage()
+			if err != nil {
+				// Treat normal close codes as EOF to avoid noisy error message
+				if websocket.IsCloseError(err,
+					websocket.CloseNormalClosure,    // 1000
+					websocket.CloseGoingAway,        // 1001
+					websocket.CloseNoStatusReceived, // 1005
+					websocket.CloseAbnormalClosure,  // 1006
+				) {
+					errChan <- io.EOF
+				} else {
+					errChan <- err
+				}
+				return
+			}
+
+			switch msgType {
+			case websocket.TextMessage:
+				// 尝试解析为 JSON 事件
+				var evt struct {
+					Event   string `json:"event"`
+					Data    string `json:"data"`
+					Message string `json:"message"`
+				}
+				if jsonErr := json.Unmarshal(data, &evt); jsonErr == nil && evt.Event != "" {
+					switch evt.Event {
+					case "stdout":
+						os.Stdout.Write([]byte(evt.Data))
+					case "stderr":
+						os.Stderr.Write([]byte(evt.Data))
+					case "end":
+						errChan <- io.EOF
+						return
+					case "error":
+						errChan <- fmt.Errorf(evt.Message)
+						return
+					default:
+						os.Stdout.Write(data)
+					}
+				} else {
+					os.Stdout.Write(data)
+				}
+			case websocket.BinaryMessage:
+				// 直接写到 stdout
+				os.Stdout.Write(data)
+			}
+		}
+	}()
+
+	// 发送本地输入
+	if opts.Interactive || opts.Tty {
+		go func() {
+			buffer := make([]byte, 1024)
+			for {
+				n, err := os.Stdin.Read(buffer)
+				if n > 0 {
+					if writeErr := conn.WriteMessage(websocket.BinaryMessage, buffer[:n]); writeErr != nil {
+						if websocket.IsCloseError(writeErr,
+							websocket.CloseNormalClosure,
+							websocket.CloseGoingAway,
+							websocket.CloseNoStatusReceived,
+							websocket.CloseAbnormalClosure,
+						) {
+							errChan <- io.EOF
+						} else {
+							errChan <- writeErr
+						}
+						return
+					}
+				}
+				if err != nil {
+					if err != io.EOF {
+						errChan <- err
+					} else {
+						// 正常 EOF，发送关闭帧
+						conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+					}
+					return
+				}
+			}
+		}()
+	}
+
+	// 等待任意 goroutine 结束
+	err = <-errChan
+	if err == io.EOF {
+		return nil
+	}
+	return err
 }
 
 // handleRawStream handles raw stream in TTY mode
