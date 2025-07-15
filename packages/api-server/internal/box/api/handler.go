@@ -372,38 +372,6 @@ func (h *BoxHandler) ExecBox(req *restful.Request, resp *restful.Response) {
 func (h *BoxHandler) ExecBoxWS(req *restful.Request, resp *restful.Response) {
 	boxID := req.PathParameter("id")
 
-	// --- Parameter Parsing from Query ---
-	// Example: /ws/boxes/{id}/exec?cmd=bash&arg=-c&arg=ls%20-l&tty=true&workingDir=/path/to/working
-	queryParams := req.Request.URL.Query()
-	cmd := queryParams["cmd"]                      // Returns a slice
-	args := queryParams["arg"]                     // Returns a slice for multiple 'arg' params
-	ttyStr := queryParams.Get("tty")               // Get single value
-	workingDirStr := queryParams.Get("workingDir") // Get working directory
-
-	if len(cmd) == 0 {
-		// Use http.Error for upgrade failures before connection is established
-		http.Error(resp.ResponseWriter, "Missing 'cmd' query parameter", http.StatusBadRequest)
-		return
-	}
-
-	tty := false
-	if ttyStr != "" {
-		var err error
-		tty, err = strconv.ParseBool(ttyStr)
-		if err != nil {
-			http.Error(resp.ResponseWriter, "Invalid 'tty' query parameter, must be true or false", http.StatusBadRequest)
-			return
-		}
-	}
-
-	execParams := &model.BoxExecWSParams{
-		Cmd:        cmd, // Use the first command element
-		Args:       args,
-		TTY:        tty,
-		WorkingDir: workingDirStr, // Set working directory
-	}
-	//-------------------------------------
-
 	// Upgrade HTTP connection to WebSocket
 	wsConn, err := upgrader.Upgrade(resp.ResponseWriter, req.Request, nil)
 	if err != nil {
@@ -414,7 +382,39 @@ func (h *BoxHandler) ExecBoxWS(req *restful.Request, resp *restful.Response) {
 	}
 	defer wsConn.Close()
 
-	log.Infof("ExecBoxWS [%s]: WebSocket connection established. TTY: %v, Cmd: %v, Args: %v, WorkingDir: %s", boxID, tty, cmd, args, workingDirStr)
+	// The first message from the client contains the command to execute.
+	var initPayload struct {
+		Command struct {
+			Commands    []string `json:"commands"`
+			Interactive bool     `json:"interactive"`
+			WorkingDir  string   `json:"workingDir"`
+		} `json:"command"`
+	}
+
+	if err := wsConn.ReadJSON(&initPayload); err != nil {
+		log.Errorf("ExecBoxWS [%s]: Failed to read init payload: %v", boxID, err)
+		// We can't write a normal HTTP error, but we can send a WebSocket close message.
+		wsConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInvalidFramePayloadData, "Invalid init payload"))
+		return
+	}
+
+	// Prepare parameters for the service call from the initial payload.
+	execParams := &model.BoxExecWSParams{
+		TTY:        initPayload.Command.Interactive, // Assume interactive means TTY for now.
+		WorkingDir: initPayload.Command.WorkingDir,
+	}
+	if len(initPayload.Command.Commands) > 0 {
+		execParams.Cmd = []string{initPayload.Command.Commands[0]}
+		if len(initPayload.Command.Commands) > 1 {
+			execParams.Args = initPayload.Command.Commands[1:]
+		}
+	} else {
+		log.Errorf("ExecBoxWS [%s]: No command provided in init payload", boxID)
+		wsConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInvalidFramePayloadData, "No command provided"))
+		return
+	}
+
+	log.Infof("ExecBoxWS [%s]: WebSocket connection established. TTY: %v, Cmd: %v, Args: %v, WorkingDir: %s", boxID, execParams.TTY, execParams.Cmd, execParams.Args, execParams.WorkingDir)
 
 	// Execute command using the WebSocket service method
 	// Use context from the original request

@@ -2,7 +2,6 @@ package docker
 
 import (
 	"context"
-	/*
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,17 +10,15 @@ import (
 	"strings"
 	"sync"
 	"time"
-	*/
 
-	// "github.com/babelcloud/gbox/packages/api-server/internal/common"
+	"github.com/babelcloud/gbox/packages/api-server/internal/common"
 	model "github.com/babelcloud/gbox/packages/api-server/pkg/box"
-	//"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types"
 	"github.com/gorilla/websocket"
 )
 
 // ExecWS implements Service.ExecWS for WebSocket connections
 func (s *Service) ExecWS(ctx context.Context, id string, params *model.BoxExecWSParams, wsConn *websocket.Conn) (*model.BoxExecResult, error) {
-	/*
 	s.accessTracker.Update(id)
 
 	containerInfo, err := s.getContainerByID(ctx, id)
@@ -227,20 +224,6 @@ loop:
 	}
 	s.logger.Infof("ExecWS [%s]: Command finished. Exit Code: %d. Final Error recorded: %v", id, exitCode, firstError)
 
-	// 1. Attempt to send Exit Code JSON
-	if inspectErr == nil {
-		exitMsg := map[string]interface{}{"type": "exit", "exitCode": exitCode}
-		if writeErr := wsConn.WriteJSON(exitMsg); writeErr != nil {
-			if !websocket.IsCloseError(writeErr, websocket.CloseNormalClosure, websocket.CloseGoingAway) && !isConnectionClosed(writeErr) {
-				s.logger.Warnf("ExecWS [%s]: Failed to send exit code JSON message (connection might be closed): %v", id, writeErr)
-			} else {
-				s.logger.Infof("ExecWS [%s]: Could not send exit code JSON; connection already closed: %v", id, writeErr)
-			}
-		} else {
-			s.logger.Debugf("ExecWS [%s]: Sent exit code %d over WebSocket.", id, exitCode)
-		}
-	}
-
 	// 2. Attempt to send a WebSocket close frame
 	s.logger.Debugf("ExecWS [%s]: Attempting to send WebSocket close frame from server side.", id)
 	// Ignore error here, as the connection might already be closing or closed.
@@ -265,8 +248,6 @@ loop:
 	return &model.BoxExecResult{
 		ExitCode: exitCode,
 	}, nil
-	*/
-	return nil, nil
 }
 
 // wsWriter is a helper to wrap a websocket.Conn to satisfy io.Writer for io.Copy

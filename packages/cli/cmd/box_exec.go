@@ -272,8 +272,20 @@ func runExec(opts *BoxExecOptions) error {
 
 // runExecWebSocket 通过新的 WebSocket API 执行交互式命令
 func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
+	pm := NewProfileManager()
+	if err := pm.Load(); err != nil {
+		// handle error, maybe default to cloud
+	}
+	currentProfile := pm.GetCurrent()
+	isLocal := currentProfile != nil && (currentProfile.Name == "local" || currentProfile.OrganizationName == "local")
 
-	apiBase := strings.TrimSuffix(config.GetCloudAPIURL(), "/")
+	var apiBase string
+	if isLocal {
+		apiBase = strings.TrimSuffix(config.GetLocalAPIURL(), "/")
+	} else {
+		apiBase = strings.TrimSuffix(config.GetCloudAPIURL(), "/")
+	}
+
 	// 将 http(s):// 转成 ws(s)://
 	wsBase := apiBase
 	if strings.HasPrefix(apiBase, "https://") {
@@ -294,11 +306,9 @@ func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
 	// Try to set API Key header if available
 	apiKey := os.Getenv("GBOX_API_KEY")
 	if apiKey == "" {
-		pm := NewProfileManager()
-		if err := pm.Load(); err == nil {
-			if cur := pm.GetCurrent(); cur != nil {
-				apiKey = cur.APIKey
-			}
+		// pm is already initialized
+		if cur := pm.GetCurrent(); cur != nil {
+			apiKey = cur.APIKey
 		}
 	}
 	if apiKey != "" {

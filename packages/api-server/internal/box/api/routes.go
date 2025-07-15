@@ -104,13 +104,13 @@ func RegisterRoutes(ws *restful.WebService, boxHandler *BoxHandler) {
 		Returns(404, "Not Found", model.BoxError{}).
 		Returns(500, "Internal Server Error", model.BoxError{}))
 
-	// // WebSocket route for executing commands
-	// ws.Route(ws.GET("/boxes/{id}/exec/ws").To(boxHandler.ExecBoxWS).
-	// 	Doc("execute a command in a box via WebSocket").
-	// 	Param(ws.PathParameter("id", "identifier of the box").DataType("string")).
-	// 	Returns(400, "Bad Request", model.BoxError{}). // e.g., missing cmd parameter
-	// 	Returns(404, "Not Found", model.BoxError{}).
-	// 	Returns(500, "Internal Server Error", model.BoxError{})) // e.g., upgrade failed
+	// WebSocket route for executing commands
+	ws.Route(ws.GET("/boxes/{id}/exec").To(boxHandler.ExecBoxWS).
+		Doc("execute a command in a box via WebSocket").
+		Param(ws.PathParameter("id", "identifier of the box").DataType("string")).
+		Returns(400, "Bad Request", model.BoxError{}). // e.g., missing cmd parameter
+		Returns(404, "Not Found", model.BoxError{}).
+		Returns(500, "Internal Server Error", model.BoxError{})) // e.g., upgrade failed
 
 	// // Box Archive Operations
 	// ws.Route(ws.HEAD("/boxes/{id}/archive").To(boxHandler.HeadArchive).
