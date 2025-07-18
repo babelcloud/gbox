@@ -54,6 +54,7 @@ import {
 import type { LogFn } from "./types.js";
 import type { LoggingMessageNotification } from "@modelcontextprotocol/sdk/types.js";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import z from "zod";
 
 const isSse = config.mode === "sse";
 
@@ -107,45 +108,68 @@ const log: LogFn = async (
 const logger = new MCPLogger(log);
 
 // Add prompt for APK testing rules
-const ANDROID_APK_TESTING_RULES = "android-apk-testing-rules";
-const ANDROID_APK_TESTING_RULES_DESCRIPTION =
-  "Test the Android project on a virtual or physical device.";
-const ANDROID_APK_TESTING_RULES_CONTENT = `# Gbox APK-Testing Rule
+const ANDROID_APK_TESTING_GUIDE = "android-apk-testing-guide";
+const ANDROID_APK_TESTING_GUIDE_DESCRIPTION =
+  "Test the Android project on gbox (virtual or physical device).";
+const ANDROID_APK_TESTING_GUIDE_CONTENT = `## 🔒 Critical Rules
 
-## Critical Rules
-- Immediately after creating or starting a Gbox Android box, open its live-view URL (\`open_live_view\`) in the default browser.
-- Compute the absolute path of \`./app/build/outputs/apk/debug/app-debug.apk\` (e.g. \`/Users/jack/workspace/geoquiz/app/build/outputs/apk/debug/app-debug.apk\`) and pass that to \`install_apk\`.
-- Wait for successful installation before launching or opening the app.
-- If multiple boxes are running, operate only on the box created for the current test session.
+- **Always** open the Android box's **Live View URL** (via MCP Tool \`open_live_view\`) in your default browser **immediately after** creating or starting a Gbox Android box.
+- Use the **absolute file path** to your APK (e.g., \`/Users/jack/workspace/geoquiz/app/build/outputs/apk/debug/app-debug.apk\`) when calling the \`install_apk\` tool.
+- **Wait for the APK to finish installing** before interacting with the app.  
+  You can pass the parameter \`open=true\` to automatically launch the app after installation.
+- If multiple boxes are running, ensure you're **only operating on the correct box** for your current test session.
+- Use MCP Tool adb_shell to execute adb shell in log watching or other infomation obtaining.
+- Use MCP Tool logcat to get the log of the app.
+- Do not try to exec adb command in Terminal, because the Android box is running on cloud, there is no adb connection locally.
+---
 
-## Examples
-<example>
-✅ Correct Flow
-1. Create Android box → obtain \`boxId\`.
-2. Open live-view for \`boxId\`.
-3. Install APK with absolute path \`/abs/path/to/repo/geoquiz/app/build/outputs/apk/debug/app-debug.apk\`.
-4. Launch the app.
-5. Use the ui_action tool to perform UI actions.
-6. Keep reviewing the screenshots after the operation to determine if it is as expected.
-7. Keep action-review loop until all test done.
-</example>
+## 🛠️ Using the \`ui_action\` Tool for UI Testing
 
-<example type="invalid">
-❌ Forgetting to open the live-view URL.
-❌ Passing the relative APK path \`./app/build/outputs/apk/debug/app-debug.apk\` to \`install_apk\`.
-</example>`;
+Use the \`ui_action\` tool to control the Android UI with natural language commands.  
+Here are some example commands you can use:
+
+- Tap the email input field  
+- Tap the submit button  
+- Tap the plus button in the upper right corner  
+- Fill the search field with text: \`gbox ai\`  
+- Press the back button  
+- Double-click the video  
+
+---
+
+## ✅ Example: Proper Testing Flow
+
+1. **Create** a new Android box and obtain its \`boxId\`.
+2. **Open** the Live View for that \`boxId\` in your browser.
+3. **Install** the APK using its **absolute path**, e.g.:  /abs/path/to/repo/geoquiz/app/build/outputs/apk/debug/app-debug.apk, Add the parameter \`open=true\` if you'd like the app to launch automatically.
+4. **Use \`ui_action\`** to simulate user interactions based on your test case.
+5. After each action, **review the Live View screenshot** to confirm the result.
+6. Continue the **action-review loop** until your test scenario is complete.
+
+---
+
+## ❌ Common Mistakes to Avoid
+
+- 🚫 Not opening the **Live View URL** right after creating the box.
+- 🚫 Using a **relative path** (e.g., \`./app/build/outputs/apk/debug/app-debug.apk\`) for \`install_apk\`.
+- 🚫 Sending **multiple UI actions in one command** or using **unclear/vague language** with \`ui_action\`.
+`;
 
 mcpServer.prompt(
-  ANDROID_APK_TESTING_RULES,
-  ANDROID_APK_TESTING_RULES_DESCRIPTION,
+  ANDROID_APK_TESTING_GUIDE,
+  ANDROID_APK_TESTING_GUIDE_DESCRIPTION,
   () => {
     return {
+      argsSchema: {
+        apkPath: z.string().describe("The absolute path to the APK file."),
+        boxId: z.string().describe("The ID of the Android box."),
+      },
       messages: [
         {
           role: "user",
           content: {
             type: "text",
-            text: ANDROID_APK_TESTING_RULES_CONTENT,
+            text: ANDROID_APK_TESTING_GUIDE_CONTENT,
           },
         },
       ],
