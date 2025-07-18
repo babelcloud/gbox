@@ -113,8 +113,8 @@ const ANDROID_APK_TESTING_GUIDE_DESCRIPTION =
   "Test the Android project on gbox (virtual or physical device).";
 const ANDROID_APK_TESTING_GUIDE_CONTENT = `## 🔒 Critical Rules
 
-- **Always** open the Android box's **Live View URL** (via MCP Tool \`open_live_view\`) in your default browser **immediately after** creating or starting a Gbox Android box.
-- Use the **absolute file path** to your APK (e.g., \`/Users/jack/workspace/geoquiz/app/build/outputs/apk/debug/app-debug.apk\`) when calling the \`install_apk\` tool.
+- **Always** open the Android box's (id:{boxId}) **Live View URL** (via MCP Tool \`open_live_view\`) in your default browser **immediately after** creating or starting a Gbox Android box.
+- Call the \`install_apk\` tool to install the APK: {apkPath}.
 - **Wait for the APK to finish installing** before interacting with the app.  
   You can pass the parameter \`open=true\` to automatically launch the app after installation.
 - If multiple boxes are running, ensure you're **only operating on the correct box** for your current test session.
