@@ -58,14 +58,6 @@ export {
   handleCloseApp,
 } from "./apk-management.js";
 
-// Live View
-export {
-  OPEN_LIVE_VIEW_TOOL,
-  OPEN_LIVE_VIEW_DESCRIPTION,
-  openLiveViewParamsSchema,
-  handleOpenLiveView,
-} from "./live-view.js";
-
 // Press Key
 export {
   PRESS_KEY_TOOL,
@@ -81,3 +73,11 @@ export {
   typeTextParamsSchema,
   handleTypeText,
 } from "./type-text.js";
+
+// Wait
+export {
+  WAIT_TOOL,
+  WAIT_TOOL_DESCRIPTION,
+  waitParamsSchema,
+  handleWait,
+} from "./wait.js";
