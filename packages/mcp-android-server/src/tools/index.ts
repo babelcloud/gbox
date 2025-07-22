@@ -81,3 +81,19 @@ export {
   waitParamsSchema,
   handleWait,
 } from "./wait.js";
+
+// Logcat
+export {
+  LOGCAT_TOOL,
+  LOGCAT_DESCRIPTION,
+  logcatParamsSchema,
+  handleLogcat,
+} from "./logcat.js";
+
+// Adb Shell
+export {
+  ADB_SHELL_TOOL,
+  ADB_SHELL_DESCRIPTION,
+  adbShellParamsSchema,
+  handleAdbShell,
+} from "./adb-shell.js";

@@ -383,7 +383,7 @@ func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
 						errChan <- io.EOF
 						return
 					case "error":
-						errChan <- fmt.Errorf(evt.Message)
+						errChan <- fmt.Errorf("%s", evt.Message)
 						return
 					default:
 						os.Stdout.Write(data)
