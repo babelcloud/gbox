@@ -16,7 +16,7 @@
     "@modelcontextprotocol/sdk": "^1.7.0",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
-    "gbox-sdk": "^0.16.0",
+    "gbox-sdk": "^0.22.0",
     "zod": "^3.25.67"
   },
   "devDependencies": {

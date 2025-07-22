@@ -50,6 +50,14 @@ import {
   WAIT_TOOL_DESCRIPTION,
   waitParamsSchema,
   handleWait,
+  LOGCAT_TOOL,
+  LOGCAT_DESCRIPTION,
+  logcatParamsSchema,
+  handleLogcat,
+  ADB_SHELL_TOOL,
+  ADB_SHELL_DESCRIPTION,
+  adbShellParamsSchema,
+  handleAdbShell,
 } from "./tools/index.js";
 import type { LogFn } from "./types.js";
 import type { LoggingMessageNotification } from "@modelcontextprotocol/sdk/types.js";
@@ -260,6 +268,20 @@ mcpServer.tool(
   WAIT_TOOL_DESCRIPTION,
   waitParamsSchema.shape,
   handleWait(logger)
+);
+
+mcpServer.tool(
+  LOGCAT_TOOL,
+  LOGCAT_DESCRIPTION,
+  logcatParamsSchema,
+  handleLogcat(logger)
+);
+
+mcpServer.tool(
+  ADB_SHELL_TOOL,
+  ADB_SHELL_DESCRIPTION,
+  adbShellParamsSchema,
+  handleAdbShell(logger)
 );
 
 export { mcpServer, logger };
