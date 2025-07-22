@@ -1,43 +1,6 @@
 name: ${PREFIX}${PREFIX:+-}gbox
 
 services:
-  api-server:
-    container_name: ${PREFIX}${PREFIX:+-}gbox-api-server
-    build:
-      context: ../../packages/api-server
-      dockerfile: ../../packages/api-server/Dockerfile
-    image: babelcloud/gbox-api-server:${API_SERVER_IMG_TAG:-latest}
-    ports:
-      - "${SERVICE_PORT:-28080}:28080"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ${GBOX_HOME:-$HOME/.gbox}:/var/gbox
-    environment:
-      - TZ=Asia/Shanghai
-      - GBOX_BROWSER_HOST=${GBOX_BROWSER_HOST:-host.docker.internal}
-      - GBOX_HOST_SHARE=${GBOX_SHARE:-$HOME/.gbox/share}
-      - GBOX_SHARE=/var/gbox/share
-      - GBOX_NAMESPACE=${PREFIX}${PREFIX:+-}gbox-boxes
-      - PY_IMG_TAG=${PY_IMG_TAG:-latest}
-      - PW_IMG_TAG=${PW_IMG_TAG:-latest}
-      - VNC_IMG_TAG=${VNC_IMG_TAG:-latest}
-      - TS_IMG_TAG=${TS_IMG_TAG:-latest}
-      - SH_IMG_TAG=${SH_IMG_TAG:-latest}
-      - CUA_SERVER_HOST=${CUA_SERVER_HOST:-cua-server}
-      - CUA_SERVER_PORT=${CUA_SERVER_PORT:-28081}
-    restart: unless-stopped
-  
-  cua-server:
-    container_name: ${PREFIX}${PREFIX:+-}gbox-cua-server
-    build:
-      context: ../../packages/cua-server
-      dockerfile: ../../packages/cua-server/Dockerfile
-    image: babelcloud/gbox-cua-server:${CUA_SERVER_IMG_TAG:-latest}
-    environment:
-      - TZ=Asia/Shanghai
-      - ANDROID_ADB_SERVER_ADDRESS=${ANDROID_ADB_SERVER_ADDRESS:-host.docker.internal}
-    restart: unless-stopped
-
   mcp-server:
     container_name: ${PREFIX}${PREFIX:+-}gbox-mcp-server
     build:
@@ -50,7 +13,6 @@ services:
       - ${GBOX_HOME:-$HOME/.gbox}:/var/gbox
     environment:
       - TZ=Asia/Shanghai
-      - API_SERVER_URL=${MCP_API_SERVER_URL:-http://api-server:28080/api/v1}
     restart: unless-stopped 
 
   mcp-android-server:
@@ -65,5 +27,4 @@ services:
       - ${GBOX_HOME:-$HOME/.gbox}:/var/gbox
     environment:
       - TZ=Asia/Shanghai
-      - API_SERVER_URL=${MCP_API_SERVER_URL:-http://api-server:28080/api/v1}
     restart: unless-stopped

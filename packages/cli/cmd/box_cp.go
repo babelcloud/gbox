@@ -97,7 +97,7 @@ func runCopyCommand(opts *BoxCpOptions) error {
 	src := opts.Source
 	dst := opts.Destination
 	debugEnabled := os.Getenv("DEBUG") == "true"
-	apiBase := config.GetLocalAPIURL()
+	apiBase := config.GetCloudAPIURL()
 	apiURL := fmt.Sprintf("%s/api/v1", strings.TrimSuffix(apiBase, "/"))
 
 	// Debug log

@@ -72,7 +72,6 @@ func init() {
 	rootCmd.AddCommand(NewBoxCommand())
 	rootCmd.AddCommand(NewClusterCommand())
 	rootCmd.AddCommand(NewMcpCommand())
-	rootCmd.AddCommand(NewCuaCommand())
 	rootCmd.AddCommand(NewVersionCommand())
 }
 

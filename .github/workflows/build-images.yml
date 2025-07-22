@@ -47,26 +47,6 @@ jobs:
       docker_password: ${{ secrets.DOCKER_PASSWORD }}
 
   # --- Independent Images ---
-  build-api-server: # Add job for api-server
-    uses: ./.github/workflows/build-image.yml
-    with:
-      image_variant: api-server
-      image_dir: packages/api-server # Specify its directory
-      # tag_to_build: ${{ env.IMAGE_TAG }}
-      # base_image_built and base_image_tag use defaults (false, latest)
-    secrets:
-      docker_password: ${{ secrets.DOCKER_PASSWORD }}
-  
-  build-cua-server: # Add job for api-server
-    uses: ./.github/workflows/build-image.yml
-    with:
-      image_variant: cua-server
-      image_dir: packages/cua-server # Specify its directory
-      # tag_to_build: ${{ env.IMAGE_TAG }}
-      # base_image_built and base_image_tag use defaults (false, latest)
-    secrets:
-      docker_password: ${{ secrets.DOCKER_PASSWORD }}
-
   build-mcp-server: # Add job for mcp-server
     uses: ./.github/workflows/build-image.yml
     with:
