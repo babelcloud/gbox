@@ -1,3 +1,5 @@
+import { exec } from "child_process";
+
 /**
  * Sanitizes result objects by truncating base64 data URIs to improve readability
  * while preserving the full data for actual image display
@@ -33,4 +35,20 @@ export const sanitizeResult = (obj: any): any => {
     }
   }
   return sanitized;
+};
+
+export const openUrlInBrowser = (url: string) => {
+  const command =
+    process.platform === "darwin"
+      ? `open "${url}"`
+      : process.platform === "win32"
+      ? `start "" "${url}"`
+      : `xdg-open "${url}"`;
+
+  // Execute the command to open the browser
+  exec(command, (err) => {
+    if (err) {
+      console.error(`Failed to open browser for URL ${url}:`, err);
+    }
+  });
 };

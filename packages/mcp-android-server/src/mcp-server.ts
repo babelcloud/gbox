@@ -34,10 +34,6 @@ import {
   OPEN_APP_DESCRIPTION,
   openAppParamsSchema,
   handleOpenApp,
-  OPEN_LIVE_VIEW_TOOL,
-  OPEN_LIVE_VIEW_DESCRIPTION,
-  openLiveViewParamsSchema,
-  handleOpenLiveView,
   CLOSE_APP_TOOL,
   CLOSE_APP_DESCRIPTION,
   closeAppParamsSchema,
@@ -50,6 +46,10 @@ import {
   TYPE_TEXT_TOOL,
   TYPE_TEXT_DESCRIPTION,
   typeTextParamsSchema,
+  WAIT_TOOL,
+  WAIT_TOOL_DESCRIPTION,
+  waitParamsSchema,
+  handleWait,
 } from "./tools/index.js";
 import type { LogFn } from "./types.js";
 import type { LoggingMessageNotification } from "@modelcontextprotocol/sdk/types.js";
@@ -242,13 +242,6 @@ mcpServer.tool(
 );
 
 mcpServer.tool(
-  OPEN_LIVE_VIEW_TOOL,
-  OPEN_LIVE_VIEW_DESCRIPTION,
-  openLiveViewParamsSchema,
-  handleOpenLiveView(logger)
-);
-
-mcpServer.tool(
   PRESS_KEY_TOOL,
   PRESS_KEY_DESCRIPTION,
   pressKeyParamsSchema,
@@ -260,6 +253,13 @@ mcpServer.tool(
   TYPE_TEXT_DESCRIPTION,
   typeTextParamsSchema,
   handleTypeText(logger)
+);
+
+mcpServer.tool(
+  WAIT_TOOL,
+  WAIT_TOOL_DESCRIPTION,
+  waitParamsSchema.shape,
+  handleWait(logger)
 );
 
 export { mcpServer, logger };

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { CreateAndroid } from "gbox-sdk";
 import { gboxSDK } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
+import { openUrlInBrowser } from "./utils.js";
 
 export const CREATE_ANDROID_BOX_TOOL = "create_android_box";
 export const CREATE_ANDROID_BOX_DESCRIPTION =
@@ -35,7 +36,13 @@ export const createAndroidBoxParamsSchema = {
   wait: z
     .boolean()
     .optional()
+    .default(true)
     .describe("Waiting for Box to be assigned an instance, default is true"),
+  openLiveView: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe("Whether to open the live view in the default browser after creating the box."),
 };
 
 // Define parameter types - infer from the Zod schema
@@ -56,6 +63,18 @@ export function handleCreateAndroidBox(logger: MCPLogger) {
       await logger.info("Android box created successfully", {
         boxId: created.data?.id,
       });
+
+      if (args.openLiveView && created.data?.id) {
+        const box = await gboxSDK.get(created.data.id);
+        if (box) {
+          const liveViewUrl = await box.liveView();
+          openUrlInBrowser(liveViewUrl.url);
+          await logger.info("Live view opened successfully", {
+            boxId: created.data.id,
+            url: liveViewUrl.url,
+          });
+        }
+      }
 
       return {
         content: [
