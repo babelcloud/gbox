@@ -4,9 +4,15 @@ import (
 	"fmt"
 	"strings"
 
-	model "github.com/babelcloud/gbox/packages/api-server/pkg/box"
 	"github.com/spf13/cobra"
 )
+
+type VolumeMount struct {
+	Source      string
+	Target      string
+	ReadOnly    bool
+	Propagation string
+}
 
 func parseKeyValuePairs(pairs []string, pairType string) (map[string]string, error) {
 	if len(pairs) == 0 {
@@ -26,19 +32,19 @@ func parseKeyValuePairs(pairs []string, pairType string) (map[string]string, err
 }
 
 // parseVolumes parses volume mount strings in the format "source:target[:ro][:propagation]"
-func parseVolumes(volumes []string) ([]model.VolumeMount, error) {
+func parseVolumes(volumes []string) ([]VolumeMount, error) {
 	if len(volumes) == 0 {
 		return nil, nil
 	}
 
-	result := make([]model.VolumeMount, 0, len(volumes))
+	result := make([]VolumeMount, 0, len(volumes))
 	for _, volume := range volumes {
 		parts := strings.Split(volume, ":")
 		if len(parts) < 2 {
 			return nil, fmt.Errorf("invalid volume format: %s (must be source:target[:ro][:propagation])", volume)
 		}
 
-		mount := model.VolumeMount{
+		mount := VolumeMount{
 			Source: parts[0],
 			Target: parts[1],
 		}

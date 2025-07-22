@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -140,134 +139,7 @@ func runExec(opts *BoxExecOptions) error {
 	// though for this function, we will primarily use resolvedBoxID directly.
 	// opts.BoxID = resolvedBoxID // Optional: update opts if it's used elsewhere by reference
 
-	// 如果需要交互式/TTY，则直接走 WebSocket 分支
-	if opts.Interactive || opts.Tty {
-		return runExecWebSocket(opts, resolvedBoxID)
-	}
-
-	debug := os.Getenv("DEBUG") == "true"
-	apiBase := config.GetLocalAPIURL()
-	apiURL := fmt.Sprintf("%s/api/v1", strings.TrimSuffix(apiBase, "/"))
-
-	debugLog := func(msg string) {
-		if debug {
-			fmt.Fprintf(os.Stderr, "DEBUG: %s\n", msg)
-		}
-	}
-
-	stdinAvailable := opts.Interactive
-	if !stdinAvailable && !term.IsTerminal(int(os.Stdin.Fd())) {
-		stdinAvailable = true
-	}
-
-	var termSize *TerminalSize
-	// var err error // err is already declared by ResolveBoxIDPrefix, reuse or shadow
-	if opts.Tty {
-		termSize, err = GetTerminalSize() // This might shadow the err from ResolveBoxIDPrefix if not careful
-		if err != nil {
-			debugLog(fmt.Sprintf("Failed to get terminal size: %v", err))
-			// Decide if this is a fatal error. Original code just logs it.
-		} else if termSize != nil { // Added nil check for termSize
-			debugLog(fmt.Sprintf("Terminal size: height=%d, width=%d", termSize.Height, termSize.Width))
-		}
-	}
-
-	request := BoxExecRequest{
-		Cmd:     []string{opts.Command[0]},
-		Args:    opts.Command[1:],
-		Stdin:   stdinAvailable,
-		Stdout:  true,
-		Stderr:  true,
-		Tty:     opts.Tty,
-		WorkDir: opts.WorkingDir,
-	}
-
-	if opts.Tty {
-		request.Stdin = true
-	}
-
-	if termSize != nil {
-		request.TermSize = map[string]int{
-			"height": termSize.Height,
-			"width":  termSize.Width,
-		}
-	}
-
-	requestBody, err := json.Marshal(request)
-	if err != nil {
-		return fmt.Errorf("failed to encode request: %v", err)
-	}
-
-	debugLog(fmt.Sprintf("Request body: %s", string(requestBody)))
-
-	// Use resolvedBoxID for the API call
-	requestURL := fmt.Sprintf("%s/boxes/%s/exec", apiURL, resolvedBoxID)
-	req, err := http.NewRequest("POST", requestURL, bytes.NewBuffer(requestBody))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %v", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Upgrade", "tcp")
-	req.Header.Set("Connection", "Upgrade")
-
-	if opts.Tty {
-		req.Header.Set("Accept", "application/vnd.gbox.raw-stream")
-	} else {
-		req.Header.Set("Accept", "application/vnd.gbox.multiplexed-stream")
-	}
-
-	debugLog(fmt.Sprintf("Sending request to: POST %s", requestURL))
-	for k, v := range req.Header {
-		debugLog(fmt.Sprintf("Header %s: %s", k, v))
-	}
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	debugLog(fmt.Sprintf("Response status: %d", resp.StatusCode))
-	for k, v := range resp.Header {
-		debugLog(fmt.Sprintf("Response header %s: %s", k, v))
-	}
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusSwitchingProtocols {
-		var errMsg string
-		body, _ := io.ReadAll(resp.Body)
-		debugLog(fmt.Sprintf("Response body: %s", string(body)))
-
-		var errorData map[string]interface{}
-		if err := json.Unmarshal(body, &errorData); err == nil {
-			if message, ok := errorData["message"].(string); ok {
-				errMsg = message
-			}
-		}
-
-		if errMsg == "" {
-			errMsg = string(body)
-		}
-
-		if resp.StatusCode == http.StatusConflict {
-			// Use resolvedBoxID in the error message
-			return fmt.Errorf("%s (status %d). Maybe run 'gbox box start %s'?", errMsg, resp.StatusCode, resolvedBoxID)
-		} else {
-			return fmt.Errorf("%s (status %d)", errMsg, resp.StatusCode)
-		}
-	}
-
-	hijacker, ok := resp.Body.(io.ReadWriteCloser)
-	if !ok {
-		return fmt.Errorf("response does not support hijacking")
-	}
-
-	if opts.Tty {
-		return handleRawStream(hijacker)
-	} else {
-		return handleMultiplexedStream(hijacker, stdinAvailable)
-	}
+	return runExecWebSocket(opts, resolvedBoxID)
 }
 
 // runExecWebSocket 通过新的 WebSocket API 执行交互式命令
@@ -276,15 +148,8 @@ func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
 	if err := pm.Load(); err != nil {
 		// handle error, maybe default to cloud
 	}
-	currentProfile := pm.GetCurrent()
-	isLocal := currentProfile != nil && (currentProfile.Name == "local" || currentProfile.OrganizationName == "local")
 
-	var apiBase string
-	if isLocal {
-		apiBase = strings.TrimSuffix(config.GetLocalAPIURL(), "/")
-	} else {
-		apiBase = strings.TrimSuffix(config.GetCloudAPIURL(), "/")
-	}
+	apiBase := strings.TrimSuffix(config.GetCloudAPIURL(), "/")
 
 	// 将 http(s):// 转成 ws(s)://
 	wsBase := apiBase

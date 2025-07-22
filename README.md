@@ -233,9 +233,6 @@ make dist
 ### Running Services
 
 ```bash
-# API Server
-make -C packages/api-server dev
-
 # MCP Server
 cd packages/mcp-server && pnpm dev
 

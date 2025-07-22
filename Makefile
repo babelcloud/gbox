@@ -34,14 +34,8 @@ $(shell git log --pretty=tformat:"%h" -n1 -- $(1))
 endef
 
 # Image tags
-API_SERVER_TAG := $(call get_git_hash,packages/api-server)
-CUA_SERVER_TAG := $(call get_git_hash,packages/cua-server)
 MCP_SERVER_TAG := $(call get_git_hash,packages/mcp-server)
 MCP_ANDROID_SERVER_TAG := $(call get_git_hash,packages/mcp-android-server)
-PY_IMG_TAG := $(call get_git_hash,images/python)
-PW_IMG_TAG := $(call get_git_hash,images/playwright)
-VNC_IMG_TAG := $(call get_git_hash,images/viewer)
-TS_IMG_TAG := $(call get_git_hash,images/typescript)
 
 # Function to write env var to file (usage: $(call write_env,FILE,VAR,VALUE))
 define write_env
@@ -74,21 +68,6 @@ build: check-pnpm ## Build all components
 	# Binaries are kept in packages/cli/build/
 	@echo "Build completed"
 
-# Build docker images
-.PHONY: build-images
-build-images: ## Build all docker images
-	@echo "Building all docker images..."
-	@make -C images build-all
-
-.PHONY: build-image-%
-build-image-%: ## Build specific docker image (e.g., build-image-python)
-	@echo "Building docker image $*..."
-	@make -C images build-$*
-
-run-container-%: ## Run specific docker image (e.g., run-container-python)
-	@echo "Running docker container $*..."
-	@make -C images run-$*
-
 # Create package for specific platform and architecture
 .PHONY: dist-%
 dist-%: ## Create package for specific platform and architecture (e.g., dist-darwin-amd64)
@@ -108,15 +87,9 @@ dist-%: ## Create package for specific platform and architecture (e.g., dist-dar
 	cp -r packages/cli/cmd/script/. $$PLATFORM_DIR/packages/cli/cmd/script/; \
 	cp .env $$PLATFORM_DIR/ 2>/dev/null || true; \
 	cp LICENSE README.md $$PLATFORM_DIR/; \
-	$(call write_env,$$PLATFORM_DIR/manifests/docker,API_SERVER_IMG_TAG,$(API_SERVER_TAG)); \
-	$(call append_env,$$PLATFORM_DIR/manifests/docker,CUA_SERVER_IMG_TAG,$(CUA_SERVER_TAG)); \
-	$(call append_env,$$PLATFORM_DIR/manifests/docker,MCP_SERVER_IMG_TAG,$(MCP_SERVER_TAG)); \
+	$(call write_env,$$PLATFORM_DIR/manifests/docker,MCP_SERVER_IMG_TAG,$(MCP_SERVER_TAG)); \
 	$(call append_env,$$PLATFORM_DIR/manifests/docker,MCP_ANDROID_SERVER_IMG_TAG,$(MCP_ANDROID_SERVER_TAG)); \
 	$(call append_env,$$PLATFORM_DIR/manifests/docker,PREFIX,""); \
-	$(call append_env,$$PLATFORM_DIR/manifests/docker,PY_IMG_TAG,$(PY_IMG_TAG)); \
-	$(call append_env,$$PLATFORM_DIR/manifests/docker,PW_IMG_TAG,$(PW_IMG_TAG)); \
-	$(call append_env,$$PLATFORM_DIR/manifests/docker,VNC_IMG_TAG,$(VNC_IMG_TAG)); \
-	$(call append_env,$$PLATFORM_DIR/manifests/docker,TS_IMG_TAG,$(TS_IMG_TAG)); \
 	if [ -f "packages/cli/gbox-$$PLATFORM_ARCH" ]; then \
 		ln -sf ../packages/cli/gbox $$PLATFORM_DIR/bin/gbox; \
 		cp bin/* $$PLATFORM_DIR/bin/ 2>/dev/null || true; \
@@ -148,12 +121,7 @@ brew-dist: ## Create a distribution for Homebrew
 	@cp -r manifests $(BREW_DIST_DIR)/
 	@rsync -a --exclude='node_modules' packages/mcp-server/ $(BREW_DIST_DIR)/packages/mcp-server/
 	@rsync -a --exclude='node_modules' packages/mcp-android-server/ $(BREW_DIST_DIR)/packages/mcp-android-server/
-	@rsync -a --exclude='node_modules' packages/api-server/ $(BREW_DIST_DIR)/packages/api-server/
-	@rsync -a --exclude='node_modules' packages/cua-server/ $(BREW_DIST_DIR)/packages/cua-server/
 	@cp -r packages/cli/cmd/script $(BREW_DIST_DIR)/packages/cli/cmd/
-
-	@echo "Creating .env file for Homebrew..."
-	@echo "PW_IMG_TAG=7614d46" > $(BREW_DIST_DIR)/manifests/docker/.env
 
 	@echo "Creating symlink for gbox executable..."
 	@(cd $(BREW_DIST_DIR)/bin && ln -sf ../packages/cli/gbox gbox)
@@ -198,27 +166,12 @@ install: ## Install for Homebrew
 .PHONY: docker-push
 docker-push: ## Build and push docker images
 	@echo "Building and pushing docker images..."
-	@make -C packages/api-server docker-push
 
 # Clean distribution files
 .PHONY: clean
 clean: ## Clean distribution files
 	@echo "Cleaning distribution files..."
 	@rm -rf $(DIST_DIR)
-
-api-dev: ## Start api server
-	@echo "Starting api server..."
-	@make -C packages/api-server dev
-
-api: ## Start api server with docker compose
-	@cd manifests/docker && docker compose up --build
-
-cua-dev:
-	@echo "Starting cua server..."
-	@cd packages/cua-server && pnpm i && pnpm dev
-
-cua:
-	@cd manifests/docker && docker compose up --build
 
 mcp-dev: ## Start mcp server
 	@echo "Starting mcp server..."

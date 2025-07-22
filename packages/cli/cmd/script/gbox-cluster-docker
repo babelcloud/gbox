@@ -116,8 +116,9 @@ setup() {
     fi
 
     # Start docker-compose services
-    echo "Starting docker-compose services..."
-    docker compose -f "$SCRIPT_DIR/../../../../manifests/docker/docker-compose.yml" up -d api-server cua-server
+    echo "Starting Docker services..."
+    # Start all services defined in the docker-compose file
+    docker compose -f "$SCRIPT_DIR/../../../../manifests/docker/docker-compose.yml" up -d
     
     # Add local profile
     add_local_profile
@@ -130,8 +131,9 @@ cleanup() {
     echo "Cleaning up docker box environment..."
     
     # Stop docker-compose services
-    echo "Stopping docker-compose services..."
-    docker compose -f "$SCRIPT_DIR/../../../../manifests/docker/docker-compose.yml" down api-server cua-server
+    echo "Stopping Docker services..."
+    # Stop all services and remove containers, networks, and volumes
+    docker compose -f "$SCRIPT_DIR/../../../../manifests/docker/docker-compose.yml" down
     
     # Remove local profile
     remove_local_profile
