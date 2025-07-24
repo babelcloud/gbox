@@ -8,12 +8,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func parseKeyValuePairs(pairs []string, pairType string) (map[string]string, error) {
+func parseKeyValuePairs(pairs []string, pairType string) (map[string]interface{}, error) {
 	if len(pairs) == 0 {
 		return nil, nil
 	}
 
-	result := make(map[string]string)
+	result := make(map[string]interface{})
 	for _, pair := range pairs {
 		parts := strings.SplitN(pair, "=", 2)
 		if len(parts) == 2 {
