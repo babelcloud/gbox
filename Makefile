@@ -122,15 +122,18 @@ dist-%: ## Create package for specific platform and architecture (e.g., dist-dar
 	if [ -f "packages/cli/gbox-$$PLATFORM_ARCH" ]; then \
 		ln -sf ../packages/cli/gbox $$PLATFORM_DIR/bin/gbox; \
 		cp bin/* $$PLATFORM_DIR/bin/ 2>/dev/null || true; \
-		if [[ "$$PLATFORM_ARCH" == "windows-"* ]]; then \
+		case "$$PLATFORM_ARCH" in \
+		windows-*) \
 			(cd $$PLATFORM_DIR && zip -qr ../gbox-$$PLATFORM_ARCH-$(VERSION).zip .env *); \
 			(cd $(DIST_DIR) && sha256sum gbox-$$PLATFORM_ARCH-$(VERSION).zip > gbox-$$PLATFORM_ARCH-$(VERSION).zip.sha256); \
 			echo "Package created: $(DIST_DIR)/gbox-$$PLATFORM_ARCH-$(VERSION).zip"; \
-		else \
+			;; \
+		*) \
 			(cd $$PLATFORM_DIR && tar -czf ../gbox-$$PLATFORM_ARCH-$(VERSION).tar.gz .env * > /dev/null); \
 			(cd $(DIST_DIR) && sha256sum gbox-$$PLATFORM_ARCH-$(VERSION).tar.gz > gbox-$$PLATFORM_ARCH-$(VERSION).tar.gz.sha256); \
 			echo "Package created: $(DIST_DIR)/gbox-$$PLATFORM_ARCH-$(VERSION).tar.gz"; \
-		fi; \
+			;; \
+		esac; \
 	else \
 		echo "Error: Binary for $$PLATFORM_ARCH not found"; \
 		exit 1; \
