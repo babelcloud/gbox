@@ -82,6 +82,8 @@ jobs:
           files: |
             dist/gbox-*.tar.gz
             dist/gbox-*.tar.gz.sha256
+            dist/gbox-*.zip
+            dist/gbox-*.zip.sha256
             dist/gbox-v*.tar.gz
             dist/gbox-v*.tar.gz.sha256
           draft: true

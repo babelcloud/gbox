@@ -26,7 +26,9 @@ DIST_DIR := dist
 DIST_PACKAGES := $(DIST_DIR)/gbox-darwin-amd64-$(VERSION).tar.gz \
                  $(DIST_DIR)/gbox-darwin-arm64-$(VERSION).tar.gz \
                  $(DIST_DIR)/gbox-linux-amd64-$(VERSION).tar.gz \
-                 $(DIST_DIR)/gbox-linux-arm64-$(VERSION).tar.gz
+                 $(DIST_DIR)/gbox-linux-arm64-$(VERSION).tar.gz \
+                 $(DIST_DIR)/gbox-windows-amd64-$(VERSION).zip \
+                 $(DIST_DIR)/gbox-windows-arm64-$(VERSION).zip
 
 # Function to get git commit hash for a path
 define get_git_hash
@@ -120,9 +122,15 @@ dist-%: ## Create package for specific platform and architecture (e.g., dist-dar
 	if [ -f "packages/cli/gbox-$$PLATFORM_ARCH" ]; then \
 		ln -sf ../packages/cli/gbox $$PLATFORM_DIR/bin/gbox; \
 		cp bin/* $$PLATFORM_DIR/bin/ 2>/dev/null || true; \
-		(cd $$PLATFORM_DIR && tar -czf ../gbox-$$PLATFORM_ARCH-$(VERSION).tar.gz .env *); \
-		(cd $(DIST_DIR) && sha256sum gbox-$$PLATFORM_ARCH-$(VERSION).tar.gz > gbox-$$PLATFORM_ARCH-$(VERSION).tar.gz.sha256); \
-		echo "Package created: $(DIST_DIR)/gbox-$$PLATFORM_ARCH-$(VERSION).tar.gz"; \
+		if [[ "$$PLATFORM_ARCH" == "windows-"* ]]; then \
+			(cd $$PLATFORM_DIR && zip -qr ../gbox-$$PLATFORM_ARCH-$(VERSION).zip .env *); \
+			(cd $(DIST_DIR) && sha256sum gbox-$$PLATFORM_ARCH-$(VERSION).zip > gbox-$$PLATFORM_ARCH-$(VERSION).zip.sha256); \
+			echo "Package created: $(DIST_DIR)/gbox-$$PLATFORM_ARCH-$(VERSION).zip"; \
+		else \
+			(cd $$PLATFORM_DIR && tar -czf ../gbox-$$PLATFORM_ARCH-$(VERSION).tar.gz .env * > /dev/null); \
+			(cd $(DIST_DIR) && sha256sum gbox-$$PLATFORM_ARCH-$(VERSION).tar.gz > gbox-$$PLATFORM_ARCH-$(VERSION).tar.gz.sha256); \
+			echo "Package created: $(DIST_DIR)/gbox-$$PLATFORM_ARCH-$(VERSION).tar.gz"; \
+		fi; \
 	else \
 		echo "Error: Binary for $$PLATFORM_ARCH not found"; \
 		exit 1; \
@@ -166,7 +174,7 @@ dist: build ## Create all distribution packages
 	@echo "Creating all distribution packages..."
 	@rm -rf $(DIST_DIR)
 	@mkdir -p $(DIST_DIR)
-	@for platform_arch in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64; do \
+	@for platform_arch in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64 windows-amd64 windows-arm64; do \
 		$(MAKE) dist-$$platform_arch; \
 	done
 	@echo "All distribution packages created:"

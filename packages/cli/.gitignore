@@ -3,5 +3,6 @@
 # ignore gbox binary
 gbox-darwin-*
 gbox-linux-*
+gbox-windows-*
 gbox
 gbox-test

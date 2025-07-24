@@ -77,6 +77,11 @@ func runAndroidCreate(opts *AndroidBoxCreateOptions) error {
 	if err != nil {
 		return err
 	}
+	if labelMap == nil {
+		labelMap = make(map[string]interface{})
+	}
+	labelMap["device_type"] = opts.DeviceType
+
 
 	// validate device type
 	if opts.DeviceType != "virtual" && opts.DeviceType != "physical" {
@@ -101,18 +106,6 @@ func runAndroidCreate(opts *AndroidBoxCreateOptions) error {
 			},
 		},
 	}
-
-	// add device type to labels since it's not in the main config
-	labels := make(map[string]interface{})
-	if createParams.CreateAndroidBox.Config.Labels != nil {
-		if stringMap, ok := createParams.CreateAndroidBox.Config.Labels.(map[string]string); ok {
-			for k, v := range stringMap {
-				labels[k] = v
-			}
-		}
-	}
-	labels["device_type"] = opts.DeviceType
-	createParams.CreateAndroidBox.Config.Labels = labels
 
 	// debug output
 	if os.Getenv("DEBUG") == "true" {

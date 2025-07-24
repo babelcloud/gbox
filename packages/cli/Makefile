@@ -21,7 +21,7 @@ LDFLAGS := -ldflags "-X $(MODULE_PREFIX)/packages/cli/internal/version.Version=$
                      -X $(MODULE_PREFIX)/packages/cli/internal/version.CommitID=$(COMMIT_ID)"
 
 # Supported platforms
-PLATFORMS := linux-amd64 linux-arm64 darwin-amd64 darwin-arm64
+PLATFORMS := linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64 windows-arm64
 
 .PHONY: all clean help binary binary-all install e2e-setup e2e e2e-env-check e2e-cleanup e2e-% run test
 

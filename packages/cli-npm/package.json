@@ -1,0 +1,37 @@
+{
+  "name": "gbox-cli",
+  "version": "0.0.2",
+  "description": "Cross-platform CLI for gbox",
+  "bin": {
+    "gbox": "cli.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js",
+    "preuninstall": "node uninstall.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/babelcloud/gbox.git"
+  },
+  "files": [
+    "cli.js",
+    "install.js",
+    "uninstall.js",
+    "bin/"
+  ],
+  "dependencies": {
+    "axios": "^1.7.2",
+    "tar": "^6.2.1",
+    "unzipper": "^0.11.0",
+    "update-notifier": "^7.0.0"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}
