@@ -11,6 +11,8 @@ import (
 
 var v *viper.Viper
 
+var githubClientSecret string
+
 func init() {
 	v = viper.New()
 
@@ -25,6 +27,8 @@ func init() {
 	// Set default profile file path
 	v.SetDefault("profile.path", filepath.Join(xdg.Home, ".gbox", "profile.json"))
 
+	v.SetDefault("github.client_secret", "")
+
 	// Environment variables
 	v.AutomaticEnv()
 	v.BindEnv("api.endpoint.local", "API_ENDPOINT_LOCAL", "API_ENDPOINT")
@@ -32,6 +36,7 @@ func init() {
 	v.BindEnv("project.root", "PROJECT_ROOT")
 	v.BindEnv("mcp.server.url", "MCP_SERVER_URL")  // Bind MCP server URL env var
 	v.BindEnv("profile.path", "GBOX_PROFILE_PATH") // Bind profile path env var
+	v.BindEnv("github.client_secret", "GBOX_GITHUB_CLIENT_SECRET")
 
 	// Config file
 	v.SetConfigName("config")
@@ -82,4 +87,12 @@ func GetMcpServerUrl() string {
 // GetProfilePath returns the profile file path
 func GetProfilePath() string {
 	return v.GetString("profile.path")
+}
+
+// GetGithubClientSecret returns the GitHub OAuth client secret from env or config
+func GetGithubClientSecret() string {
+	if githubClientSecret != "" {
+		return githubClientSecret
+	}
+	return v.GetString("github.client_secret")
 }
