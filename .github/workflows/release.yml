@@ -72,6 +72,9 @@ jobs:
           pnpm install
           pnpm build
 
+      - name: Set github client secret env
+        run: echo "GBOX_GITHUB_CLIENT_SECRET=${{ secrets.GBOX_GITHUB_CLIENT_SECRET }}" >> $GITHUB_ENV
+
       - name: Build and create binary distributions
         run: make dist VERSION=${{ env.VERSION }}
 
