@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -33,6 +34,7 @@ func NewMcpExportCommand() *cobra.Command {
 	var mergeTo string
 	var dryRun bool
 	var serverType string
+	var scope string
 
 	cmd := &cobra.Command{
 		Use:   "export",
@@ -49,22 +51,30 @@ automation tools including screenshot capture, AI-powered UI actions, and APK ma
   # Export Android MCP server configuration  
   gbox mcp export --type android --merge-to claude
   
-  # Generate claude mcp add command for claude-code
+  # Generate claude mcp add command for claude-code (user scope, default)
   gbox mcp export --type android --merge-to claude-code
+  
+  # Generate claude mcp add command for claude-code with specific scope
+  gbox mcp export --type android --merge-to claude-code --scope project
   
   # Preview configuration without merging
   gbox mcp export --type android --dry-run`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return exportConfig(mergeTo, dryRun, serverType)
+			return exportConfig(mergeTo, dryRun, serverType, scope)
 		},
 	}
 
 	cmd.Flags().StringVarP(&mergeTo, "merge-to", "m", "", "Merge configuration into target config file (claude|cursor|claude-code)")
 	cmd.Flags().BoolVarP(&dryRun, "dry-run", "d", false, "Preview merge result without applying changes")
-	cmd.Flags().StringVarP(&serverType, "type", "t", "linux", "MCP server type (linux|android)")
+	cmd.Flags().StringVarP(&serverType, "type", "t", "android", "MCP server type (linux|android)")
+	cmd.Flags().StringVarP(&scope, "scope", "s", "user", "MCP server scope for claude-code (local|project|user)")
 
 	cmd.RegisterFlagCompletionFunc("type", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"linux", "android"}, cobra.ShellCompDirectiveNoFileComp
+	})
+
+	cmd.RegisterFlagCompletionFunc("scope", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"local", "project", "user"}, cobra.ShellCompDirectiveNoFileComp
 	})
 
 	return cmd
@@ -126,10 +136,17 @@ func dirExists(path string) bool {
 	return info.IsDir()
 }
 
-func exportConfig(mergeTo string, dryRun bool, serverType string) error {
+func exportConfig(mergeTo string, dryRun bool, serverType string, scope string) error {
 	// Validate server type
 	if serverType != "linux" && serverType != "android" {
 		return fmt.Errorf("invalid server type '%s', must be either 'linux' or 'android'", serverType)
+	}
+
+	// Validate scope only for claude-code
+	if mergeTo == "claude-code" {
+		if scope != "local" && scope != "project" && scope != "user" {
+			return fmt.Errorf("invalid scope '%s', must be either 'local', 'project', or 'user'", scope)
+		}
 	}
 
 	packagesRoot, err := getPackagesRootPath()
@@ -215,7 +232,7 @@ func exportConfig(mergeTo string, dryRun bool, serverType string) error {
 
 		// Handle claude-code option by outputting claude mcp add command
 		if mergeTo == "claude-code" {
-			return outputClaudeCodeCommand(serverType, serverScriptAbs, mcpServerDir)
+			return outputClaudeCodeCommand(serverType, serverScriptAbs, mcpServerDir, dryRun, scope)
 		}
 
 		targetConfig := claudeConfig
@@ -234,8 +251,6 @@ func exportConfig(mergeTo string, dryRun bool, serverType string) error {
 		}
 
 		if dryRun {
-			fmt.Println("Preview of merged configuration:")
-			fmt.Println("----------------------------------------")
 			// Pretty print the final JSON bytes
 			var prettyJSON bytes.Buffer
 			// Indent the final JSON bytes for preview
@@ -326,7 +341,7 @@ func mergeAndMarshalConfigs(targetPath string, newConfig McpConfig) ([]byte, err
 }
 
 // outputClaudeCodeCommand outputs the claude mcp add command for claude-code integration
-func outputClaudeCodeCommand(serverType, serverScriptAbs, mcpServerDir string) error {
+func outputClaudeCodeCommand(serverType, serverScriptAbs, mcpServerDir string, dryRun bool, scope string) error {
 	serverName := "gbox"
 	if serverType == "android" {
 		serverName = "gbox-android"
@@ -336,28 +351,63 @@ func outputClaudeCodeCommand(serverType, serverScriptAbs, mcpServerDir string) e
 	var envArgs []string
 	envArgs = append(envArgs, "-e", "MODE=stdio")
 
+	// Build the command arguments
+	var cmdArgs []string
+	cmdArgs = append(cmdArgs, "mcp", "add", serverName)
+	cmdArgs = append(cmdArgs, envArgs...)
+	
+	// Add scope parameter for claude-code
+	cmdArgs = append(cmdArgs, "-s", scope)
+
 	// Check if we're in debug mode
 	if os.Getenv("DEBUG") == "true" {
 		// For debug mode, use pnpm dev
-		fmt.Println("Copy and execute the following command in your target directory:")
-		fmt.Println("----------------------------------------")
-		fmt.Printf("claude mcp add %s", serverName)
-		for _, arg := range envArgs {
-			fmt.Printf(" %s", arg)
+		cmdArgs = append(cmdArgs, "--", "bash", "-c", fmt.Sprintf("cd %s && pnpm --silent dev", mcpServerDir))
+		
+		if dryRun {
+			fmt.Println("Copy and execute the following command in your target directory:")
+			fmt.Println("----------------------------------------")
+			fmt.Printf("claude %s\n", strings.Join(cmdArgs, " "))
+		} else {
+			return executeClaudeCommand(cmdArgs, serverType)
 		}
-		fmt.Printf(" -- bash -c \"cd %s && pnpm --silent dev\"\n", mcpServerDir)
 	} else {
 		// For production mode, use the built script
-		fmt.Println("Copy and execute the following command in your target directory:")
-		fmt.Println("----------------------------------------")
-		fmt.Printf("claude mcp add %s", serverName)
-		for _, arg := range envArgs {
-			fmt.Printf(" %s", arg)
+		cmdArgs = append(cmdArgs, "--", "node", serverScriptAbs)
+		
+		if dryRun {
+			fmt.Println("Copy and execute the following command in your target directory:")
+			fmt.Println("----------------------------------------")
+			fmt.Printf("claude %s\n", strings.Join(cmdArgs, " "))
+		} else {
+			return executeClaudeCommand(cmdArgs, serverType)
 		}
-		fmt.Printf(" -- node %s\n", serverScriptAbs)
 	}
 
-	fmt.Println()
+	if dryRun {
+		fmt.Println()
+		if serverType == "android" {
+			fmt.Println("Note: Android mcp server will automatically use API key from current profile.")
+		}
+	}
+
+	return nil
+}
+
+// executeClaudeCommand executes the claude mcp add command
+func executeClaudeCommand(cmdArgs []string, serverType string) error {
+	// Check if claude command is available
+	claudeCmd := exec.Command("claude", cmdArgs...)
+	claudeCmd.Stdout = os.Stdout
+	claudeCmd.Stderr = os.Stderr
+
+	fmt.Printf("Executing: claude %s\n", strings.Join(cmdArgs, " "))
+	
+	if err := claudeCmd.Run(); err != nil {
+		return fmt.Errorf("failed to execute claude mcp add command: %w", err)
+	}
+
+	fmt.Println("MCP server configuration completed successfully!")
 	if serverType == "android" {
 		fmt.Println("Note: Android mcp server will automatically use API key from current profile.")
 	}
