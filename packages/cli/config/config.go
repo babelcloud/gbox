@@ -18,8 +18,8 @@ func init() {
 
 	// Set default values
 	v.SetDefault("api.endpoint.local", "http://localhost:28080")
-	// v.SetDefault("api.endpoint.cloud", "http://gbox.localhost:2080")
-	v.SetDefault("api.endpoint.cloud", "https://gbox.ai")
+	v.SetDefault("api.endpoint.cloud", "http://gbox.localhost:2080")
+	// v.SetDefault("api.endpoint.cloud", "https://gbox.ai")
 
 	v.SetDefault("project.root", "")
 	v.SetDefault("mcp.server.url", "http://localhost:28090/sse") // Default MCP server URL
