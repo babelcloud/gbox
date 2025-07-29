@@ -156,7 +156,7 @@ func TestNewMcpExportCommand(t *testing.T) {
 
 	// Verify command basic properties
 	assert.Equal(t, "export", cmd.Use)
-	assert.Equal(t, "Export MCP configuration for Claude Desktop/Cursor", cmd.Short)
+	assert.Equal(t, "Export MCP configuration for Claude Desktop/Cursor (Android only)", cmd.Short)
 
 	// Verify flag options
 	mergeTo, err := cmd.Flags().GetString("merge-to")
@@ -166,4 +166,6 @@ func TestNewMcpExportCommand(t *testing.T) {
 	dryRun, err := cmd.Flags().GetBool("dry-run")
 	require.NoError(t, err)
 	assert.Equal(t, false, dryRun)
+
+	// The 'type' flag is removed, so we do not test it
 }
