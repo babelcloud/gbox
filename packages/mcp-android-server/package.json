@@ -1,17 +1,33 @@
 {
-  "name": "mcp-android-server",
-  "version": "0.0.1",
+  "name": "@gbox.ai/mcp-android-server",
+  "version": "0.0.4",
   "description": "MCP server exposing Gbox Android control tools via Model Context Protocol",
+  "homepage": "https://gbox.ai",
+  "author": "Gbox Team",
+  "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "@gbox.ai/mcp-android-server": "dist/index.js"
+  },
   "scripts": {
     "build": "tsup",
     "start": "node dist/index.js",
     "inspect": "npx @modelcontextprotocol/inspector tsx src/index.ts",
     "dev": "node --loader ts-node/esm --no-warnings src/index.ts"
   },
-  "author": "",
-  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "modelcontextprotocol",
+    "gbox",
+    "ai",
+    "android",
+    "control"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/babelcloud/gbox.git"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.7.0",
     "dotenv": "^16.6.1",
@@ -26,5 +42,11 @@
     "tsup": "^8.4.0",
     "tsx": "^4.7.1",
     "typescript": "^5.2.0"
-  }
+  },
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ]
 }

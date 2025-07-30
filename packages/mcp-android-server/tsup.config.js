@@ -14,7 +14,8 @@ export default {
         'node:*',
     ],
     banner: {
-        js: `import { createRequire } from 'module'; const require = createRequire(import.meta.url);`,
+        js: `#!/usr/bin/env node
+import { createRequire } from 'module'; const require = createRequire(import.meta.url);`,
     },
     outDir: 'dist',
     noExternal: [
