@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
@@ -23,7 +24,7 @@ import (
 //
 type PortForwardOptions struct {
 	BoxID      string
-	PortMap    string // e.g. 5555:5555 or :5555 or 5555
+	PortMaps   []string // Support multiple port mappings
 	Foreground bool
 }
 
@@ -40,9 +41,20 @@ func NewPortForwardCommand() *cobra.Command {
 	opts := &PortForwardOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "port-forward <box_id> [port]",
-		Short: "Port forward remote android adb to local",
-		Long:  `Port forward remote android box's adb port (default 5555) to local for adb connect`,
+		Use:   "port-forward BOX_ID [options] [LOCAL_PORT:]REMOTE_PORT [...[LOCAL_PORT_N:]REMOTE_PORT_N]",
+		Short: "Forward one or more ports from a remote box to your local machine (multi-port, kubectl style)",
+		Long: `Forward one or more ports from a remote android box to your local machine.
+
+Examples:
+  # Run in foreground
+  gbox port-forward box123 8888:5555 --foreground
+
+  # Use with --port/-p flag
+  gbox port-forward box123 -p 8888:5555 -p 9999:6666
+
+  # Forward a range of ports
+  gbox port-forward box123 8000:8000 8001:8001 8002:8003
+`,
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ExecutePortForward(cmd, opts, args)
@@ -53,7 +65,7 @@ func NewPortForwardCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&opts.BoxID, "box-id", "b", "", "Box ID (optional, can also be first arg)")
-	cmd.Flags().StringVarP(&opts.PortMap, "port", "p", "5555:5555", "Port mapping in the form [remote_port:local_port], [:local_port], or [remote_port]")
+	cmd.Flags().StringSliceVarP(&opts.PortMaps, "port", "p", []string{"5555:5555"}, "Port mapping(s) in the form [local_port:remote_port], [:remote_port], or [local_port]. Can be specified multiple times or space-separated.")
 	cmd.Flags().BoolVarP(&opts.Foreground, "foreground", "f", false, "Run in foreground (default is background/daemon mode)")
 
 	// Add subcommands: kill, list
@@ -99,10 +111,23 @@ func ExecutePortForward(cmd *cobra.Command, opts *PortForwardOptions, args []str
 		return fmt.Errorf("Box ID is required, check --help for how to add it.")
 	}
 
-	// support port map as second argument
-	portMap := opts.PortMap
-	if len(args) > 1 && args[1] != "" {
-		portMap = args[1]
+	// Collect all port mapping arguments
+	var portMaps []string
+	if len(opts.PortMaps) > 0 {
+		portMaps = opts.PortMaps
+	}
+	if len(args) > 1 {
+		// args[1:] may also be port mappings
+		portMaps = args[1:]
+	}
+	if len(portMaps) == 0 {
+		portMaps = []string{"5555:5555"}
+	}
+
+	// Parse all port mappings
+	pairs, err := parsePortMaps(portMaps)
+	if err != nil {
+		return fmt.Errorf("Invalid port map(s): %v", err)
 	}
 
 	// try to get API_KEY, if not set, return error
@@ -117,114 +142,141 @@ func ExecutePortForward(cmd *cobra.Command, opts *PortForwardOptions, args []str
 		return fmt.Errorf("Local profile is not supported for port-forward.")
 	}
 
-	// extract remote port and local port from port map
-	remotePort, localPort, err := parsePortMap(portMap)
-	if err != nil {
-		return fmt.Errorf("Invalid port map: %v", err)
-	}
-
-	logPath := fmt.Sprintf("%s/gbox-portforward-%s-%d.log", port_forward.GboxHomeDir(), opts.BoxID, localPort)
+	logPath := fmt.Sprintf("%s/gbox-portforward-%s-%d.log", port_forward.GboxHomeDir(), opts.BoxID, pairs[0].Local) // Use the first local port for log path
 	if shouldReturn, err := port_forward.DaemonizeIfNeeded(opts.Foreground, logPath); shouldReturn {
 		return err
 	}
-	// write pid file
-	err = port_forward.WritePidFile(opts.BoxID, localPort, remotePort)
+	// Write pid file for all ports
+	err = port_forward.WritePidFile(opts.BoxID,
+		func() []int { arr := make([]int, len(pairs)); for i, p := range pairs { arr[i] = p.Local }; return arr }(),
+		func() []int { arr := make([]int, len(pairs)); for i, p := range pairs { arr[i] = p.Remote }; return arr }(),
+	)
 	if err != nil {
 		return fmt.Errorf("Failed to write pid file: %v", err)
 	}
-	// clean up pid file and log file when exit
+	// Clean up pid and log files on exit
 	defer func() {
-		port_forward.RemovePidFile(opts.BoxID, localPort)
-		port_forward.RemoveLogFile(logPath)
+		for _, pair := range pairs {
+			port_forward.RemovePidFile(opts.BoxID, pair.Local)
+			port_forward.RemoveLogFile(fmt.Sprintf("%s/gbox-portforward-%s-%d.log", port_forward.GboxHomeDir(), opts.BoxID, pair.Local))
+		}
 	}()
-	// signal handling
+	// Signal handling for cleanup
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
-		port_forward.RemovePidFile(opts.BoxID, localPort)
-		port_forward.RemoveLogFile(logPath)
+		for _, pair := range pairs {
+			port_forward.RemovePidFile(opts.BoxID, pair.Local)
+			port_forward.RemoveLogFile(fmt.Sprintf("%s/gbox-portforward-%s-%d.log", port_forward.GboxHomeDir(), opts.BoxID, pair.Local))
+		}
 		os.Exit(0)
 	}()
 
-	// prepare port forward config
+	// Connect to websocket only once
 	portForwardConfig := port_forward.Config{
 		APIKey:      current.APIKey,
 		BoxID:       opts.BoxID,
 		GboxURL:     config.GetCloudAPIURL(),
-		LocalAddr:   fmt.Sprintf("127.0.0.1:%d", localPort),
-		TargetPorts: []int{remotePort},
+		TargetPorts: make([]int, 0, len(pairs)),
+	}
+	for _, pair := range pairs {
+		portForwardConfig.TargetPorts = append(portForwardConfig.TargetPorts, pair.Remote)
 	}
 
 	retryInterval := 3 * time.Second
-	log.Printf("Starting port-forward: local 127.0.0.1:%d <-> remote %d (auto-reconnect enabled)", localPort, remotePort)
+	log.Printf("Starting port-forward: local <-> remote (auto-reconnect enabled)")
 
 	for {
-		// 1. Listen on local port (fail if already in use)
-		l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", localPort))
-		if err != nil {
-			return fmt.Errorf("Failed to listen on port %d: %v", localPort, err)
+		listeners := make([]net.Listener, 0, len(pairs))
+		// Listen on all local ports
+		for _, pair := range pairs {
+			l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", pair.Local))
+			if err != nil {
+				// Close all opened listeners
+				for _, ll := range listeners {
+					ll.Close()
+				}
+				return fmt.Errorf("Failed to listen on port %d: %v", pair.Local, err)
+			}
+			log.Printf("Listening on 127.0.0.1:%d", pair.Local)
+			listeners = append(listeners, l)
 		}
-		log.Printf("Listening on 127.0.0.1:%d", localPort)
 
-		// 2. Connect to websocket
-	client := port_forward.ConnectWebSocket(portForwardConfig)
-	if client == nil {
-			l.Close()
+		// Connect to websocket
+		client := port_forward.ConnectWebSocket(portForwardConfig)
+		if client == nil {
+			for _, l := range listeners {
+				l.Close()
+			}
 			log.Printf("Failed to connect to WebSocket, retrying in %v...", retryInterval)
 			time.Sleep(retryInterval)
 			continue
-	}
+		}
 
-		// --- Concurrency & Reconnection Control Logic ---
-	reconnectCh := make(chan struct{})
-	stopAcceptCh := make(chan struct{})
+		// Concurrency & Reconnection Control Logic
+		reconnectCh := make(chan struct{})
+		stopAcceptCh := make(chan struct{})
 
 		// Start the main loop for the WebSocket client.
-	go func() {
-		if err := client.Run(); err != nil {
-			fmt.Printf("client run error: %v", err)
-		}
-		close(reconnectCh)
-	}()
-
-	acceptDone := make(chan struct{})
-		// Start the local port listener goroutine.
-	go func() {
-		defer close(acceptDone)
-		for {
-			select {
-			case <-stopAcceptCh:
-				return
-			default:
-				localConn, err := l.Accept()
-				if err != nil {
-					log.Printf("accept error: %v", err)
-					time.Sleep(time.Second)
-					continue
-				}
-				log.Printf("new local tcp connection from %v", localConn.RemoteAddr())
-				go port_forward.HandleLocalConnWithClient(localConn, client, remotePort)
+		go func() {
+			if err := client.Run(); err != nil {
+				fmt.Printf("client run error: %v", err)
 			}
+			close(reconnectCh)
+		}()
+
+		acceptDone := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(len(listeners))
+		// Start the local port listener goroutines.
+		for idx, l := range listeners {
+			pair := pairs[idx]
+			go func(l net.Listener, remotePort int) {
+				defer wg.Done()
+				for {
+					select {
+					case <-stopAcceptCh:
+						return
+					default:
+						localConn, err := l.Accept()
+						if err != nil {
+							log.Printf("accept error: %v", err)
+							time.Sleep(time.Second)
+							continue
+						}
+						log.Printf("new local tcp connection from %v (local port %d)", localConn.RemoteAddr(), pair.Local)
+						go port_forward.HandleLocalConnWithClient(localConn, client, remotePort)
+					}
+				}
+			}(l, pair.Remote)
 		}
-	}()
+		// Wait for all accept goroutines to exit
+		go func() {
+			wg.Wait()
+			close(acceptDone)
+		}()
 
 		// Main flow waits for:
-	select {
-	case <-reconnectCh:
+		select {
+		case <-reconnectCh:
 			log.Println("websocket disconnected, will attempt to reconnect...")
-		close(stopAcceptCh)
-			l.Close() // force accept goroutine to exit
-		<-acceptDone
-		client.Close()
+			close(stopAcceptCh)
+			for _, l := range listeners {
+				l.Close() // force accept goroutine to exit
+			}
+			<-acceptDone
+			client.Close()
 			log.Printf("Reconnecting in %v...", retryInterval)
 			time.Sleep(retryInterval)
 			continue // retry loop
-	case <-acceptDone:
-		log.Println("accept loop ended")
-			l.Close()
+		case <-acceptDone:
+			log.Println("accept loop ended")
+			for _, l := range listeners {
+				l.Close()
+			}
 			client.Close()
-		return nil
+			return nil
 		}
 	}
 }
@@ -275,8 +327,11 @@ func ExecutePortForwardKill(cmd *cobra.Command, opts *PortForwardKillOptions, ar
 	if err != nil {
 		return fmt.Errorf("kill process: %v", err)
 	}
-	port_forward.RemovePidFile(boxid, localport)
-	fmt.Printf("Killed port-forward process %d (boxid=%s, port=%d)\n", info.Pid, boxid, localport)
+	// 删除所有相关 pid 文件
+	for _, lp := range info.LocalPorts {
+		port_forward.RemovePidFile(boxid, lp)
+	}
+	fmt.Printf("Killed port-forward process %d (boxid=%s, ports=%v)\n", info.Pid, boxid, info.LocalPorts)
 	return nil
 }
 
@@ -292,42 +347,63 @@ func ExecutePortForwardList(cmd *cobra.Command, opts *PortForwardListOptions) er
 		if port_forward.IsProcessAlive(info.Pid) {
 			status = "Alive"
 		}
-		fmt.Printf("| %-8d | %-36s | %-10d | %-10d | %-8s | %-20s |\n", info.Pid, info.BoxID, info.LocalPort, info.RemotePort, status, info.StartedAt.Format("2006-01-02 15:04:05"))
+		for i := 0; i < len(info.LocalPorts) && i < len(info.RemotePorts); i++ {
+			fmt.Printf("| %-8d | %-36s | %-10d | %-10d | %-8s | %-20s |\n", info.Pid, info.BoxID, info.LocalPorts[i], info.RemotePorts[i], status, info.StartedAt.Format("2006-01-02 15:04:05"))
+		}
 	}
 	return nil
 }
 
-// parsePortMap parses the port mapping string and returns remotePort, localPort
-// Acceptable formats: "5555:6666", ":6666", "5555" (default localPort = 5555)
+// parsePortMap parses the port mapping string and returns localPort, remotePort
+// Acceptable formats: "6666:5555" (local:remote), ":5555", "6666" (default remotePort = 5555)
 func parsePortMap(portMap string) (int, int, error) {
-	var remotePortStr, localPortStr string
+	var localPortStr, remotePortStr string
 	parts := strings.Split(portMap, ":")
 	if len(parts) == 2 {
 		if parts[0] == "" {
-			// ":6666" => remotePort = 5555, localPort = 6666
-			remotePortStr = "5555"
+			// ":5555" => localPort = 5555, remotePort = 5555
 			localPortStr = parts[1]
+			remotePortStr = parts[1]
 		} else {
-			// "5555:6666" => remotePort = 5555, localPort = 6666
-			remotePortStr = parts[0]
-			localPortStr = parts[1]
+			// "6666:5555" => localPort = 6666, remotePort = 5555
+			localPortStr = parts[0]
+			remotePortStr = parts[1]
 		}
 	} else if len(parts) == 1 {
-		// "5555" => remotePort = 5555, localPort = 5555
-		remotePortStr = parts[0]
+		// "5555" => localPort = 5555, remotePort = 5555
 		localPortStr = parts[0]
+		remotePortStr = parts[0]
 	} else {
 		return 0, 0, fmt.Errorf("Invalid port map format")
 	}
 
-	remotePort, err := strconv.Atoi(remotePortStr)
-	if err != nil || remotePort < 1 || remotePort > 65535 {
-		return 0, 0, fmt.Errorf("Invalid remote port: %s", remotePortStr)
-	}
 	localPort, err := strconv.Atoi(localPortStr)
 	if err != nil || localPort < 1 || localPort > 65535 {
 		return 0, 0, fmt.Errorf("Invalid local port: %s", localPortStr)
 	}
+	remotePort, err := strconv.Atoi(remotePortStr)
+	if err != nil || remotePort < 1 || remotePort > 65535 {
+		return 0, 0, fmt.Errorf("Invalid remote port: %s", remotePortStr)
+	}
 
-	return remotePort, localPort, nil
+	return localPort, remotePort, nil
+}
+
+// parsePortMaps parses multiple port mapping strings
+// Acceptable: ["5555:6666", ":7777", "8888"] (local:remote)
+type PortPair struct {
+	Local  int
+	Remote int
+}
+
+func parsePortMaps(portMaps []string) ([]PortPair, error) {
+	var pairs []PortPair
+	for _, pm := range portMaps {
+		local, remote, err := parsePortMap(pm)
+		if err != nil {
+			return nil, err
+		}
+		pairs = append(pairs, PortPair{Local: local, Remote: remote})
+	}
+	return pairs, nil
 }

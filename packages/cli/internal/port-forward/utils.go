@@ -20,12 +20,13 @@ import (
 )
 
 // PidInfo holds info for a running port-forward process
+// Support multiple ports in a single process
 type PidInfo struct {
-	Pid        int       `json:"pid"`
-	BoxID      string    `json:"boxid"`
-	LocalPort  int       `json:"localport"`
-	RemotePort int       `json:"remoteport"`
-	StartedAt  time.Time `json:"started_at"`
+	Pid         int       `json:"pid"`
+	BoxID       string    `json:"boxid"`
+	LocalPorts  []int     `json:"localports"`
+	RemotePorts []int     `json:"remoteports"`
+	StartedAt   time.Time `json:"started_at"`
 }
 
 // GboxHomeDir returns the ~/.gbox directory path
@@ -51,30 +52,30 @@ func pidFilePath(boxid string, localport int) string {
 
 const pidFilePattern = "gbox-portforward-*.pid"
 
-func WritePidFile(boxid string, localport, remoteport int) error {
+// WritePidFile writes a pid file for multiple ports (first local port is used for file name)
+func WritePidFile(boxid string, localports, remoteports []int) error {
 	if err := ensureGboxDir(); err != nil {
 		return err
 	}
-	path := pidFilePath(boxid, localport)
+	// Use the first local port for the pid file name
+	path := pidFilePath(boxid, localports[0])
 	// check if pid file exists
 	if _, err := os.Stat(path); err == nil {
-		// if exists, read pid and check process
 		f, err := os.Open(path)
 		if err == nil {
 			var info PidInfo
 			decodeErr := json.NewDecoder(f).Decode(&info)
 			f.Close()
 			if decodeErr == nil && IsProcessAlive(info.Pid) {
-				return fmt.Errorf("port-forward already running for boxid=%s, localport=%d (pid=%d)", boxid, localport, info.Pid)
+				return fmt.Errorf("port-forward already running for boxid=%s, localport=%d (pid=%d)", boxid, localports[0], info.Pid)
 			}
 		}
-		// if pid file exists but process is not running, remove it
 	}
 	info := PidInfo{
 		Pid:        os.Getpid(),
 		BoxID:      boxid,
-		LocalPort:  localport,
-		RemotePort: remoteport,
+		LocalPorts: localports,
+		RemotePorts: remoteports,
 		StartedAt:  time.Now(),
 	}
 	f, err := os.Create(path)
@@ -86,6 +87,7 @@ func WritePidFile(boxid string, localport, remoteport int) error {
 	return enc.Encode(&info)
 }
 
+// RemovePidFile removes the pid file for a given local port
 func RemovePidFile(boxid string, localport int) error {
 	return os.Remove(pidFilePath(boxid, localport))
 }
