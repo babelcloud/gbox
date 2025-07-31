@@ -1,7 +1,7 @@
 # GBOX CLI
 ------
 This CLI tool allows you to manage your running gbox sandboxes.
-Learn more in our [documentation](https://docs.gbox.ai/).
+Learn more about Gbox in our [documentation](https://docs.gbox.ai/).
 
 ## 1. Installation
 
@@ -20,4 +20,4 @@ npm install -g @gbox.ai/cli
 gbox login
 ```
 ## 3. Check out usages
-Visit out [CLI documentation](https://github.com/babelcloud/gbox) to learn more.
+Visit out [CLI documentation](https://docs.gbox.ai/cli) to learn more.
