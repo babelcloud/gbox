@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
@@ -8,20 +9,20 @@ import (
 	"strings"
 	"time"
 
-	"encoding/json"
 	"os"
+	"os/exec"
 	"os/signal"
 	"sync"
 	"syscall"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
+	"github.com/babelcloud/gbox/packages/cli/internal/gboxsdk"
 	port_forward "github.com/babelcloud/gbox/packages/cli/internal/port-forward"
 	"github.com/spf13/cobra"
 )
 
 // PortForwardOptions holds options for the port-forward command
 // You can expand this struct as needed
-//
 type PortForwardOptions struct {
 	BoxID      string
 	PortMaps   []string // Support multiple port mappings
@@ -55,7 +56,7 @@ Examples:
   # Forward a range of ports
   gbox port-forward box123 8000:8000 8001:8001 8002:8003
 `,
-		Args:  cobra.MinimumNArgs(1),
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ExecutePortForward(cmd, opts, args)
 		},
@@ -78,14 +79,14 @@ Examples:
 func NewPortForwardKillCommand() *cobra.Command {
 	opts := &PortForwardKillOptions{}
 	cmd := &cobra.Command{
-		Use:   "kill <boxid> <localport> | --pid <pid>",
-		Short: "Kill a running port-forward process",
-		Args:  cobra.MinimumNArgs(0),
+		Use:   "kill <pid> | --pid <pid>",
+		Short: "Kill a running port-forward process by PID",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ExecutePortForwardKill(cmd, opts, args)
 		},
 	}
-	cmd.Flags().Int("pid", 0, "PID of the port-forward process to kill")
+	cmd.Flags().Int("pid", 0, "PID of the port-forward process to kill (can also be provided as first argument)")
 	return cmd
 }
 
@@ -107,8 +108,8 @@ func ExecutePortForward(cmd *cobra.Command, opts *PortForwardOptions, args []str
 	if opts.BoxID == "" && len(args) > 0 {
 		opts.BoxID = args[0]
 	}
-	if opts.BoxID == "" {
-		return fmt.Errorf("Box ID is required, check --help for how to add it.")
+	if opts.BoxID == "" || !boxValid(opts.BoxID) {
+		return fmt.Errorf("Box you specified is not valid, check --help for how to add it or using 'gbox box list' to check.")
 	}
 
 	// Collect all port mapping arguments
@@ -148,8 +149,20 @@ func ExecutePortForward(cmd *cobra.Command, opts *PortForwardOptions, args []str
 	}
 	// Write pid file for all ports
 	err = port_forward.WritePidFile(opts.BoxID,
-		func() []int { arr := make([]int, len(pairs)); for i, p := range pairs { arr[i] = p.Local }; return arr }(),
-		func() []int { arr := make([]int, len(pairs)); for i, p := range pairs { arr[i] = p.Remote }; return arr }(),
+		func() []int {
+			arr := make([]int, len(pairs))
+			for i, p := range pairs {
+				arr[i] = p.Local
+			}
+			return arr
+		}(),
+		func() []int {
+			arr := make([]int, len(pairs))
+			for i, p := range pairs {
+				arr[i] = p.Remote
+			}
+			return arr
+		}(),
 	)
 	if err != nil {
 		return fmt.Errorf("Failed to write pid file: %v", err)
@@ -158,7 +171,7 @@ func ExecutePortForward(cmd *cobra.Command, opts *PortForwardOptions, args []str
 	defer func() {
 		for _, pair := range pairs {
 			port_forward.RemovePidFile(opts.BoxID, pair.Local)
-			port_forward.RemoveLogFile(fmt.Sprintf("%s/gbox-portforward-%s-%d.log", port_forward.GboxHomeDir(), opts.BoxID, pair.Local))
+			port_forward.RemoveLogFile(opts.BoxID, pair.Local)
 		}
 	}()
 	// Signal handling for cleanup
@@ -168,7 +181,7 @@ func ExecutePortForward(cmd *cobra.Command, opts *PortForwardOptions, args []str
 		<-sigCh
 		for _, pair := range pairs {
 			port_forward.RemovePidFile(opts.BoxID, pair.Local)
-			port_forward.RemoveLogFile(fmt.Sprintf("%s/gbox-portforward-%s-%d.log", port_forward.GboxHomeDir(), opts.BoxID, pair.Local))
+			port_forward.RemoveLogFile(opts.BoxID, pair.Local)
 		}
 		os.Exit(0)
 	}()
@@ -282,67 +295,128 @@ func ExecutePortForward(cmd *cobra.Command, opts *PortForwardOptions, args []str
 }
 
 func ExecutePortForwardKill(cmd *cobra.Command, opts *PortForwardKillOptions, args []string) error {
-	// support gbox port-forward kill <boxid> <localport> or --pid <pid>
 	pidFlag, _ := cmd.Flags().GetInt("pid")
-	if pidFlag > 0 {
-		// kill by pid
-		proc, err := os.FindProcess(pidFlag)
-		if err != nil {
-			return fmt.Errorf("find process: %v", err)
+	pid := pidFlag
+	if len(args) > 0 {
+		// Try to parse the first argument as pid
+		parsed, err := strconv.Atoi(args[0])
+		if err != nil || parsed <= 0 {
+			return fmt.Errorf("First argument must be a valid PID (integer > 0), or use --pid <pid>")
 		}
-		err = proc.Signal(syscall.SIGTERM)
-		if err != nil {
-			return fmt.Errorf("kill process: %v", err)
-		}
-		fmt.Printf("Killed port-forward process %d\n", pidFlag)
-		return nil
+		pid = parsed
 	}
-	if len(args) < 2 {
-		return fmt.Errorf("Usage: gbox port-forward kill <boxid> <localport> | --pid <pid>")
+	if pid <= 0 {
+		return fmt.Errorf("PID is required. Usage: gbox port-forward kill <pid> or --pid <pid>")
 	}
-	boxid := args[0]
-	localport, err := strconv.Atoi(args[1])
-	if err != nil {
-		return fmt.Errorf("invalid localport: %v", err)
-	}
-	path, err := port_forward.FindPidFile(boxid, localport)
-	if err != nil {
-		return fmt.Errorf("pid file not found: %v", err)
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open pid file: %v", err)
-	}
-	var info port_forward.PidInfo
-	err = json.NewDecoder(f).Decode(&info)
-	f.Close()
-	if err != nil {
-		return fmt.Errorf("decode pid file: %v", err)
-	}
-	proc, err := os.FindProcess(info.Pid)
+	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return fmt.Errorf("find process: %v", err)
 	}
+
+	// find pid file and output port mappings BEFORE killing the process
+	infos, _ := port_forward.ListPidFiles()
+	var found bool
+	for _, info := range infos {
+		if info.Pid == pid {
+			// build port mappings string
+			var portMappings []string
+			for i := 0; i < len(info.LocalPorts) && i < len(info.RemotePorts); i++ {
+				portMappings = append(portMappings, fmt.Sprintf("%d:%d", info.LocalPorts[i], info.RemotePorts[i]))
+			}
+			fmt.Printf("Killed port-forward process %d for box %s forwarding %s\n", pid, info.BoxID, strings.Join(portMappings, " "))
+			found = true
+		}
+	}
+	if !found {
+		fmt.Printf("Killed port-forward process %d (no pid file info found)\n", pid)
+	}
+
 	err = proc.Signal(syscall.SIGTERM)
 	if err != nil {
 		return fmt.Errorf("kill process: %v", err)
 	}
-	// 删除所有相关 pid 文件
-	for _, lp := range info.LocalPorts {
-		port_forward.RemovePidFile(boxid, lp)
-	}
-	fmt.Printf("Killed port-forward process %d (boxid=%s, ports=%v)\n", info.Pid, boxid, info.LocalPorts)
+
 	return nil
 }
 
 func ExecutePortForwardList(cmd *cobra.Command, opts *PortForwardListOptions) error {
+	// Step 1: Find all running gbox port-forward processes (cross-platform, best effort)
+	psCmd := exec.Command("ps", "aux")
+	psOut, err := psCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to run ps aux: %v", err)
+	}
+	lines := strings.Split(string(psOut), "\n")
+	var runningPids = make(map[int]bool)
+	for _, line := range lines {
+		if strings.Contains(line, "gbox port-forward") && !strings.Contains(line, "grep") {
+			// ignore gbox port-forward list process itself
+			if strings.Contains(line, "gbox port-forward list") {
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) > 1 {
+				pid, err := strconv.Atoi(fields[1])
+				if err == nil {
+					runningPids[pid] = true
+				}
+			}
+		}
+	}
+	// Step 2: List all pid files (registered port-forwards)
 	infos, err := port_forward.ListPidFiles()
 	if err != nil {
 		return err
 	}
+	registeredPids := make(map[int]port_forward.PidInfo)
+	for _, info := range infos {
+		registeredPids[info.Pid] = info
+	}
+	// Step 3: Check for running processes not in pid files
+	for pid := range runningPids {
+		if _, ok := registeredPids[pid]; !ok {
+			fmt.Printf("[WARN] Found running port-forward process (pid=%d) not in registry. If you want to kill it, run: gbox port-forward kill %d\n\n", pid, pid)
+		}
+	}
+	// Step 4: Check for pid files whose process is not running, and clean up
+	for pid, info := range registeredPids {
+		if !runningPids[pid] && !port_forward.IsProcessAlive(pid) {
+			fmt.Printf("[CLEANUP] Removing stale pid file for dead process (pid=%d, boxid=%s, localports=%v)\n", pid, info.BoxID, info.LocalPorts)
+			for _, lp := range info.LocalPorts {
+				port_forward.RemovePidFile(info.BoxID, lp)
+				port_forward.RemoveLogFile(info.BoxID, lp)
+			}
+		}
+	}
+	// Step 5: For those pid files exist and process is running, check the box status, if the box is not running, clean up the pid file and kill the process
+	for pid, info := range registeredPids {
+		if runningPids[pid] && port_forward.IsProcessAlive(pid) {
+			if !boxValid(info.BoxID) {
+				fmt.Printf("[CLEANUP] Box %s is not running, killing port-forward process (pid=%d) and removing pid file(s)\n", info.BoxID, pid)
+				proc, err := os.FindProcess(pid)
+				if err == nil {
+					proc.Kill()
+				}
+				for _, lp := range info.LocalPorts {
+					port_forward.RemovePidFile(info.BoxID, lp)
+					port_forward.RemoveLogFile(info.BoxID, lp)
+				}
+			}
+		}
+	}
+
+	// Step 6: Print the current valid port-forwards
+	updatedInfos, err := port_forward.ListPidFiles()
+	if err != nil {
+		return fmt.Errorf("failed to list pid files after cleanup: %v", err)
+	}
+	if len(updatedInfos) == 0 {
+		return nil
+	}
+
 	fmt.Printf("| %-8s | %-36s | %-10s | %-10s | %-8s | %-20s |\n", "PID", "BoxID", "LocalPort", "RemotePort", "Status", "StartedAt")
 	fmt.Println("|----------|--------------------------------------|------------|------------|----------|----------------------|")
-	for _, info := range infos {
+	for _, info := range updatedInfos {
 		status := "Dead"
 		if port_forward.IsProcessAlive(info.Pid) {
 			status = "Alive"
@@ -406,4 +480,16 @@ func parsePortMaps(portMaps []string) ([]PortPair, error) {
 		pairs = append(pairs, PortPair{Local: local, Remote: remote})
 	}
 	return pairs, nil
+}
+
+func boxValid(boxID string) bool {
+	client, err := gboxsdk.NewClientFromProfile()
+	if err != nil {
+		return false
+	}
+	box, err := client.V1.Boxes.Get(context.Background(), boxID)
+	if err != nil {
+		return false
+	}
+	return box.Status == "running"
 }

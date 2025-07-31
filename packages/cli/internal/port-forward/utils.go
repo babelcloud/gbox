@@ -45,9 +45,14 @@ func ensureGboxDir() error {
 
 const pidFileNamePrefix = "gbox-portforward-"
 const pidFileNameSuffix = ".pid"
+const logFileNameSuffix = ".log"
 
 func pidFilePath(boxid string, localport int) string {
 	return GboxHomeDir() + "/" + pidFileNamePrefix + boxid + "-" + strconv.Itoa(localport) + pidFileNameSuffix
+}
+
+func logFilePath(boxid string, localport int) string {
+	return GboxHomeDir() + "/" + pidFileNamePrefix + boxid + "-" + strconv.Itoa(localport) + logFileNameSuffix
 }
 
 const pidFilePattern = "gbox-portforward-*.pid"
@@ -92,8 +97,8 @@ func RemovePidFile(boxid string, localport int) error {
 	return os.Remove(pidFilePath(boxid, localport))
 }
 
-func RemoveLogFile(logPath string) error {
-	return os.Remove(logPath)
+func RemoveLogFile(boxid string, localport int) error {
+	return os.Remove(logFilePath(boxid, localport))
 }
 
 func ListPidFiles() ([]PidInfo, error) {
