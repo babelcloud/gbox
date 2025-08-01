@@ -74,6 +74,7 @@ func init() {
 	rootCmd.AddCommand(NewMcpCommand())
 	rootCmd.AddCommand(NewCuaCommand())
 	rootCmd.AddCommand(NewVersionCommand())
+	rootCmd.AddCommand(NewPortForwardCommand())
 }
 
 func createAliasCommand(alias, targetCmd string) {
