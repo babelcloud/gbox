@@ -93,7 +93,9 @@ func startLocalServer(codeChan chan string, errorChan chan error) {
 			if r.URL.Path == "/login/github" {
 				code := r.URL.Query().Get("code")
 				if code != "" {
-					w.Write([]byte("<html><body><h1>Authentication successful!</h1><p>You can close this window and return to the terminal.</p></body></html>"))
+					html := `<html><body><h1>Authentication successful!</h1><p>You can close this window and return to the terminal. This window will automatically close in <span id="countdown">5</span> seconds...</p><script>setTimeout(function(){window.close()},5000);</script></body></html>`
+					w.Header().Set("Content-Type", "text/html")
+					w.Write([]byte(html))
 					codeChan <- code
 				} else {
 					errorChan <- fmt.Errorf("no authorization code received")
@@ -120,13 +122,13 @@ var loginCmd = &cobra.Command{
 	Long:  `Authenticate using GitHub OAuth. This will detect your environment and use the appropriate authentication method.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		
+
 		// Check if user has browser environment
 		hasBrowser := checkBrowserEnvironment()
-		
+
 		var accessToken string
 		var err error
-		
+
 		if hasBrowser {
 			fmt.Println("Browser environment detected. Using OAuth authorization code flow...")
 			accessToken, err = authenticateWithBrowser(ctx)
@@ -134,7 +136,7 @@ var loginCmd = &cobra.Command{
 			fmt.Println("No browser detected. Using device authorization flow...")
 			accessToken, err = authenticateWithDevice(ctx)
 		}
-		
+
 		if err != nil {
 			return fmt.Errorf("authentication failed: %v", err)
 		}
@@ -157,7 +159,7 @@ func authenticateWithBrowser(ctx context.Context) (string, error) {
 
 	// Generate authorization URL
 	authURL := oauth2Config.AuthCodeURL("state", oauth2.AccessTypeOffline)
-	
+
 	fmt.Println("Opening browser for authentication...")
 
 	debugMode := os.Getenv("DEBUG") == "true"
