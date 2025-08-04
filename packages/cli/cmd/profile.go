@@ -225,25 +225,41 @@ var profileListCmd = &cobra.Command{
 }
 
 // addManually manually input profile information
-func addManually(pm *ProfileManager) error {
+func addManually(pm *ProfileManager, initialAPIKey, initialName, initialOrgName string) error {
 	var apiKey, name, orgName string
 
-	fmt.Print("Please enter API Key: ")
-	fmt.Scanln(&apiKey)
-	if apiKey == "" {
-		return fmt.Errorf("API Key cannot be empty")
+	// Use provided values or prompt for input
+	if initialAPIKey != "" {
+		apiKey = initialAPIKey
+		fmt.Printf("API Key: %s\n", apiKey)
+	} else {
+		fmt.Print("Please enter API Key: ")
+		fmt.Scanln(&apiKey)
+		if apiKey == "" {
+			return fmt.Errorf("API Key cannot be empty")
+		}
 	}
 
-	fmt.Print("Please enter profile name: ")
-	fmt.Scanln(&name)
-	if name == "" {
-		return fmt.Errorf("Profile name cannot be empty")
+	if initialName != "" {
+		name = initialName
+		fmt.Printf("Profile name: %s\n", name)
+	} else {
+		fmt.Print("Please enter profile name: ")
+		fmt.Scanln(&name)
+		if name == "" {
+			return fmt.Errorf("Profile name cannot be empty")
+		}
 	}
 
-	fmt.Print("Please enter organization name (optional, default is 'default'): ")
-	fmt.Scanln(&orgName)
-	if orgName == "" {
-		orgName = "default"
+	if initialOrgName != "" {
+		orgName = initialOrgName
+		fmt.Printf("Organization name: %s\n", orgName)
+	} else {
+		fmt.Print("Please enter organization name (optional, default is 'default'): ")
+		fmt.Scanln(&orgName)
+		if orgName == "" {
+			orgName = "default"
+		}
 	}
 
 	// Check if the same profile already exists
@@ -269,7 +285,9 @@ var profileAddCmd = &cobra.Command{
 
 Examples:
   gbox profile add --key xxx --name test          # Direct add (org-name optional)
-  gbox profile add                                    # Interactive mode`,
+  gbox profile add --key xxx                      # Interactive mode for missing name/org
+  gbox profile add --name test                    # Interactive mode for missing key/org
+  gbox profile add                                # Fully interactive mode`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pm := NewProfileManager()
 		if err := pm.Load(); err != nil {
@@ -281,14 +299,12 @@ Examples:
 		name, _ := cmd.Flags().GetString("name")
 		orgName, _ := cmd.Flags().GetString("org-name")
 
-		// Enter interactive mode when --key is not provided
-		if apiKey == "" {
-			return addManually(pm)
-		}
+		// Check if all required parameters are provided
+		allProvided := apiKey != "" && name != ""
 
-		// --name is required when --key is provided
-		if name == "" {
-			return fmt.Errorf("--name must be provided when using --key")
+		if !allProvided {
+			// Enter interactive mode for missing parameters
+			return addManually(pm, apiKey, name, orgName)
 		}
 
 		// Default organization name when not provided
