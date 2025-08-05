@@ -131,6 +131,45 @@ func ExecutePortForward(cmd *cobra.Command, opts *PortForwardOptions, args []str
 		return fmt.Errorf("Invalid port map(s): %v", err)
 	}
 
+	// Check local port conflict and availability
+	// 1. Check for duplicate local ports
+	localPorts := make(map[int]bool)
+	for _, pair := range pairs {
+		if localPorts[pair.Local] {
+			return fmt.Errorf("Duplicate local port detected: %d. Each local port can only be used once.", pair.Local)
+		}
+		localPorts[pair.Local] = true
+	}
+
+	// 2. Check port range validity (1-65535)
+	for _, pair := range pairs {
+		if pair.Local < 1 || pair.Local > 65535 {
+			return fmt.Errorf("Invalid local port %d: port must be between 1 and 65535", pair.Local)
+		}
+		if pair.Remote < 1 || pair.Remote > 65535 {
+			return fmt.Errorf("Invalid remote port %d: port must be between 1 and 65535", pair.Remote)
+		}
+	}
+
+	// 3. Check if ports are already in use
+	for _, pair := range pairs {
+		// Try to listen on the port to check if it's available
+		listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", pair.Local))
+		if err != nil {
+			// Try to get more specific error information
+			var portInfo string
+			if strings.Contains(err.Error(), "address already in use") {
+				// Try to find what process is using the port
+				portInfo = getPortUsageInfo(pair.Local)
+			}
+			if portInfo != "" {
+				return fmt.Errorf("Port %d is already in use by: %s", pair.Local, portInfo)
+			}
+			return fmt.Errorf("Port %d is not available: %v", pair.Local, err)
+		}
+		listener.Close() // Close immediately after checking
+	}
+
 	// try to get API_KEY, if not set, return error
 	pm := NewProfileManager()
 	if err := pm.Load(); err != nil {
@@ -492,4 +531,47 @@ func boxValid(boxID string) bool {
 		return false
 	}
 	return box.Status == "running"
+}
+
+// getPortUsageInfo attempts to find what process is using a specific port
+// Returns a descriptive string about the port usage, or empty string if unable to determine
+func getPortUsageInfo(port int) string {
+	// Try to use lsof to find what's using the port (works on macOS and Linux)
+	cmd := exec.Command("lsof", "-i", fmt.Sprintf(":%d", port))
+	output, err := cmd.Output()
+	if err != nil {
+		// If lsof fails, try netstat as fallback
+		cmd = exec.Command("netstat", "-an", "-p", "tcp")
+		output, err = cmd.Output()
+		if err != nil {
+			return "unknown process"
+		}
+
+		// Parse netstat output to find the port
+		lines := strings.Split(string(output), "\n")
+		for _, line := range lines {
+			if strings.Contains(line, fmt.Sprintf(":%d", port)) && strings.Contains(line, "LISTEN") {
+				// Extract process info if available
+				fields := strings.Fields(line)
+				if len(fields) >= 4 {
+					return fmt.Sprintf("process (netstat shows: %s)", fields[len(fields)-1])
+				}
+				return "listening process"
+			}
+		}
+		return "unknown process"
+	}
+
+	// Parse lsof output
+	lines := strings.Split(string(output), "\n")
+	if len(lines) > 1 { // Skip header line
+		fields := strings.Fields(lines[1])
+		if len(fields) >= 2 {
+			pid := fields[1]
+			processName := fields[0]
+			return fmt.Sprintf("%s (PID: %s)", processName, pid)
+		}
+	}
+
+	return "unknown process"
 }
