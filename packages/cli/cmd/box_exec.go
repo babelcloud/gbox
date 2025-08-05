@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
+	"github.com/babelcloud/gbox/packages/cli/internal/profile"
 	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -270,7 +271,7 @@ func runExec(opts *BoxExecOptions) error {
 
 // runExecWebSocket 通过新的 WebSocket API 执行交互式命令
 func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
-	pm := NewProfileManager()
+	pm := profile.NewProfileManager()
 	if err := pm.Load(); err != nil {
 		// handle error, maybe default to cloud
 	}

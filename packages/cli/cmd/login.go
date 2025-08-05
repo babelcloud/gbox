@@ -16,6 +16,7 @@ import (
 
 	"github.com/babelcloud/gbox/packages/cli/config"
 	"github.com/babelcloud/gbox/packages/cli/internal/cloud"
+	"github.com/babelcloud/gbox/packages/cli/internal/profile"
 
 	"os/exec"
 	"runtime"
@@ -297,7 +298,7 @@ func getLocalToken(githubToken string) (string, error) {
 
 	// Save API key related data to profile.json
 	if apiKeyInfo != nil && selectedOrg != nil {
-		pm := NewProfileManager()
+		pm := profile.NewProfileManager()
 		if err := pm.Load(); err != nil {
 			return "", fmt.Errorf("failed to load profile manager: %v", err)
 		}

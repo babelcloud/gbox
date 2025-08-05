@@ -24,8 +24,13 @@ func init() {
 	v.SetDefault("project.root", "")
 	v.SetDefault("mcp.server.url", "http://localhost:28090/sse") // Default MCP server URL
 
-	// Set default profile file path
-	v.SetDefault("profile.path", filepath.Join(xdg.Home, ".gbox", "profile.json"))
+	// Set default gbox home directory
+	v.SetDefault("gbox.home", filepath.Join(xdg.Home, ".gbox"))
+
+	// Set default profile file path (based on gbox.home)
+	// Note: We can't use GetGboxHome() here because it's not available during init
+	// The profile path will be resolved dynamically when accessed
+	v.SetDefault("profile.path", "")
 
 	v.SetDefault("github.client_secret", "")
 
@@ -34,7 +39,9 @@ func init() {
 	v.BindEnv("api.endpoint.local", "API_ENDPOINT_LOCAL", "API_ENDPOINT")
 	v.BindEnv("api.endpoint.cloud", "API_ENDPOINT_CLOUD")
 	v.BindEnv("project.root", "PROJECT_ROOT")
-	v.BindEnv("mcp.server.url", "MCP_SERVER_URL")  // Bind MCP server URL env var
+	v.BindEnv("mcp.server.url", "MCP_SERVER_URL") // Bind MCP server URL env var
+	v.BindEnv("gbox.home", "GBOX_HOME")
+	v.BindEnv("device_proxy.home", "DEVICE_PROXY_HOME")
 	v.BindEnv("profile.path", "GBOX_PROFILE_PATH") // Bind profile path env var
 	v.BindEnv("github.client_secret", "GBOX_GITHUB_CLIENT_SECRET")
 
@@ -86,7 +93,13 @@ func GetMcpServerUrl() string {
 
 // GetProfilePath returns the profile file path
 func GetProfilePath() string {
-	return v.GetString("profile.path")
+	// If profile.path is explicitly set, use it
+	if profilePath := v.GetString("profile.path"); profilePath != "" {
+		return profilePath
+	}
+
+	// Otherwise, use gbox.home + "/profile.json"
+	return filepath.Join(GetGboxHome(), "profile.json")
 }
 
 // GetGithubClientSecret returns the GitHub OAuth client secret from env or config
@@ -95,4 +108,20 @@ func GetGithubClientSecret() string {
 		return githubClientSecret
 	}
 	return v.GetString("github.client_secret")
+}
+
+// GetGboxHome returns the gbox home directory
+func GetGboxHome() string {
+	return v.GetString("gbox.home")
+}
+
+// GetDeviceProxyHome returns the device proxy home directory
+func GetDeviceProxyHome() string {
+	// Check if device_proxy.home is explicitly set
+	if deviceProxyHome := v.GetString("device_proxy.home"); deviceProxyHome != "" {
+		return deviceProxyHome
+	}
+
+	// Otherwise, use gbox.home + "/device-proxy"
+	return filepath.Join(GetGboxHome(), "device-proxy")
 }

@@ -75,6 +75,7 @@ func init() {
 	rootCmd.AddCommand(NewCuaCommand())
 	rootCmd.AddCommand(NewVersionCommand())
 	rootCmd.AddCommand(NewPortForwardCommand())
+	rootCmd.AddCommand(NewDeviceConnectCommand())
 }
 
 func createAliasCommand(alias, targetCmd string) {

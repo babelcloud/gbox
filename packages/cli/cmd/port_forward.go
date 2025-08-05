@@ -18,6 +18,7 @@ import (
 	"github.com/babelcloud/gbox/packages/cli/config"
 	"github.com/babelcloud/gbox/packages/cli/internal/gboxsdk"
 	port_forward "github.com/babelcloud/gbox/packages/cli/internal/port-forward"
+	"github.com/babelcloud/gbox/packages/cli/internal/profile"
 	"github.com/spf13/cobra"
 )
 
@@ -171,7 +172,7 @@ func ExecutePortForward(cmd *cobra.Command, opts *PortForwardOptions, args []str
 	}
 
 	// try to get API_KEY, if not set, return error
-	pm := NewProfileManager()
+	pm := profile.NewProfileManager()
 	if err := pm.Load(); err != nil {
 		return fmt.Errorf("Failed to load profile: %v", err)
 	}
