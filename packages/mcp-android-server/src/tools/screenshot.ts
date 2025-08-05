@@ -5,14 +5,14 @@ import type { ActionScreenshot } from "gbox-sdk";
 
 export const GET_SCREENSHOT_TOOL = "get_screenshot";
 export const GET_SCREENSHOT_DESCRIPTION =
-  "Take a screenshot of the current display for a given box.";
+  "Take a screenshot of the current display for a given box. The output format can be either base64 or an Presigned URL";
 
 export const getScreenshotParamsSchema = {
   boxId: z.string().describe("ID of the box"),
   outputFormat: z
     .enum(["base64", "storageKey"])
     .optional()
-    .default("base64")
+    .default("storageKey")
     .describe("The output format for the screenshot."),
 };
 
@@ -36,30 +36,51 @@ export function handleGetScreenshot(logger: MCPLogger) {
 
       const result = await box.action.screenshot(actionParams);
 
-      // The SDK returns a `uri` string. It may be a bare base64 string or a data URI.
-      let mimeType = "image/png";
-      let base64Data = result.uri;
-
-      if (result.uri.startsWith("data:")) {
-        const match = result.uri.match(/^data:(.+);base64,(.*)$/);
-        if (match) {
-          mimeType = match[1];
-          base64Data = match[2];
-        }
-      }
-
       await logger.info("Screenshot taken successfully", { boxId });
 
-      // Return image content for MCP
-      return {
-        content: [
-          {
-            type: "image" as const,
-            data: base64Data,
-            mimeType,
-          },
-        ],
-      };
+      // Handle different output formats
+      if (outputFormat === "storageKey") {
+        // For storageKey format, get the presigned URL for the storage key using SDK
+        const presignedUrl = await box.storage.createPresignedUrl({ storageKey: result.uri });
+        
+        await logger.info("Presigned URL created", { 
+          boxId, 
+          storageKey: result.uri,
+          presignedUrl 
+        });
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Screenshot URL: ${presignedUrl}`,
+            },
+          ],
+        };
+      } else {
+        // For base64 format, parse the data URI
+        let mimeType = "image/png";
+        let base64Data = result.uri;
+
+        if (result.uri.startsWith("data:")) {
+          const match = result.uri.match(/^data:(.+);base64,(.*)$/);
+          if (match) {
+            mimeType = match[1];
+            base64Data = match[2];
+          }
+        }
+
+        // Return image content for MCP
+        return {
+          content: [
+            {
+              type: "image" as const,
+              data: base64Data,
+              mimeType,
+            },
+          ],
+        };
+      }
     } catch (error) {
       await logger.error("Failed to take screenshot", {
         boxId: args?.boxId,
