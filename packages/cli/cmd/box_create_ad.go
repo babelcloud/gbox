@@ -103,6 +103,7 @@ func runAndroidCreate(opts *AndroidBoxCreateOptions) error {
 				ExpiresIn: sdk.String(opts.ExpiresIn),
 				Envs:      envMap,
 				Labels:    labelMap,
+				DeviceType: sdk.CreateBoxConfigDeviceType(opts.DeviceType),
 			},
 		},
 	}
