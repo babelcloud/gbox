@@ -77,11 +77,11 @@ func WritePidFile(boxid string, localports, remoteports []int) error {
 		}
 	}
 	info := PidInfo{
-		Pid:        os.Getpid(),
-		BoxID:      boxid,
-		LocalPorts: localports,
+		Pid:         os.Getpid(),
+		BoxID:       boxid,
+		LocalPorts:  localports,
 		RemotePorts: remoteports,
-		StartedAt:  time.Now(),
+		StartedAt:   time.Now(),
 	}
 	f, err := os.Create(path)
 	if err != nil {
@@ -192,73 +192,33 @@ func getPortForwardURL(config Config) (string, error) {
 }
 
 func ConnectWebSocket(config Config) *MultiplexClient {
-    wsURL, err := getPortForwardURL(config)
-    if err != nil {
-        log.Printf("get port forward URL error: %v", err)
-        return nil
-    }
+	wsURL, err := getPortForwardURL(config)
+	if err != nil {
+		log.Printf("get port forward URL error: %v", err)
+		return nil
+	}
 
-    log.Printf("connecting to WebSocket: %s", wsURL)
+	log.Printf("connecting to WebSocket: %s", wsURL)
 
-    ws, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-    if err != nil {
-        log.Printf("ws dial error: %v", err)
-        return nil
-    }
-    log.Println("ws dial success")
+	ws, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		log.Printf("ws dial error: %v", err)
+		return nil
+	}
+	log.Println("ws dial success")
 
-    client := NewMultiplexClient(ws)
-    return client
+	client := NewMultiplexClient(ws)
+	return client
 }
 
 func parseMessage(data []byte) (msgType byte, streamID uint32, payload []byte, err error) {
-    if len(data) < 5 {
-        return 0, 0, nil, fmt.Errorf("message too short")
-    }
+	if len(data) < 5 {
+		return 0, 0, nil, fmt.Errorf("message too short")
+	}
 
-    msgType = data[0]
-    streamID = binary.BigEndian.Uint32(data[1:5])
-    payload = data[5:]
+	msgType = data[0]
+	streamID = binary.BigEndian.Uint32(data[1:5])
+	payload = data[5:]
 
-    return msgType, streamID, payload, nil
-}
-
-// DaemonizeIfNeeded forks to background if foreground==false and not already daemonized.
-// logPath: if not empty, background process logs to this file.
-// Returns (shouldReturn, err): if shouldReturn==true, caller should return immediately (parent process or error).
-func DaemonizeIfNeeded(foreground bool, logPath string) (bool, error) {
-	if foreground || os.Getenv("GBOX_PORTFORWARD_DAEMON") != "" {
-		return false, nil
-	}
-	// open log file
-	logFile := os.Stdout
-	if logPath != "" {
-		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err != nil {
-			return true, fmt.Errorf("Failed to open log file: %v", err)
-		}
-		logFile = f
-		defer f.Close()
-	}
-	attr := &os.ProcAttr{
-		Dir:   "",
-		Env:   append(os.Environ(), "GBOX_PORTFORWARD_DAEMON=1"),
-		Files: []*os.File{os.Stdin, logFile, logFile},
-		Sys:   &syscall.SysProcAttr{Setsid: true},
-	}
-	args := os.Args
-	// Remove -f/--foreground from args if present
-	newArgs := []string{}
-	for i := 0; i < len(args); i++ {
-		if args[i] == "-f" || args[i] == "--foreground" {
-			continue
-		}
-		newArgs = append(newArgs, args[i])
-	}
-	proc, err := os.StartProcess(args[0], newArgs, attr)
-	if err != nil {
-		return true, fmt.Errorf("Failed to daemonize: %v", err)
-	}
-	fmt.Printf("[gbox] Port-forward started in background (pid=%d). Logs: %s\nUse 'gbox port-forward list' to view, 'gbox port-forward kill <pid>' to stop.\n", proc.Pid, logPath)
-	return true, nil
+	return msgType, streamID, payload, nil
 }
