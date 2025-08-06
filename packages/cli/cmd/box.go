@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/babelcloud/gbox/packages/cli/internal/profile"
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +20,7 @@ func NewBoxCommand() *cobra.Command {
   gbox box exec 550e8400-e29b-41d4-a716-446655440000 -- ls             # Execute a command in a box
   gbox box cp ./local_file 550e8400-e29b-41d4-a716-446655440000:/work  # Copy a local file to a box`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			pm := NewProfileManager()
+			pm := profile.NewProfileManager()
 			if err := pm.Load(); err != nil {
 				// If we cannot load the profile, do not block execution – just inform the user.
 				fmt.Fprintf(os.Stderr, "Warning: failed to load profile file: %v\n", err)
