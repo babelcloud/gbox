@@ -44,8 +44,7 @@ func StartDeviceProxyService() error {
 	}
 
 	// Set up environment variables
-	env := os.Environ()
-	env = append(env, fmt.Sprintf("GBOX_API_KEY=%s", apiKey))
+	env := setupDeviceProxyEnvironment(apiKey)
 
 	cmd := exec.Command(binaryPath, "--port", "19925", "--on-demand")
 	cmd.Stdout = logFd
