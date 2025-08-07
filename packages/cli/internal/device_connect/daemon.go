@@ -3,6 +3,7 @@ package device_connect
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 )
@@ -32,13 +33,7 @@ func FindDeviceProxyBinary() (string, error) {
 	osName := runtime.GOOS
 	arch := runtime.GOARCH
 
-	// Map OS names to match the actual binary naming convention
-	binaryOSName := osName
-	if osName == "darwin" {
-		binaryOSName = "macos"
-	}
-
-	specificBinary := fmt.Sprintf("gbox-device-proxy-%s-%s", binaryOSName, arch)
+	specificBinary := fmt.Sprintf("gbox-device-proxy-%s-%s", osName, arch)
 	if osName == "windows" {
 		specificBinary += ".exe"
 	}
@@ -87,12 +82,17 @@ func FindDeviceProxyBinary() (string, error) {
 		}
 	}
 
+	// Check PATH for Homebrew installation
+	if path, err := exec.LookPath("gbox-device-proxy"); err == nil {
+		return path, nil
+	}
+
 	for _, path := range searchPaths {
 		if _, err := os.Stat(path); err == nil {
 			return path, nil
 		}
 	}
-	return "", fmt.Errorf("gbox-device-proxy binary not found. Please build it first using 'npm run build' in the gbox-device-proxy directory")
+	return "", fmt.Errorf("gbox-device-proxy binary not found")
 }
 
 func FindBabelUmbrellaDir(startDir string) string {

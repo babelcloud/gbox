@@ -81,6 +81,93 @@ jobs:
       - name: Build source distribution for Homebrew
         run: make dist-source VERSION=${{ env.VERSION }}
 
+      - name: Download and merge device-proxy binaries
+        run: |
+          # Get the latest release from gbox-device-proxy
+          LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
+            "https://api.github.com/repos/babelcloud/gbox-device-proxy/releases/latest")
+
+          RELEASE_TAG=$(echo "$LATEST_RELEASE" | jq -r '.tag_name')
+          echo "Latest device-proxy release: $RELEASE_TAG"
+
+          # Download and merge for each platform
+          for platform in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64 windows-amd64 windows-arm64; do
+            echo "Processing platform: $platform"
+            
+            # Find the corresponding asset
+            ASSET_INFO=$(echo "$LATEST_RELEASE" | jq -r ".assets[] | select(.name | contains(\"$platform\")) | {id: .id, name: .name, url: .url}")
+            if [ -n "$ASSET_INFO" ] && [ "$ASSET_INFO" != "null" ]; then
+              ASSET_NAME=$(echo "$ASSET_INFO" | jq -r '.name')
+              ASSET_URL=$(echo "$ASSET_INFO" | jq -r '.url')
+              
+              echo "Downloading $platform binary: $ASSET_NAME"
+              
+              curl -L -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
+                -H "Accept: application/octet-stream" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                -o "dist/$ASSET_NAME" "$ASSET_URL"
+              
+              # Check if we have a corresponding main file to merge into
+              if [[ "$platform" == *"windows"* ]]; then
+                MAIN_FILE="dist/gbox-windows-$(echo $platform | cut -d'-' -f2)-${{ env.VERSION }}.zip"
+              else
+                MAIN_FILE="dist/gbox-$(echo $platform | cut -d'-' -f1)-$(echo $platform | cut -d'-' -f2)-${{ env.VERSION }}.tar.gz"
+              fi
+              
+              if [ -f "$MAIN_FILE" ]; then
+                echo "Merging $ASSET_NAME into $MAIN_FILE"
+                
+                # Create temporary directory for merging
+                TEMP_DIR=$(mktemp -d)
+                WORKSPACE_DIR="$(pwd)"
+                cd "$TEMP_DIR"
+
+                # Extract main file
+                if [[ "$platform" == *"windows"* ]]; then
+                  unzip -q "$WORKSPACE_DIR/$MAIN_FILE"
+                else
+                  tar -xzf "$WORKSPACE_DIR/$MAIN_FILE"
+                fi
+
+                # Extract device-proxy file
+                if [[ "$platform" == *"windows"* ]]; then
+                  unzip -q "$WORKSPACE_DIR/dist/$ASSET_NAME"
+                else
+                  tar -xzf "$WORKSPACE_DIR/dist/$ASSET_NAME"
+                fi
+
+                # Find and move device-proxy executable
+                DEVICE_PROXY_EXEC=$(find . -maxdepth 1 -type f -name "*device-proxy*" -o -name "*device_proxy*" | head -1)
+                if [ -n "$DEVICE_PROXY_EXEC" ]; then
+                  mv "$DEVICE_PROXY_EXEC" "bin/gbox-device-proxy"
+                  chmod +x "bin/gbox-device-proxy"
+                fi
+
+                # Recreate main file
+                if [[ "$platform" == *"windows"* ]]; then
+                  zip -r "$WORKSPACE_DIR/$MAIN_FILE" . -q
+                else
+                  tar -czf "$WORKSPACE_DIR/$MAIN_FILE" .
+                fi
+
+                # Remove device-proxy file and generate new SHA256
+                rm -f "$WORKSPACE_DIR/dist/$ASSET_NAME"
+                cd "$WORKSPACE_DIR"
+                sha256sum "dist/$(basename "$MAIN_FILE")" > "dist/$(basename "$MAIN_FILE").sha256"
+                rm -rf "$TEMP_DIR"
+
+                echo "Successfully merged $ASSET_NAME into $MAIN_FILE"
+              else
+                echo "Warning: Main file $MAIN_FILE not found, skipping merge for platform $platform"
+                rm -f "$ASSET_NAME"
+              fi
+            else
+              echo "Error: No device-proxy asset found for platform $platform"
+              echo "Available assets:"
+              echo "$LATEST_RELEASE" | jq -r '.assets[].name' | grep -E "(darwin|linux|windows)" || echo "No device-proxy assets found"
+            fi
+          done
+
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
@@ -90,8 +177,7 @@ jobs:
             dist/gbox-*.tar.gz.sha256
             dist/gbox-*.zip
             dist/gbox-*.zip.sha256
-            dist/gbox-v*.tar.gz
-            dist/gbox-v*.tar.gz.sha256
+            !dist/gbox-device-proxy-*
           draft: true
           prerelease: false
           generate_release_notes: true
