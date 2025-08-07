@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+
+	"github.com/babelcloud/gbox/packages/cli/config"
 )
 
 // EnsureDeviceProxyRunning checks if the service is running, and starts it if not
@@ -33,62 +35,79 @@ func FindDeviceProxyBinary() (string, error) {
 	osName := runtime.GOOS
 	arch := runtime.GOARCH
 
-	specificBinary := fmt.Sprintf("gbox-device-proxy-%s-%s", osName, arch)
-	if osName == "windows" {
-		specificBinary += ".exe"
-	}
-	genericBinary := "gbox-device-proxy"
-	if osName == "windows" {
-		genericBinary += ".exe"
+	// Map runtime.GOOS to directory name format
+	dirOsName := osName
+	if osName == "darwin" {
+		dirOsName = "macos"
 	}
 
-	// Search in current directory hierarchy
+	binaryName := "gbox-device-proxy"
+	if osName == "windows" {
+		binaryName += ".exe"
+	}
+
+	debug := os.Getenv("DEBUG") == "true"
+
+	// Priority 1: Check current directory first
+	currentBinaryPath := filepath.Join(currentDir, binaryName)
+	if _, err := os.Stat(currentBinaryPath); err == nil {
+		if debug {
+			fmt.Fprintf(os.Stderr, "[DEBUG] Found gbox-device-proxy binary in current directory: %s\n", currentBinaryPath)
+		}
+		return currentBinaryPath, nil
+	}
+
+	// Priority 2: Check babel-umbrella directory
+	babelUmbrellaPath := FindBabelUmbrellaDir(currentDir)
+	if babelUmbrellaPath != "" {
+		binariesDir := filepath.Join(babelUmbrellaPath, "gbox-device-proxy", "build", fmt.Sprintf("binaries-%s-%s", dirOsName, arch))
+		babelBinaryPath := filepath.Join(binariesDir, binaryName)
+		if debug {
+			fmt.Fprintf(os.Stderr, "[DEBUG] Checking babel-umbrella path: %s\n", babelBinaryPath)
+		}
+		if _, err := os.Stat(babelBinaryPath); err == nil {
+			if debug {
+				fmt.Fprintf(os.Stderr, "[DEBUG] Found gbox-device-proxy binary in babel-umbrella: %s\n", babelBinaryPath)
+			}
+			return babelBinaryPath, nil
+		}
+	}
+
+	// Priority 3: Check PATH
+	if path, err := exec.LookPath("gbox-device-proxy"); err == nil {
+		if debug {
+			fmt.Fprintf(os.Stderr, "[DEBUG] Found gbox-device-proxy binary in PATH: %s\n", path)
+		}
+		return path, nil
+	}
+
+	// Fallback: Search in directory hierarchy (current and executable directories)
 	searchPaths := []string{}
+	// Search in current directory hierarchy
 	current := currentDir
 	for {
-		searchPaths = append(searchPaths, filepath.Join(current, specificBinary))
-		searchPaths = append(searchPaths, filepath.Join(current, genericBinary))
-
+		searchPaths = append(searchPaths, filepath.Join(current, binaryName))
 		parent := filepath.Dir(current)
 		if parent == current {
 			break // Reached root directory
 		}
 		current = parent
 	}
-
-	// Also search in executable directory hierarchy
+	// Search in executable directory hierarchy
 	execCurrent := executableDir
 	for {
-		searchPaths = append(searchPaths, filepath.Join(execCurrent, specificBinary))
-		searchPaths = append(searchPaths, filepath.Join(execCurrent, genericBinary))
-
+		searchPaths = append(searchPaths, filepath.Join(execCurrent, binaryName))
 		parent := filepath.Dir(execCurrent)
 		if parent == execCurrent {
 			break // Reached root directory
 		}
 		execCurrent = parent
 	}
-
-	// First, try to find binary in babel-umbrella directory
-	babelUmbrellaPath := FindBabelUmbrellaDir(currentDir)
-	if babelUmbrellaPath != "" {
-		binariesDir := filepath.Join(babelUmbrellaPath, "gbox-device-proxy", "build", "binaries")
-		babelBinaryPath := filepath.Join(binariesDir, specificBinary)
-		if _, err := os.Stat(babelBinaryPath); err == nil {
-			return babelBinaryPath, nil
-		}
-		if _, err := os.Stat(filepath.Join(binariesDir, genericBinary)); err == nil {
-			return filepath.Join(binariesDir, genericBinary), nil
-		}
-	}
-
-	// Check PATH for Homebrew installation
-	if path, err := exec.LookPath("gbox-device-proxy"); err == nil {
-		return path, nil
-	}
-
 	for _, path := range searchPaths {
 		if _, err := os.Stat(path); err == nil {
+			if debug {
+				fmt.Fprintf(os.Stderr, "[DEBUG] Found gbox-device-proxy binary in fallback search: %s\n", path)
+			}
 			return path, nil
 		}
 	}
@@ -117,4 +136,18 @@ func FindBabelUmbrellaDir(startDir string) string {
 	}
 
 	return ""
+}
+
+// setupDeviceProxyEnvironment sets up environment variables for device proxy service
+func setupDeviceProxyEnvironment(apiKey string) []string {
+	env := os.Environ()
+	env = append(env, "GBOX_PROVIDER_TYPE=org")
+	env = append(env, fmt.Sprintf("GBOX_API_KEY=%s", apiKey))
+
+	// Add ANDROID_DEVMGR_ENDPOINT environment variable
+	cloudEndpoint := config.GetCloudAPIURL()
+	androidDevmgrEndpoint := fmt.Sprintf("%s/devmgr", cloudEndpoint)
+	env = append(env, fmt.Sprintf("ANDROID_DEVMGR_ENDPOINT=%s", androidDevmgrEndpoint))
+
+	return env
 }

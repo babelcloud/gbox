@@ -161,7 +161,7 @@ func outputDevicesText(devices []device_connect.DeviceInfo) error {
 		}
 
 		fmt.Printf("%-*s %-*s %-*s %-*s\n",
-			deviceIDWidth, device.Udid,
+			deviceIDWidth, device.Id,
 			nameWidth, device.ProductModel,
 			typeWidth, deviceType,
 			statusWidth, status)

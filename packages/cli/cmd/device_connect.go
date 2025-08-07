@@ -159,7 +159,7 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 		}
 		fmt.Printf("%d. %s (%s, %s) - %s [%s]\n",
 			i+1,
-			device.Udid,
+			device.Id,
 			device.ProductModel,
 			device.ConnectionType,
 			device.ProductManufacturer,
@@ -177,7 +177,7 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 	}
 
 	selectedDevice := devices[choice-1]
-	return connectToDevice(selectedDevice.Udid, opts)
+	return connectToDevice(selectedDevice.Id, opts)
 }
 
 func connectToDevice(deviceID string, opts *DeviceConnectOptions) error {

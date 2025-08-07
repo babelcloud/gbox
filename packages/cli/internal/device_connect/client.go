@@ -16,6 +16,7 @@ const (
 
 // DeviceInfo represents a device from the API
 type DeviceInfo struct {
+	Id                  string `json:"id"`
 	Udid                string `json:"udid"`
 	State               string `json:"state"`
 	Interfaces          []struct {
@@ -127,7 +128,7 @@ func (c *Client) GetDeviceInfo(deviceID string) (*DeviceInfo, error) {
 	}
 
 	for _, device := range devices {
-		if device.Udid == deviceID {
+		if device.Id == deviceID {
 			return &device, nil
 		}
 	}
