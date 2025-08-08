@@ -29,19 +29,19 @@
     "url": "git+https://github.com/babelcloud/gbox.git"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.7.0",
-    "dotenv": "^16.6.1",
+    "@modelcontextprotocol/sdk": "^1.17.2",
+    "dotenv": "^17.2.1",
     "express": "^5.1.0",
-    "gbox-sdk": "^0.25.0",
-    "zod": "^3.25.67"
+    "gbox-sdk": "^0.26.0",
+    "zod": "^4.0.15"
   },
   "devDependencies": {
-    "@types/express": "^5.0.1",
-    "@types/node": "^20.4.2",
-    "ts-node": "^10.9.1",
-    "tsup": "^8.4.0",
-    "tsx": "^4.7.1",
-    "typescript": "^5.2.0"
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.13.14",
+    "ts-node": "^10.9.2",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2"
   },
   "files": [
     "dist/**/*",

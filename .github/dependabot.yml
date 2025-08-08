@@ -1,0 +1,52 @@
+# https://docs.github.com/en/code-security/dependabot/working-with-dependabot/automating-dependabot-with-github-actions#enabling-automerge-on-a-pull-request
+
+version: 2
+updates:
+  - package-ecosystem: docker
+    directories:
+      - images/*
+      - images/playwright/test
+      - packages/*-server
+    schedule:
+      interval: weekly
+    groups: # 1 PR per week for all images
+      docker:
+        patterns: ["*"]
+  - package-ecosystem: docker-compose
+    directory: manifests/docker
+    schedule:
+      interval: weekly
+    groups: # 1 PR per week for all images
+      docker-compose:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups: # 1 PR per week for all images
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: gomod
+    directories:
+      - packages/api-server
+      - packages/cli
+    schedule:
+      interval: weekly
+    groups: # 1 PR per week for all dependencies
+      gomod:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directories:
+      - packages/cli-npm
+      - packages/cua-server
+      - packages/mcp-android-server
+      - packages/mcp-server
+    schedule:
+      interval: weekly
+    groups: # 1 PR per week and group
+      npm-major:
+        update-types: ["major"]
+      npm-minor:
+        update-types: ["minor"]
+      npm-patch:
+        update-types: ["patch"]

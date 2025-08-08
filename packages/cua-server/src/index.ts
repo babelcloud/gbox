@@ -428,7 +428,7 @@ async function computerUseLoop(response: any, openai: OpenAI, res?: express.Resp
                 model: "computer-use-preview",
                 previous_response_id: response.id,
                 tools: [{
-                    type: "computer-preview",
+                    type: "computer_use_preview",
                     display_width: width,
                     display_height: height,
                     environment: "browser"
@@ -510,7 +510,7 @@ app.post('/execute', async (req, res) => {
         const response = await openai.responses.create({
             model: "computer-use-preview",
             tools: [{
-                type: "computer-preview",
+                type: "computer_use_preview",
                 display_width: width,
                 display_height: height,
                 environment: "browser"

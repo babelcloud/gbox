@@ -1,6 +1,6 @@
 # Build stage
 # Using Debian-based Go image for playwright.Run() compatibility
-FROM golang:1.23.7-bookworm AS builder
+FROM golang:1.24-bookworm AS builder
 
 # Build arguments for version information
 ARG VERSION=dev
@@ -14,7 +14,7 @@ RUN go env -w GOMODCACHE=/gomod-cache
 
 # Install the Playwright Go CLI tool binary
 RUN --mount=type=cache,target=/gomod-cache --mount=type=cache,target=/go-cache \
-    go install github.com/playwright-community/playwright-go/cmd/playwright@v0.5101.0
+    go install github.com/playwright-community/playwright-go/cmd/playwright@v0.5200.0
 
 # Set working directory
 WORKDIR /app

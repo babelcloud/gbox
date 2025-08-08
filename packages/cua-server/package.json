@@ -21,13 +21,13 @@
   },
   "homepage": "https://github.com/babelcloud/gbox#readme",
   "dependencies": {
-    "@types/express": "^4.17.21",
-    "@types/node": "^20.11.24",
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.13.14",
     "express": "^5.1.0",
     "nodemon": "^3.1.10",
-    "openai": "^4.28.0",
+    "openai": "^5.12.1",
     "ts-node": "^10.9.2",
     "tsup": "^8.5.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.9.2"
   }
 }

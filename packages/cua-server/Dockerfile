@@ -1,6 +1,6 @@
 # Use the official Node.js runtime as the parent image
 # LTS version (e.g., Node 20) is recommended
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
 
 # Set the working directory in the container
 WORKDIR /app
@@ -22,7 +22,7 @@ COPY . .
 RUN pnpm run build
 
 # Use a smaller base image for the final stage
-FROM node:20-slim AS production
+FROM node:22-slim AS production
 
 WORKDIR /app
 
