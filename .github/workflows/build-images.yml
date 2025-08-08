@@ -14,6 +14,7 @@ jobs:
   # --- Dependent Image Chain ---
   build-python:
     uses: ./.github/workflows/build-image.yml
+    if: ${{ github.repository == 'babelcloud/gbox' }} # don't build images in forks
     with:
       image_variant: python
       image_dir: images/python
@@ -25,6 +26,7 @@ jobs:
   build-playwright:
     needs: build-python # Depends on python build completion and outputs
     uses: ./.github/workflows/build-image.yml
+    if: ${{ github.repository == 'babelcloud/gbox' }} # don't build images in forks
     with:
       image_variant: playwright
       image_dir: images/playwright
@@ -37,6 +39,7 @@ jobs:
   build-viewer:
     needs: build-playwright # Depends on playwright build completion and outputs
     uses: ./.github/workflows/build-image.yml
+    if: ${{ github.repository == 'babelcloud/gbox' }} # don't build images in forks
     with:
       image_variant: viewer
       image_dir: images/viewer
@@ -49,6 +52,7 @@ jobs:
   # --- Independent Images ---
   build-api-server: # Add job for api-server
     uses: ./.github/workflows/build-image.yml
+    if: ${{ github.repository == 'babelcloud/gbox' }} # don't build images in forks
     with:
       image_variant: api-server
       image_dir: packages/api-server # Specify its directory
@@ -59,6 +63,7 @@ jobs:
   
   build-cua-server: # Add job for api-server
     uses: ./.github/workflows/build-image.yml
+    if: ${{ github.repository == 'babelcloud/gbox' }} # don't build images in forks
     with:
       image_variant: cua-server
       image_dir: packages/cua-server # Specify its directory
@@ -69,6 +74,7 @@ jobs:
 
   build-mcp-server: # Add job for mcp-server
     uses: ./.github/workflows/build-image.yml
+    if: ${{ github.repository == 'babelcloud/gbox' }} # don't build images in forks
     with:
       image_variant: mcp-server
       image_dir: packages/mcp-server # Specify its directory

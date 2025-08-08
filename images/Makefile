@@ -11,7 +11,7 @@ PLAYWRIGHT_TAG ?= latest
 TTYD_VERSION ?= 1.7.7 # Default ttyd version
 
 # Default Node.js version for TypeScript
-NODE_VERSION ?= 20.12
+NODE_VERSION ?= 22.18
 
 # ANSI color codes
 CYAN := \033[36m

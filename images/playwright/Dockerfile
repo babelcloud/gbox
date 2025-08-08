@@ -1,6 +1,6 @@
 ARG REGISTRY=babelcloud
 ARG TAG=latest # Define ARG for base image tag
-ARG PLAYWRIGHT_VERSION=1.52.0 # Define Playwright version ARG
+ARG PLAYWRIGHT_VERSION=1.54.0 # Define Playwright version ARG
 
 FROM ${REGISTRY}/gbox-python:${TAG}
 
