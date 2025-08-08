@@ -10,6 +10,23 @@ import (
 	"github.com/babelcloud/gbox/packages/cli/config"
 )
 
+// isExecutableFile checks if the given path is an executable file (not a directory)
+func isExecutableFile(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+
+	// Check if it's a directory
+	if info.IsDir() {
+		return false
+	}
+
+	// Check if it has execute permissions
+	mode := info.Mode()
+	return mode&0111 != 0 // Check if any execute bit is set
+}
+
 // EnsureDeviceProxyRunning checks if the service is running, and starts it if not
 func EnsureDeviceProxyRunning(isServiceRunning func() (bool, error)) error {
 	running, err := isServiceRunning()
@@ -50,7 +67,7 @@ func FindDeviceProxyBinary() (string, error) {
 
 	// Priority 1: Check current directory first
 	currentBinaryPath := filepath.Join(currentDir, binaryName)
-	if _, err := os.Stat(currentBinaryPath); err == nil {
+	if isExecutableFile(currentBinaryPath) {
 		if debug {
 			fmt.Fprintf(os.Stderr, "[DEBUG] Found gbox-device-proxy binary in current directory: %s\n", currentBinaryPath)
 		}
@@ -65,7 +82,7 @@ func FindDeviceProxyBinary() (string, error) {
 		if debug {
 			fmt.Fprintf(os.Stderr, "[DEBUG] Checking babel-umbrella path: %s\n", babelBinaryPath)
 		}
-		if _, err := os.Stat(babelBinaryPath); err == nil {
+		if isExecutableFile(babelBinaryPath) {
 			if debug {
 				fmt.Fprintf(os.Stderr, "[DEBUG] Found gbox-device-proxy binary in babel-umbrella: %s\n", babelBinaryPath)
 			}
@@ -104,7 +121,7 @@ func FindDeviceProxyBinary() (string, error) {
 		execCurrent = parent
 	}
 	for _, path := range searchPaths {
-		if _, err := os.Stat(path); err == nil {
+		if isExecutableFile(path) {
 			if debug {
 				fmt.Fprintf(os.Stderr, "[DEBUG] Found gbox-device-proxy binary in fallback search: %s\n", path)
 			}
