@@ -69,13 +69,20 @@ func init() {
 		createAliasCommand(alias, cmd)
 	}
 
+	cuaCmd := NewCuaCommand()
+	cuaCmd.Hidden = true
+	clusterCmd := NewClusterCommand()
+	clusterCmd.Hidden = true
 	rootCmd.AddCommand(NewBoxCommand())
-	rootCmd.AddCommand(NewClusterCommand())
+	rootCmd.AddCommand(clusterCmd)
 	rootCmd.AddCommand(NewMcpCommand())
-	rootCmd.AddCommand(NewCuaCommand())
+	rootCmd.AddCommand(cuaCmd)
 	rootCmd.AddCommand(NewVersionCommand())
 	rootCmd.AddCommand(NewPortForwardCommand())
 	rootCmd.AddCommand(NewDeviceConnectCommand())
+
+	// Enable custom help output ordering
+	setupHelpCommand(rootCmd)
 }
 
 func createAliasCommand(alias, targetCmd string) {
@@ -87,6 +94,11 @@ func createAliasCommand(alias, targetCmd string) {
 			allArgs := append(parts[1:], args...)
 			return executeScript(parts[0], allArgs)
 		},
+	}
+
+	// Hide certain alias commands from help
+	if alias == "setup" || alias == "cleanup" || alias == "export" {
+		aliasCmd.Hidden = true
 	}
 
 	rootCmd.AddCommand(aliasCmd)
