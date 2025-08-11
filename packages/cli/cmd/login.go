@@ -272,7 +272,8 @@ func getLocalToken(githubToken string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("failed to create API key: %v", err)
 		}
-		fmt.Printf("Created API key: %s. Login process successfully.\n", apiKeyInfo.KeyName)
+		fmt.Printf("Created API key: %s.\n", apiKeyInfo.KeyName)
+		fmt.Println("Login process successfully.")
 	}
 
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
@@ -323,8 +324,49 @@ func selectOrganization(token string) (*cloud.Organization, error) {
 	}
 
 	if len(organizations) == 0 {
-		fmt.Println("No organizations found for your account.")
-		return nil, nil
+		fmt.Println("No organizations found. Creating a default organization...")
+		// Fetch current user info to build org name
+		me, err := client.GetCurrentUserInfo()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current user info: %v", err)
+		}
+
+		userName := "User"
+		if me != nil && me.Name != nil && *me.Name != "" {
+			userName = *me.Name
+		} else if me != nil && me.Email != nil && *me.Email != "" {
+			userName = *me.Email
+		}
+
+		// name and slug must be provided; slug should be unique and url-friendly
+		// simple slugify: lowercase, replace spaces with '-', remove apostrophes
+		base := strings.ToLower(userName + "s-team")
+		base = strings.ReplaceAll(base, "'", "")
+		base = strings.ReplaceAll(base, " ", "-")
+		// ensure uniqueness by appending timestamp suffix
+		timestamp := time.Now().Unix()
+		defaultName := fmt.Sprintf("%s's Team", userName)
+		defaultSlug := fmt.Sprintf("%s-%d", base, timestamp)
+
+		created, err := client.CreateOrganization(cloud.CreateOrganizationRequest{
+			Name: defaultName,
+			Slug: defaultSlug,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create default organization: %v", err)
+		}
+
+		fmt.Printf("Created default organization: %s (%s)\n", created.Name, created.ID)
+
+		// init API Key for this organization
+		keyName := fmt.Sprintf("gbox-cli-%s", created.Name)
+		apiKeyInfo, err := client.CreateAPIKey(keyName, created.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create API key for default organization: %v", err)
+		}
+		fmt.Printf("Created API key for default organization: %s\n", apiKeyInfo.KeyName)
+
+		return created, nil
 	}
 
 	if len(organizations) == 1 {
