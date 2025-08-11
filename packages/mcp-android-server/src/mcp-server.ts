@@ -1,68 +1,19 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { config } from "./config.js";
 import { MCPLogger } from "./mcp-logger.js";
-import {
-  CREATE_ANDROID_BOX_TOOL,
-  CREATE_ANDROID_BOX_DESCRIPTION,
-  createAndroidBoxParamsSchema,
-  handleCreateAndroidBox,
-  LIST_BOXES_TOOL,
-  LIST_BOXES_DESCRIPTION,
-  listBoxesParamsSchema,
-  handleListBoxes,
-  GET_BOX_TOOL,
-  GET_BOX_DESCRIPTION,
-  getBoxParamsSchema,
-  handleGetBox,
-  GET_SCREENSHOT_TOOL,
-  GET_SCREENSHOT_DESCRIPTION,
-  getScreenshotParamsSchema,
-  handleGetScreenshot,
-  UI_ACTION_TOOL,
-  UI_ACTION_DESCRIPTION,
-  uiActionParamsSchema,
-  handleUiAction,
-  INSTALL_APK_TOOL,
-  INSTALL_APK_DESCRIPTION,
-  installApkParamsSchema,
-  handleInstallApk,
-  UNINSTALL_APK_TOOL,
-  UNINSTALL_APK_DESCRIPTION,
-  uninstallApkParamsSchema,
-  handleUninstallApk,
-  OPEN_APP_TOOL,
-  OPEN_APP_DESCRIPTION,
-  openAppParamsSchema,
-  handleOpenApp,
-  CLOSE_APP_TOOL,
-  CLOSE_APP_DESCRIPTION,
-  closeAppParamsSchema,
-  handleCloseApp,
-  PRESS_KEY_TOOL,
-  PRESS_KEY_DESCRIPTION,
-  pressKeyParamsSchema,
-  handlePressKey,
-  handleTypeText,
-  TYPE_TEXT_TOOL,
-  TYPE_TEXT_DESCRIPTION,
-  typeTextParamsSchema,
-  WAIT_TOOL,
-  WAIT_TOOL_DESCRIPTION,
-  waitParamsSchema,
-  handleWait,
-  LOGCAT_TOOL,
-  LOGCAT_DESCRIPTION,
-  logcatParamsSchema,
-  handleLogcat,
-  ADB_SHELL_TOOL,
-  ADB_SHELL_DESCRIPTION,
-  adbShellParamsSchema,
-  handleAdbShell,
-} from "./tools/index.js";
 import type { LogFn } from "./types.js";
 import type { LoggingMessageNotification } from "@modelcontextprotocol/sdk/types.js";
-import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
-import z from "zod";
+import { gboxManualTpl } from "./prompts/gbox-manual.js";
+import { handleScreenshot, SCREENSHOT_DESCRIPTION, SCREENSHOT_TOOL, screenshotParamsSchema } from "./tools/screenshot.js";
+import { DRAG_DESCRIPTION, DRAG_TOOL, dragParamsSchema, handleDrag } from "./tools/drag.js";
+import { handleScroll, SCROLL_DESCRIPTION, SCROLL_TOOL, scrollParamsSchema } from "./tools/scroll.js";
+import { handleTap, TAP_DESCRIPTION, TAP_TOOL, tapParamsSchema } from "./tools/tap.js";
+import { handleType, TYPE_DESCRIPTION, TYPE_TOOL, typeParamsSchema } from "./tools/type.js";
+import { handleSwipe, SWIPE_DESCRIPTION, SWIPE_TOOL, swipeParamsSchema } from "./tools/swipe.js";
+import { CREATE_ANDROID_BOX_DESCRIPTION, CREATE_ANDROID_BOX_TOOL, createAndroidBoxParamsSchema, handleCreateAndroidBox } from "./tools/create-android-box.js";
+import { handleWait, WAIT_TOOL, WAIT_TOOL_DESCRIPTION, waitParamsSchema } from "./tools/wait.js";
+import { CLOSE_APP_DESCRIPTION, CLOSE_APP_TOOL, closeAppParamsSchema, handleCloseApp, handleInstallApk, handleOpenApp, INSTALL_APK_DESCRIPTION, INSTALL_APK_TOOL, installApkParamsSchema, OPEN_APP_DESCRIPTION, OPEN_APP_TOOL, openAppParamsSchema } from "./tools/apk-management.js";
+import { handlePressButton, PRESS_BUTTON_DESCRIPTION, PRESS_BUTTON_TOOL, pressButtonParamsSchema } from "./tools/press-button.js";
 
 const isSse = config.mode === "sse";
 
@@ -116,71 +67,23 @@ const log: LogFn = async (
 const logger = new MCPLogger(log);
 
 // Add prompt for APK testing rules
-const ANDROID_APK_TESTING_GUIDE = "android-apk-testing-guide";
-const ANDROID_APK_TESTING_GUIDE_DESCRIPTION =
-  "Test the Android project on gbox (virtual or physical device).";
-const ANDROID_APK_TESTING_GUIDE_CONTENT = `## 🔒 Critical Rules
-
-- **Always** open the Android box's (id:{boxId}) **Live View URL** (via MCP Tool \`open_live_view\`) in your default browser **immediately after** creating or starting a Gbox Android box.
-- Call the \`install_apk\` tool to install the APK: {apkPath}.
-- **Wait for the APK to finish installing** before interacting with the app.  
-  You can pass the parameter \`open=true\` to automatically launch the app after installation.
-- If multiple boxes are running, ensure you're **only operating on the correct box** for your current test session.
-- Use MCP Tool adb_shell to execute adb shell in log watching or other infomation obtaining.
-- Use MCP Tool logcat to get the log of the app.
-- Do not try to exec adb command in Terminal, because the Android box is running on cloud, there is no adb connection locally.
----
-
-## 🛠️ Using the \`ui_action\` Tool for UI Testing
-
-Use the \`ui_action\` tool to control the Android UI with natural language commands.  
-Here are some example commands you can use:
-
-- Tap the email input field  
-- Tap the submit button  
-- Tap the plus button in the upper right corner  
-- Fill the search field with text: \`gbox ai\`  
-- Press the back button  
-- Double-click the video  
-
----
-
-## ✅ Example: Proper Testing Flow
-
-1. **Create** a new Android box and obtain its \`boxId\`.
-2. **Open** the Live View for that \`boxId\` in your browser.
-3. **Install** the APK using its **absolute path**, e.g.:  /abs/path/to/repo/geoquiz/app/build/outputs/apk/debug/app-debug.apk, Add the parameter \`open=true\` if you'd like the app to launch automatically.
-4. **Use \`ui_action\`** to simulate user interactions based on your test case.
-5. After each action, **review the Live View screenshot** to confirm the result.
-6. Continue the **action-review loop** until your test scenario is complete.
-
----
-
-## ❌ Common Mistakes to Avoid
-
-- 🚫 Not opening the **Live View URL** right after creating the box.
-- 🚫 Using a **relative path** (e.g., \`./app/build/outputs/apk/debug/app-debug.apk\`) for \`install_apk\`.
-- 🚫 Sending **multiple UI actions in one command** or using **unclear/vague language** with \`ui_action\`.
-`;
+const GBOX_MANUAL = "gbox-manual";
+const GBOX_MANUAL_DESCRIPTION = "Gbox Usage Guide";
 
 mcpServer.prompt(
-  ANDROID_APK_TESTING_GUIDE,
-  ANDROID_APK_TESTING_GUIDE_DESCRIPTION,
+  GBOX_MANUAL,
+  GBOX_MANUAL_DESCRIPTION,
   () => {
     return {
-      argsSchema: {
-        apkPath: z.string().describe("The absolute path to the APK file."),
-        boxId: z.string().describe("The ID of the Android box."),
-      },
       messages: [
         {
           role: "user",
           content: {
             type: "text",
-            text: ANDROID_APK_TESTING_GUIDE_CONTENT,
-          },
-        },
-      ],
+            text: gboxManualTpl
+          }
+        }
+      ]
     };
   }
 );
@@ -194,45 +97,17 @@ mcpServer.tool(
 );
 
 mcpServer.tool(
-  LIST_BOXES_TOOL,
-  LIST_BOXES_DESCRIPTION,
-  listBoxesParamsSchema,
-  handleListBoxes(logger)
+  WAIT_TOOL,
+  WAIT_TOOL_DESCRIPTION,
+  waitParamsSchema.shape,
+  handleWait(logger)
 );
 
 mcpServer.tool(
-  GET_BOX_TOOL,
-  GET_BOX_DESCRIPTION,
-  getBoxParamsSchema,
-  handleGetBox(logger)
-);
-
-mcpServer.tool(
-  GET_SCREENSHOT_TOOL,
-  GET_SCREENSHOT_DESCRIPTION,
-  getScreenshotParamsSchema,
-  handleGetScreenshot(logger)
-);
-
-mcpServer.tool(
-  UI_ACTION_TOOL,
-  UI_ACTION_DESCRIPTION,
-  uiActionParamsSchema,
-  handleUiAction(logger)
-);
-
-mcpServer.tool(
-  INSTALL_APK_TOOL,
-  INSTALL_APK_DESCRIPTION,
-  installApkParamsSchema,
-  handleInstallApk(logger)
-);
-
-mcpServer.tool(
-  UNINSTALL_APK_TOOL,
-  UNINSTALL_APK_DESCRIPTION,
-  uninstallApkParamsSchema,
-  handleUninstallApk(logger)
+  SCREENSHOT_TOOL,
+  SCREENSHOT_DESCRIPTION,
+  screenshotParamsSchema,
+  handleScreenshot(logger)
 );
 
 mcpServer.tool(
@@ -250,38 +125,108 @@ mcpServer.tool(
 );
 
 mcpServer.tool(
-  PRESS_KEY_TOOL,
-  PRESS_KEY_DESCRIPTION,
-  pressKeyParamsSchema,
-  handlePressKey(logger)
+  INSTALL_APK_TOOL,
+  INSTALL_APK_DESCRIPTION,
+  installApkParamsSchema,
+  handleInstallApk(logger)
 );
 
 mcpServer.tool(
-  TYPE_TEXT_TOOL,
-  TYPE_TEXT_DESCRIPTION,
-  typeTextParamsSchema,
-  handleTypeText(logger)
+  PRESS_BUTTON_TOOL,
+  PRESS_BUTTON_DESCRIPTION,
+  pressButtonParamsSchema,
+  handlePressButton(logger)
 );
 
 mcpServer.tool(
-  WAIT_TOOL,
-  WAIT_TOOL_DESCRIPTION,
-  waitParamsSchema.shape,
-  handleWait(logger)
+  DRAG_TOOL,
+  DRAG_DESCRIPTION,
+  dragParamsSchema,
+  handleDrag(logger)
 );
 
 mcpServer.tool(
-  LOGCAT_TOOL,
-  LOGCAT_DESCRIPTION,
-  logcatParamsSchema,
-  handleLogcat(logger)
+  SCROLL_TOOL,
+  SCROLL_DESCRIPTION,
+  scrollParamsSchema,
+  handleScroll(logger)
 );
 
 mcpServer.tool(
-  ADB_SHELL_TOOL,
-  ADB_SHELL_DESCRIPTION,
-  adbShellParamsSchema,
-  handleAdbShell(logger)
+  SWIPE_TOOL,
+  SWIPE_DESCRIPTION,
+  swipeParamsSchema,
+  handleSwipe(logger)
 );
+
+mcpServer.tool(
+  TAP_TOOL,
+  TAP_DESCRIPTION,
+  tapParamsSchema,
+  handleTap(logger)
+);
+
+mcpServer.tool(
+  TYPE_TOOL,
+  TYPE_DESCRIPTION,
+  typeParamsSchema,
+  handleType(logger)
+);
+
+// mcpServer.tool(
+//   LIST_BOXES_TOOL,
+//   LIST_BOXES_DESCRIPTION,
+//   listBoxesParamsSchema,
+//   handleListBoxes(logger)
+// );
+
+// mcpServer.tool(
+//   GET_BOX_TOOL,
+//   GET_BOX_DESCRIPTION,
+//   getBoxParamsSchema,
+//   handleGetBox(logger)
+// );
+
+// mcpServer.tool(
+//   UI_ACTION_TOOL,
+//   UI_ACTION_DESCRIPTION,
+//   uiActionParamsSchema,
+//   handleUiAction(logger)
+// );
+
+// mcpServer.tool(
+//   UNINSTALL_APK_TOOL,
+//   UNINSTALL_APK_DESCRIPTION,
+//   uninstallApkParamsSchema,
+//   handleUninstallApk(logger)
+// );
+
+// mcpServer.tool(
+//   PRESS_KEY_TOOL,
+//   PRESS_KEY_DESCRIPTION,
+//   pressKeyParamsSchema,
+//   handlePressKey(logger)
+// );
+
+// mcpServer.tool(
+//   TYPE_TEXT_TOOL,
+//   TYPE_TEXT_DESCRIPTION,
+//   typeTextParamsSchema,
+//   handleTypeText(logger)
+// );
+
+// mcpServer.tool(
+//   LOGCAT_TOOL,
+//   LOGCAT_DESCRIPTION,
+//   logcatParamsSchema,
+//   handleLogcat(logger)
+// );
+
+// mcpServer.tool(
+//   ADB_SHELL_TOOL,
+//   ADB_SHELL_DESCRIPTION,
+//   adbShellParamsSchema,
+//   handleAdbShell(logger)
+// );
 
 export { mcpServer, logger };

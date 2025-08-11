@@ -52,3 +52,18 @@ export const openUrlInBrowser = (url: string) => {
     }
   });
 };
+
+export const parseUri = (uri: string) => {
+  let mimeType = "image/png";
+  let base64Data = uri;
+
+  if (uri.startsWith("data:")) {
+    const match = uri.match(/^data:(.+);base64,(.*)$/);
+    if (match) {
+      mimeType = match[1];
+      base64Data = match[2];
+    }
+  }
+
+  return { mimeType, base64Data };
+};

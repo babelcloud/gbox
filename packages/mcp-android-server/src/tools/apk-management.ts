@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { attachBox } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
-import type { AndroidInstall } from "gbox-sdk";
+import type { AndroidInstall, ActionScreenshot } from "gbox-sdk";
 
 export const INSTALL_APK_TOOL = "install_apk";
 export const INSTALL_APK_DESCRIPTION = "Install an APK file into the Gbox Android box.";
@@ -21,7 +21,7 @@ export const installApkParamsSchema = {
     .string()
     .optional()
     .describe(
-      "Local file path or HTTP(S) URL of the APK to install, for example: '/Users/jack/abc.apk', if local file provided, Gbox SDK will upload it to the box and install it. if apk is a url, Gbox SDK will download it to the box and install it(please make sure the url is public internet accessible)."
+      "Local file path or HTTP(S) URL of the APK to install, for example: '/Users/jack/abc.apk', if local file provided, Gbox SDK will upload it to the box and install it. if apk is a url, Gbox SDK will download it to the box and install it (please make sure the url is public internet accessible)."
     ),
   open: z
     .boolean()
@@ -66,8 +66,29 @@ export function handleInstallApk(logger: MCPLogger) {
       const installParams: AndroidInstall = { apk: apkPath! };
       const appOperator = await box.app.install(installParams);
 
+      // wait for 3 seconds
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
       if (open) {
         await appOperator.open();
+      }
+
+      // wait for 2 seconds
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Take a screenshot after installation (and optional open)
+      const screenshotParams: ActionScreenshot = { outputFormat: "base64" };
+      const screenshotResult = await box.action.screenshot(screenshotParams);
+
+      // Extract base64 data and mime type
+      let mimeType = "image/png";
+      let base64Data = screenshotResult.uri;
+      if (screenshotResult.uri.startsWith("data:")) {
+        const match = screenshotResult.uri.match(/^data:(.+);base64,(.*)$/);
+        if (match) {
+          mimeType = match[1];
+          base64Data = match[2];
+        }
       }
 
       await logger.info("APK installed successfully", { boxId, apk: apkPath });
@@ -77,6 +98,11 @@ export function handleInstallApk(logger: MCPLogger) {
           {
             type: "text" as const,
             text: JSON.stringify(appOperator.data, null, 2),
+          },
+          {
+            type: "image" as const,
+            data: base64Data,
+            mimeType,
           },
         ],
       };
@@ -141,11 +167,32 @@ export function handleOpenApp(logger: MCPLogger) {
 
       await logger.info("App opened successfully", { boxId, packageName });
 
+      // wait for 1 second
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Take a screenshot after opening the app
+      const screenshotParams: ActionScreenshot = { outputFormat: "base64" };
+      const screenshotResult = await box.action.screenshot(screenshotParams);
+
+      let mimeType = "image/png";
+      let base64Data = screenshotResult.uri;
+      if (screenshotResult.uri.startsWith("data:")) {
+        const match = screenshotResult.uri.match(/^data:(.+);base64,(.*)$/);
+        if (match) {
+          mimeType = match[1];
+          base64Data = match[2];
+        }
+      }
       return {
         content: [
           {
             type: "text" as const,
             text: JSON.stringify({ packageName, status: "opened" }),
+          },
+          {
+            type: "image" as const,
+            data: base64Data,
+            mimeType,
           },
         ],
       };
