@@ -14,6 +14,7 @@ import { CREATE_ANDROID_BOX_DESCRIPTION, CREATE_ANDROID_BOX_TOOL, createAndroidB
 import { handleWait, WAIT_TOOL, WAIT_TOOL_DESCRIPTION, waitParamsSchema } from "./tools/wait.js";
 import { CLOSE_APP_DESCRIPTION, CLOSE_APP_TOOL, closeAppParamsSchema, handleCloseApp, handleInstallApk, handleOpenApp, INSTALL_APK_DESCRIPTION, INSTALL_APK_TOOL, installApkParamsSchema, OPEN_APP_DESCRIPTION, OPEN_APP_TOOL, openAppParamsSchema } from "./tools/apk-management.js";
 import { handlePressButton, PRESS_BUTTON_DESCRIPTION, PRESS_BUTTON_TOOL, pressButtonParamsSchema } from "./tools/press-button.js";
+import { handleStartGbox, START_GBOX_DESCRIPTION, START_GBOX_TOOL, startGboxParamsSchema } from "./tools/start-gbox.js";
 
 const isSse = config.mode === "sse";
 
@@ -90,10 +91,10 @@ mcpServer.prompt(
 
 // Register tools with Zod schemas
 mcpServer.tool(
-  CREATE_ANDROID_BOX_TOOL,
-  CREATE_ANDROID_BOX_DESCRIPTION,
-  createAndroidBoxParamsSchema,
-  handleCreateAndroidBox(logger)
+  START_GBOX_TOOL,
+  START_GBOX_DESCRIPTION,
+  startGboxParamsSchema,
+  handleStartGbox(logger)
 );
 
 mcpServer.tool(
