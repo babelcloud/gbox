@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -87,20 +88,77 @@ func getCommandDescription(cmdName string) string {
 // Setup help command
 func setupHelpCommand(rootCmd *cobra.Command) {
 	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		showHelp("all")
+		printRootHelpOrdered(cmd)
 	})
 	rootCmd.SetHelpCommand(&cobra.Command{
 		Use:    "help",
 		Short:  "Show help information",
 		Hidden: false,
 		Run: func(cmd *cobra.Command, args []string) {
-			helpType := "all"
-			if len(args) > 0 {
-				helpType = args[0]
-			}
-			showHelp(helpType)
+			printRootHelpOrdered(cmd.Root())
 		},
 	})
 	rootCmd.PersistentFlags().BoolP("help", "", false, "")
 	rootCmd.PersistentFlags().MarkHidden("help")
+}
+
+// printRootHelpOrdered prints the root help with commands ordered by a custom priority
+func printRootHelpOrdered(cmd *cobra.Command) {
+	// Priority order for top-level commands
+	priority := []string{"login", "box", "device-connect", "port-forward", "mcp", "profile", "version", "completion", "help"}
+	priorityIndex := map[string]int{}
+	for i, name := range priority {
+		priorityIndex[name] = i
+	}
+
+	// Header
+	if cmd.Long != "" {
+		fmt.Fprintln(os.Stdout, cmd.Long)
+	} else if cmd.Short != "" {
+		fmt.Fprintln(os.Stdout, cmd.Short)
+	}
+
+	fmt.Fprintln(os.Stdout, "\nUsage:")
+	fmt.Fprintf(os.Stdout, "  %s [flags]\n", cmd.Name())
+	fmt.Fprintf(os.Stdout, "  %s [command]\n", cmd.Name())
+
+	// Collect and sort available commands
+	commands := []*cobra.Command{}
+	for _, c := range cmd.Commands() {
+		if !c.IsAvailableCommand() || c.Hidden {
+			continue
+		}
+		commands = append(commands, c)
+	}
+
+	// Custom sort by priority, then by name
+	sort.SliceStable(commands, func(i, j int) bool {
+		ci, cj := commands[i], commands[j]
+		pi, okI := priorityIndex[ci.Name()]
+		pj, okJ := priorityIndex[cj.Name()]
+		if okI && okJ {
+			if pi == pj {
+				return ci.Name() < cj.Name()
+			}
+			return pi < pj
+		}
+		if okI {
+			return true
+		}
+		if okJ {
+			return false
+		}
+		return ci.Name() < cj.Name()
+	})
+
+	fmt.Fprintln(os.Stdout, "\nAvailable Commands:")
+	for _, c := range commands {
+		fmt.Fprintf(os.Stdout, "  %-14s %s\n", c.Name(), c.Short)
+	}
+
+	// Flags
+	fmt.Fprintln(os.Stdout, "\nFlags:")
+	fmt.Fprint(os.Stdout, cmd.Flags().FlagUsages())
+
+	fmt.Fprintf(os.Stdout, "\nUse \"%s [command] --help\" for more information about a command.\n", cmd.Name())
 }
