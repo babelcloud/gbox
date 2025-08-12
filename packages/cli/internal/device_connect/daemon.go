@@ -90,7 +90,20 @@ func FindDeviceProxyBinary() (string, error) {
 		}
 	}
 
-	// Priority 3: Check PATH
+	// Priority 3: Check device proxy home directory (where we download binaries)
+	deviceProxyHome := config.GetDeviceProxyHome()
+	deviceProxyBinaryPath := filepath.Join(deviceProxyHome, binaryName)
+	if debug {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Checking device proxy home: %s\n", deviceProxyBinaryPath)
+	}
+	if isExecutableFile(deviceProxyBinaryPath) {
+		if debug {
+			fmt.Fprintf(os.Stderr, "[DEBUG] Found gbox-device-proxy binary in device proxy home: %s\n", deviceProxyBinaryPath)
+		}
+		return deviceProxyBinaryPath, nil
+	}
+
+	// Priority 4: Check PATH
 	if path, err := exec.LookPath("gbox-device-proxy"); err == nil {
 		if debug {
 			fmt.Fprintf(os.Stderr, "[DEBUG] Found gbox-device-proxy binary in PATH: %s\n", path)
@@ -128,7 +141,18 @@ func FindDeviceProxyBinary() (string, error) {
 			return path, nil
 		}
 	}
-	return "", fmt.Errorf("gbox-device-proxy binary not found")
+
+	// Final fallback: Try to download from GitHub
+	fmt.Fprintf(os.Stderr, "gbox-device-proxy binary not found. Attempting to download from GitHub...\n")
+
+	downloadedPath, err := DownloadDeviceProxy()
+	if err != nil {
+		return "", fmt.Errorf("gbox-device-proxy binary not found and download failed: %v", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Successfully downloaded gbox-device-proxy binary to: %s\n", downloadedPath)
+
+	return downloadedPath, nil
 }
 
 func FindBabelUmbrellaDir(startDir string) string {

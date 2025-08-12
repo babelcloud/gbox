@@ -2,6 +2,7 @@
 # Build Variables
 # ==============================================================================
 export GBOX_GITHUB_CLIENT_SECRET
+export GITHUB_TOKEN
 MODULE_PREFIX := github.com/babelcloud/gbox
 
 # Check if .git directory exists to determine version from git
@@ -19,7 +20,8 @@ BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "unknown
 LDFLAGS := -ldflags "-s -w -X '$(MODULE_PREFIX)/packages/cli/internal/version.Version=$(VERSION)' \
                      -X '$(MODULE_PREFIX)/packages/cli/internal/version.BuildTime=$(BUILD_TIME)' \
                      -X '$(MODULE_PREFIX)/packages/cli/internal/version.CommitID=$(COMMIT_ID)' \
-                     -X '$(MODULE_PREFIX)/packages/cli/config.githubClientSecret=$(GBOX_GITHUB_CLIENT_SECRET)'"
+                     -X '$(MODULE_PREFIX)/packages/cli/config.githubClientSecret=$(GBOX_GITHUB_CLIENT_SECRET)' \
+                                                   -X '$(MODULE_PREFIX)/packages/cli/config.githubToken=$(GITHUB_TOKEN)'"
 # ==============================================================================
 
 
