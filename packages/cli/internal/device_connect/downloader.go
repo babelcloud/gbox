@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	deviceProxyRepo = "babelcloud/gbox-device-proxy"
-	githubAPIURL    = "https://api.github.com"
+	deviceProxyRepo       = "babelcloud/gbox-device-proxy"
+	deviceProxyPublicRepo = "babelcloud/gbox" // Public repository for device-proxy assets
+	githubAPIURL          = "https://api.github.com"
 )
 
 // GitHubRelease represents a GitHub release
@@ -39,56 +40,58 @@ func DownloadDeviceProxy() (string, error) {
 	if token == "" {
 		token = config.GetGithubClientSecret()
 	}
-	if token == "" {
-		return "", fmt.Errorf("GitHub token not found. Please set either GITHUB_TOKEN or GBOX_GITHUB_CLIENT_SECRET environment variable")
-	}
 
-	// Get latest release
-	release, err := getLatestRelease(token)
-	if err != nil {
-		return "", fmt.Errorf("failed to get latest release: %v", err)
-	}
-
-	// Find asset for current platform
-	assetURL, assetName, err := findAssetForPlatform(release)
-	if err != nil {
-		return "", fmt.Errorf("failed to find asset for platform: %v", err)
-	}
-
-	// Download and extract binary with retry
-	var binaryPath string
-	var lastErr error
-	maxRetries := 3
-	for i := 0; i < maxRetries; i++ {
-		binaryPath, lastErr = downloadAndExtractBinary(assetURL, assetName, token)
-		if lastErr == nil {
-			break
-		}
-
-		if i < maxRetries-1 {
-			fmt.Fprintf(os.Stderr, "Download attempt %d failed: %v. Retrying...\n", i+1, lastErr)
-			time.Sleep(time.Duration(i+1) * time.Second) // Exponential backoff
+	// Try to download from public repository first (no token required)
+	release, err := getLatestRelease(deviceProxyPublicRepo, "")
+	if err == nil {
+		assetURL, assetName, err := findDeviceProxyAssetForPlatform(release, "")
+		if err == nil {
+			binaryPath, err := downloadAndExtractBinaryWithRetry(assetURL, assetName, "")
+			if err == nil {
+				return binaryPath, nil
+			}
+			fmt.Fprintf(os.Stderr, "Failed to download from public repository: %v\n", err)
 		}
 	}
 
-	if lastErr != nil {
-		return "", fmt.Errorf("failed to download and extract binary after %d attempts: %v", maxRetries, lastErr)
+	// If public repository fails and we have a token, try private repository
+	if token != "" {
+		fmt.Println("Trying private repository with authentication...")
+		release, err = getLatestRelease(deviceProxyRepo, token)
+		if err != nil {
+			return "", fmt.Errorf("failed to get latest release from private repository: %v", err)
+		}
+
+		assetURL, assetName, err := findDeviceProxyAssetForPlatform(release, token)
+		if err != nil {
+			return "", fmt.Errorf("failed to find asset for platform in private repository: %v", err)
+		}
+
+		binaryPath, err := downloadAndExtractBinaryWithRetry(assetURL, assetName, token)
+		if err != nil {
+			return "", fmt.Errorf("failed to download from private repository: %v", err)
+		}
+
+		return binaryPath, nil
 	}
 
-	return binaryPath, nil
+	return "", fmt.Errorf("failed to download device-proxy: public repository unavailable and no authentication token provided")
 }
 
 // getLatestRelease fetches the latest release from GitHub
-func getLatestRelease(token string) (*GitHubRelease, error) {
-	url := fmt.Sprintf("%s/repos/%s/releases/latest", githubAPIURL, deviceProxyRepo)
+func getLatestRelease(repo, token string) (*GitHubRelease, error) {
+	url := fmt.Sprintf("%s/repos/%s/releases/latest", githubAPIURL, repo)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", "token "+token)
+	if token != "" {
+		req.Header.Set("Authorization", "token "+token)
+	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "gbox-cli")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -109,8 +112,8 @@ func getLatestRelease(token string) (*GitHubRelease, error) {
 	return &release, nil
 }
 
-// findAssetForPlatform finds the appropriate asset for the current platform
-func findAssetForPlatform(release *GitHubRelease) (string, string, error) {
+// findDeviceProxyAssetForPlatform finds the device-proxy asset for the current platform
+func findDeviceProxyAssetForPlatform(release *GitHubRelease, token string) (string, string, error) {
 	osName := runtime.GOOS
 	arch := runtime.GOARCH
 
@@ -141,19 +144,30 @@ func findAssetForPlatform(release *GitHubRelease) (string, string, error) {
 		return "", "", fmt.Errorf("unsupported platform: %s-%s", osName, arch)
 	}
 
-	// Find asset containing the platform
+	// Find device-proxy asset containing the platform
 	for _, asset := range release.Assets {
-		if strings.Contains(asset.Name, platform) {
-			// Use URL field (authenticated API URL) like CI does, fallback to browser_download_url
-			downloadURL := asset.URL
-			if downloadURL == "" {
-				downloadURL = asset.DownloadURL
+		if strings.Contains(asset.Name, "gbox-device-proxy") && strings.Contains(asset.Name, platform) {
+			// If unauthenticated, prefer browser_download_url; otherwise prefer API asset URL
+			if token == "" {
+				if asset.DownloadURL != "" {
+					return asset.DownloadURL, asset.Name, nil
+				}
+				// fallback to API URL even without token (may rate-limit/fail)
+				if asset.URL != "" {
+					return asset.URL, asset.Name, nil
+				}
+			} else {
+				if asset.URL != "" {
+					return asset.URL, asset.Name, nil
+				}
+				if asset.DownloadURL != "" {
+					return asset.DownloadURL, asset.Name, nil
+				}
 			}
-			return downloadURL, asset.Name, nil
 		}
 	}
 
-	return "", "", fmt.Errorf("no asset found for platform: %s", platform)
+	return "", "", fmt.Errorf("no device-proxy asset found for platform: %s", platform)
 }
 
 // downloadAndExtractBinary downloads and extracts the binary file
@@ -214,6 +228,30 @@ func downloadAndExtractBinary(assetURL, assetName, token string) (string, error)
 	}
 
 	return finalPath, nil
+}
+
+// downloadAndExtractBinaryWithRetry downloads and extracts the binary file with retry logic
+func downloadAndExtractBinaryWithRetry(assetURL, assetName, token string) (string, error) {
+	var binaryPath string
+	var lastErr error
+	maxRetries := 3
+	for i := 0; i < maxRetries; i++ {
+		binaryPath, lastErr = downloadAndExtractBinary(assetURL, assetName, token)
+		if lastErr == nil {
+			break
+		}
+
+		if i < maxRetries-1 {
+			fmt.Fprintf(os.Stderr, "Download attempt %d failed: %v. Retrying...\n", i+1, lastErr)
+			time.Sleep(time.Duration(i+1) * time.Second) // Exponential backoff
+		}
+	}
+
+	if lastErr != nil {
+		return "", fmt.Errorf("failed to download and extract binary after %d attempts: %v", maxRetries, lastErr)
+	}
+
+	return binaryPath, nil
 }
 
 // downloadFile downloads a file from URL to local path

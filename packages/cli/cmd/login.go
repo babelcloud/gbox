@@ -124,13 +124,20 @@ var loginCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 
+		// Check if GitHub client secret is available
+		hasClientSecret := config.GetGithubClientSecret() != ""
+
 		// Check if user has browser environment
 		hasBrowser := checkBrowserEnvironment()
 
 		var accessToken string
 		var err error
 
-		if hasBrowser {
+		// Force Device Flow if no client secret is available (for reproducible builds)
+		if !hasClientSecret {
+			fmt.Println("GitHub client secret not available. Using device authorization flow for reproducible builds...")
+			accessToken, err = authenticateWithDevice(ctx)
+		} else if hasBrowser {
 			fmt.Println("Browser environment detected. Using OAuth authorization code flow...")
 			accessToken, err = authenticateWithBrowser(ctx)
 		} else {

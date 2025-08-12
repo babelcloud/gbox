@@ -168,6 +168,67 @@ jobs:
             fi
           done
 
+      - name: Create device-proxy public assets
+        run: |
+          # Create device-proxy binaries as public assets for CLI download
+          for platform in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64 windows-amd64 windows-arm64; do
+            echo "Creating device-proxy asset for platform: $platform"
+            
+            # Create temporary directory
+            TEMP_DIR=$(mktemp -d)
+            cd "$TEMP_DIR"
+            
+            # Find the corresponding device-proxy binary from the merged packages
+            if [[ "$platform" == *"windows"* ]]; then
+              MAIN_FILE="../dist/gbox-windows-$(echo $platform | cut -d'-' -f2)-${{ env.VERSION }}.zip"
+              ASSET_NAME="gbox-device-proxy-${platform}.zip"
+            else
+              MAIN_FILE="../dist/gbox-$(echo $platform | cut -d'-' -f1)-$(echo $platform | cut -d'-' -f2)-${{ env.VERSION }}.tar.gz"
+              ASSET_NAME="gbox-device-proxy-${platform}.tar.gz"
+            fi
+            
+            if [ -f "$MAIN_FILE" ]; then
+              # Extract the main package
+              if [[ "$platform" == *"windows"* ]]; then
+                unzip -q "$MAIN_FILE"
+              else
+                tar -xzf "$MAIN_FILE"
+              fi
+              
+              # Find device-proxy binary
+              DEVICE_PROXY_BIN=""
+              if [ -f "bin/gbox-device-proxy" ]; then
+                DEVICE_PROXY_BIN="bin/gbox-device-proxy"
+              elif [ -f "bin/gbox-device-proxy.exe" ]; then
+                DEVICE_PROXY_BIN="bin/gbox-device-proxy.exe"
+              fi
+              
+              if [ -n "$DEVICE_PROXY_BIN" ]; then
+                # Create device-proxy package
+                if [[ "$platform" == *"windows"* ]]; then
+                  zip -j "$ASSET_NAME" "$DEVICE_PROXY_BIN"
+                else
+                  tar -czf "$ASSET_NAME" "$DEVICE_PROXY_BIN"
+                fi
+                
+                # Move to dist directory and generate SHA256
+                mv "$ASSET_NAME" "../dist/"
+                cd "../dist"
+                sha256sum "$ASSET_NAME" > "$ASSET_NAME.sha256"
+                cd "$TEMP_DIR"
+                
+                echo "Created device-proxy asset: $ASSET_NAME"
+              else
+                echo "Warning: device-proxy binary not found in $MAIN_FILE"
+              fi
+            else
+              echo "Warning: Main file $MAIN_FILE not found for platform $platform"
+            fi
+            
+            cd ..
+            rm -rf "$TEMP_DIR"
+          done
+
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
@@ -177,7 +238,10 @@ jobs:
             dist/gbox-*.tar.gz.sha256
             dist/gbox-*.zip
             dist/gbox-*.zip.sha256
-            !dist/gbox-device-proxy-*
+            dist/gbox-device-proxy-*.tar.gz
+            dist/gbox-device-proxy-*.tar.gz.sha256
+            dist/gbox-device-proxy-*.zip
+            dist/gbox-device-proxy-*.zip.sha256
           draft: true
           prerelease: false
           generate_release_notes: true
