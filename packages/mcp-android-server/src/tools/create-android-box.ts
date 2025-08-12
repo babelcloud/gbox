@@ -6,43 +6,43 @@ import { openUrlInBrowser } from "./utils.js";
 
 export const CREATE_ANDROID_BOX_TOOL = "create_android_box";
 export const CREATE_ANDROID_BOX_DESCRIPTION =
-  "Create a fresh Android box and return its metadata.";
+  "Create a fresh Android box and return the created box ID.";
 
 export const createAndroidBoxParamsSchema = {
-  config: z
-    .object({
-      deviceType: z
-        .enum(["virtual", "physical"])
-        .optional()
-        .describe("Device type - virtual or physical Android device"),
-      envs: z
-        .record(z.string())
-        .optional()
-        .describe("Environment variables for the box."),
-      expiresIn: z
-        .string()
-        .regex(/^\d+(ms|s|m|h)$/)
-        .optional()
-        .describe(
-          'The box will be alive for the given duration (e.g., "30s", "5m", "1h"). Default: 60m'
-        ),
-      labels: z
-        .record(z.string())
-        .optional()
-        .describe("Key-value pairs of labels for the box."),
-    })
-    .optional()
-    .describe("Configuration for the Android box"),
-  wait: z
-    .boolean()
-    .optional()
-    .default(true)
-    .describe("Waiting for Box to be assigned an instance, default is true"),
-  openLiveView: z
-    .boolean()
-    .optional()
-    .default(true)
-    .describe("Whether to open the live view in the default browser after creating the box."),
+  // config: z
+  //   .object({
+  //     deviceType: z
+  //       .enum(["virtual", "physical"])
+  //       .optional()
+  //       .describe("Device type - virtual or physical Android device"),
+  //     envs: z
+  //       .record(z.string())
+  //       .optional()
+  //       .describe("Environment variables for the box."),
+  //     expiresIn: z
+  //       .string()
+  //       .regex(/^\d+(ms|s|m|h)$/)
+  //       .optional()
+  //       .describe(
+  //         'The box will be alive for the given duration (e.g., "30s", "5m", "1h"). Default: 60m'
+  //       ),
+  //     labels: z
+  //       .record(z.string())
+  //       .optional()
+  //       .describe("Key-value pairs of labels for the box."),
+  //   })
+  //   .optional()
+  //   .describe("Configuration for the Android box"),
+  // wait: z
+  //   .boolean()
+  //   .optional()
+  //   .default(true)
+  //   .describe("Waiting for Box to be assigned an instance, default is true"),
+  // openLiveView: z
+  //   .boolean()
+  //   .optional()
+  //   .default(true)
+  //   .describe("Whether to open the live view in the default browser after creating the box."),
 };
 
 // Define parameter types - infer from the Zod schema
@@ -64,7 +64,12 @@ export function handleCreateAndroidBox(logger: MCPLogger) {
         boxId: created.data?.id,
       });
 
-      if (args.openLiveView && created.data?.id) {
+      const result = {
+        success: false,
+        boxId: "",
+        liveViewUrl: "",
+      };
+      if (created.data?.id) {
         const box = await gboxSDK.get(created.data.id);
         if (box) {
           const liveViewUrl = await box.liveView();
@@ -73,6 +78,9 @@ export function handleCreateAndroidBox(logger: MCPLogger) {
             boxId: created.data.id,
             url: liveViewUrl.url,
           });
+          result.success = true;
+          result.boxId = created.data.id;
+          result.liveViewUrl = liveViewUrl.url;
         }
       }
 
@@ -80,7 +88,7 @@ export function handleCreateAndroidBox(logger: MCPLogger) {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify(created.data, null, 2),
+            text: JSON.stringify(result, null, 2),
           },
         ],
       };

@@ -9,5 +9,6 @@
     "python.analysis.extraPaths": [
         "./packages/sdk/python"
     ],
-    "vitest.disableWorkspaceWarning": true
+    "vitest.disableWorkspaceWarning": true,
+    "makefile.configureOnOpen": false
 }

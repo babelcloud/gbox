@@ -2,7 +2,7 @@ import { z } from "zod";
 import { attachBox } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { ActionAI } from "gbox-sdk";
-import { sanitizeResult } from "./utils.js";
+import { parseUri, sanitizeResult } from "./utils.js";
 
 export const UI_ACTION_TOOL = "ui_action";
 export const UI_ACTION_DESCRIPTION =
@@ -31,36 +31,36 @@ export const uiActionParamsSchema = {
     .describe(
       "Contextual background for the action, to help the AI understand previous steps and the current state of the UI."
     ),
-  includeScreenshot: z
-    .boolean()
-    .optional()
-    .describe(
-      "Whether to include screenshots in the action response (default false)"
-    ),
-  outputFormat: z
-    .enum(["base64", "storageKey"])
-    .optional()
-    .describe("Output format for screenshot URIs (default 'base64')"),
-  settings: z
-    .object({
-      systemPrompt: z
-        .string()
-        .default(
-          "You are a helpful assistant that can operate Android devices. \n" +
-            "You are given an instruction and a background of the task to perform. \n" +
-            "You can see the current screen in the image. Analyze what you see and determine the next action needed to complete the task. \n" +
-            "Take your time to analyze the screen and plan your actions carefully. Tips: - You should execute the action directly by the instruction. \n" +
-            "- If you see the Keyboard on the bottom of the screen, that means the field you should type is already focused. You should type directly no need to focus on the field."
-        )
-        .describe(
-          "System prompt that defines the AI's behavior and capabilities when executing UI actions. \n" +
-            "This prompt instructs the AI on how to interpret the screen, understand user instructions, and determine the appropriate UI actions to take. \n" +
-            "A well-crafted system prompt can significantly improve the accuracy and reliability of AI-driven UI automation. \n" +
-            "If not provided, uses the default computer use instruction template that includes basic screen interaction guidelines."
-        ),
-    })
-    .optional()
-    .describe("Settings for the AI action"),
+  // includeScreenshot: z
+  //   .boolean()
+  //   .optional()
+  //   .describe(
+  //     "Whether to include screenshots in the action response (default false)"
+  //   ),
+  // outputFormat: z
+  //   .enum(["base64", "storageKey"])
+  //   .optional()
+  //   .describe("Output format for screenshot URIs (default 'base64')"),
+  // settings: z
+  //   .object({
+  //     systemPrompt: z
+  //       .string()
+  //       .default(
+  //         "You are a helpful assistant that can operate Android devices. \n" +
+  //           "You are given an instruction and a background of the task to perform. \n" +
+  //           "You can see the current screen in the image. Analyze what you see and determine the next action needed to complete the task. \n" +
+  //           "Take your time to analyze the screen and plan your actions carefully. Tips: - You should execute the action directly by the instruction. \n" +
+  //           "- If you see the Keyboard on the bottom of the screen, that means the field you should type is already focused. You should type directly no need to focus on the field."
+  //       )
+  //       .describe(
+  //         "System prompt that defines the AI's behavior and capabilities when executing UI actions. \n" +
+  //           "This prompt instructs the AI on how to interpret the screen, understand user instructions, and determine the appropriate UI actions to take. \n" +
+  //           "A well-crafted system prompt can significantly improve the accuracy and reliability of AI-driven UI automation. \n" +
+  //           "If not provided, uses the default computer use instruction template that includes basic screen interaction guidelines."
+  //       ),
+  //   })
+  //   .optional()
+  //   .describe("Settings for the AI action"),
 };
 
 // Define parameter types - infer from the Zod schema
@@ -73,9 +73,9 @@ export function handleUiAction(logger: MCPLogger) {
         boxId,
         instruction,
         background,
-        includeScreenshot,
-        outputFormat,
-        settings,
+        // includeScreenshot,
+        // outputFormat,
+        // settings,
       } = args;
       await logger.info("Performing UI action", { boxId, instruction });
 
@@ -85,9 +85,9 @@ export function handleUiAction(logger: MCPLogger) {
       const actionParams: ActionAI = {
         instruction,
         ...(background && { background }),
-        includeScreenshot: includeScreenshot ?? false,
+        includeScreenshot: true,
         // cursor can handle base64 only.
-        outputFormat: outputFormat ?? "base64",
+        outputFormat: "base64",
         // 500ms meet most ui action cases.
         screenshotDelay: "500ms",
       };
@@ -98,25 +98,10 @@ export function handleUiAction(logger: MCPLogger) {
       const images: Array<{ type: "image"; data: string; mimeType: string }> =
         [];
 
-      const parseUri = (uri: string) => {
-        let mimeType = "image/png";
-        let base64Data = uri;
-
-        if (uri.startsWith("data:")) {
-          const match = uri.match(/^data:(.+);base64,(.*)$/);
-          if (match) {
-            mimeType = match[1];
-            base64Data = match[2];
-          }
-        }
-
-        return { mimeType, base64Data };
-      };
-
-      if (result?.screenshot?.before?.uri) {
-        const { mimeType, base64Data } = parseUri(result.screenshot.before.uri);
-        images.push({ type: "image", data: base64Data, mimeType });
-      }
+      // if (result?.screenshot?.before?.uri) {
+      //   const { mimeType, base64Data } = parseUri(result.screenshot.before.uri);
+      //   images.push({ type: "image", data: base64Data, mimeType });
+      // }
 
       if (result?.screenshot?.after?.uri) {
         const { mimeType, base64Data } = parseUri(result.screenshot.after.uri);
@@ -137,7 +122,7 @@ export function handleUiAction(logger: MCPLogger) {
       // Add text result with sanitized data
       content.push({
         type: "text" as const,
-        text: JSON.stringify(sanitizeResult(result), null, 2),
+        text: "Action completed successfully",
       });
 
       // Add all images
