@@ -1,45 +1,49 @@
-# gbox
+# GBOX
 
-**gbox** is a self-hostable sandbox for AI Agents to execute commands, surf web and use desktop/mobile.
+**GBOX** provides environments for AI Agents to operate computer and mobile devices.
 
-This project is based on the technology behind [gru.ai](https://gru.ai). It has been tested over 100000 Agent jobs.
+*Mobile Scenario:*
+Your agents can use GBOX to develop/test android apps, or run apps on the Android to complete various tasks(mobile automation).
 
-As MCP is getting more and more popular, we also implemented a MCP server to make it easy to be directly integrated into MCP client such as Claude Desktop/Cursor.
+*Desktop Scenario:*
+Your agents can use GBOX to operate desktop apps such as browser, terminal, VSCode, etc(desktop automation).
 
-## Use gbox as a CLI
+*MCP:* 
+You can also plug GBOX MCP to any Agent you like, such as Cursor, Claude Code. These agents will instantly get the ability to operate computer and mobile devices.
 
 ## Installation
 
-### System Requirements for macOS
+### System Requirements
 
-- macOS 10.15 or later
-- [Homebrew](https://brew.sh)
+- MacOS 
+  - Version: 10.15 or later
+  - [Homebrew](https://brew.sh)
+
+> Note: Using gbox on other platforms, please check npm package [@gbox.ai/cli](https://www.npmjs.com/package/@gbox.ai/cli) for installation instructions.
 
 ### Installation Steps
 
 ```bash
-# Install via Homebrew
-brew install babelcloud/gru/gbox
-
+# Install via Homebrew (on macOS)
+brew install gbox
 # Login to gbox.ai
 gbox login
 
-# Export MCP config and merge into Claude Desktop
-gbox mcp export --merge-to claude
+# Export MCP config and merge into Claude Code/ Cursor
+gbox mcp export --merge-to claude-code
+gbox mcp export --merge-to cursor
 ```
-
-> Note: Using gbox on other platforms, please check npm package [@gbox.ai/cli](https://www.npmjs.com/package/@gbox.ai/cli) for installation instructions.
 
 ### Command Line Usage
 
-Check [gbox CLI Reference](https://docs.gbox.ai/cli) for detailed usage.
+Check [GBOX CLI Reference](https://docs.gbox.ai/cli) for detailed usage.
 
-## Use gbox as a MCP Server(Login required)
+## Use GBOX as a MCP Server(Login required)
 
-Using Gbox CLI to configure MCP server to your Claude Code/ Cursor:
+Using GBOX CLI to configure MCP server to your Claude Code/ Cursor:
 ```bash
 # Export MCP config for Cursor
-gbox mcp export --merge-to claude
+gbox mcp export --merge-to cursor
 
 # Export MCP config for Claude Code
 gbox mcp export --merge-to claude-code --scope project
@@ -60,14 +64,42 @@ Or copy paste the following content into your Claude Code/ Cursor MCP config:
   }
 }
 ```
+> Note: Currently, GBOX MCP is only available for Android.
 
 ## Android MCP Use Cases
 
-### 1. Test android apk
+### 1. Claude Code Develop/Test Android App
 
-Test [geoquiz](https://github.com/babelcloud/geoquiz) apk:
-![Image](https://i.imghippo.com/files/DOop9372TM.jpeg)
-https://claude.ai/share/78242bf9-201b-40cc-9af8-7f2cdca36e56
+[![Claude Code Develop/Test Android App](https://img.youtube.com/vi/qFrPXKK9RW0/maxresdefault.jpg)](https://www.youtube.com/watch?v=qFrPXKK9RW0)
+
+
+### 2. Claude Code Compare Prices on eCommerce Apps
+
+[![Claude Code Compare Prices on eCommerce Apps](https://img.youtube.com/vi/-2vzBaIU3hQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=-2vzBaIU3hQ)
+
+## Environments
+Currently, GBOX supports the following environments:
+- Android
+- Linux Desktop/Browser
+
+### Android Environment
+There are three types of Android environments, you can choose based on your needs:
+
+**1. Cloud Virtual Device:** 
+
+Login to GBOX.AI to get a cloud virtual device. Best for testing and development.
+
+**2. Cloud Physical Device:** 
+
+Login to GBOX.AI to get a cloud physical device. Cloud physical device is a real Android phone that you can use for production scenarios.
+
+**3. Local Physical Device:** 
+
+Use your own physical device [How to use](https://docs.gbox.ai/cli/android-local-device). Your local device can be any Android device that have Developer Mode enabled. Best for production scenarios and personal use.
+
+### Linux Desktop/Browser Environment
+
+Login to GBOX.AI to get a Linux desktop/browser environment. Best for testing and development.
 
 ## Develop gbox
 
