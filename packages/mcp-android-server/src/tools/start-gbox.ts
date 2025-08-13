@@ -3,6 +3,7 @@ import { CreateAndroid } from "gbox-sdk";
 import { gboxSDK } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import { openUrlInBrowser } from "./utils.js";
+import { deviceList } from "../gboxsdk/android.service.js";
 
 export const START_GBOX_TOOL = "start_gbox";
 export const START_GBOX_DESCRIPTION =
@@ -25,9 +26,30 @@ export function handleStartGbox(logger: MCPLogger) {
 
       let box;
       if (!gboxId) {
+        // If local physical device available, use it
+        const devices = await deviceList();
+        logger.info("Devices", { devices });
+        let deviceId = "";
+        let deviceModel = "";
+        if (devices.length > 0) {
+          // Always use the first available device
+          deviceId = devices[0].id.trim();
+          deviceModel = devices[0].model.trim();
+        }
+        const labels: Record<string, string> = {};
+        if (deviceId) {
+          labels["gbox.ai/device-id"] = deviceId;
+        }
+        if (deviceModel) {
+          labels["gbox.ai/model"] = deviceModel;
+        }
+
         box = await gboxSDK.create({
           type: "android",
-          ...args,
+          config: {
+            labels,
+            deviceType: deviceId ? "physical" : "virtual",
+          },
         } as CreateAndroid);
         gboxId = box.data?.id;
         await logger.info("GBOX created successfully", {
