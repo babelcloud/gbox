@@ -100,21 +100,6 @@ jobs:
                 -H "X-GitHub-Api-Version: 2022-11-28" \
                 -o "dist/$ASSET_NAME" "$ASSET_URL"
               
-              # Create device-proxy public asset (copy the downloaded file)
-              if [[ "$platform" == *"windows"* ]]; then
-                DEVICE_PROXY_ASSET_NAME="gbox-device-proxy-${platform}.zip"
-              else
-                DEVICE_PROXY_ASSET_NAME="gbox-device-proxy-${platform}.tar.gz"
-              fi
-              
-              # Copy the downloaded file as device-proxy asset
-              cp "dist/$ASSET_NAME" "dist/$DEVICE_PROXY_ASSET_NAME"
-              cd dist
-              sha256sum "$DEVICE_PROXY_ASSET_NAME" > "$DEVICE_PROXY_ASSET_NAME.sha256"
-              cd ..
-              
-              echo "Created device-proxy asset: $DEVICE_PROXY_ASSET_NAME"
-              
               # Check if we have a corresponding main file to merge into
               if [[ "$platform" == *"windows"* ]]; then
                 MAIN_FILE="dist/gbox-windows-$(echo $platform | cut -d'-' -f2)-${{ env.VERSION }}.zip"
@@ -158,8 +143,7 @@ jobs:
                   tar -czf "$WORKSPACE_DIR/$MAIN_FILE" .
                 fi
 
-                # Remove device-proxy file and generate new SHA256
-                rm -f "$WORKSPACE_DIR/dist/$ASSET_NAME"
+                # Generate new SHA256 for main file
                 cd "$WORKSPACE_DIR"
                 sha256sum "dist/$(basename "$MAIN_FILE")" > "dist/$(basename "$MAIN_FILE").sha256"
                 rm -rf "$TEMP_DIR"
