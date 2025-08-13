@@ -22,8 +22,8 @@ func NewVersionCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "Print the client and server version information",
-		Long:  `Display detailed version information about the GBOX client and server`,
+		Short: "Print the client version information",
+		Long:  `Display detailed version information about the GBOX client`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// If --version flag was specified, show only the client version
 			if cmd.Flag("version").Changed {
@@ -74,20 +74,9 @@ func runVersion(opts *VersionOptions) error {
 
 	fmt.Println(gboxBanner)
 
-	// Try to get server info but don't fail if server is not available
-	serverInfo, serverErr := version.GetServerInfo()
-
 	if opts.OutputFormat == "json" {
 		result := map[string]interface{}{
 			"Client": clientInfo,
-		}
-
-		if serverErr == nil {
-			result["Server"] = serverInfo
-		} else {
-			result["Server"] = map[string]string{
-				"Error": serverErr.Error(),
-			}
 		}
 
 		jsonData, err := json.MarshalIndent(result, "", "  ")
@@ -116,29 +105,6 @@ func runVersion(opts *VersionOptions) error {
 	err = tmpl.Execute(os.Stdout, clientInfo)
 	if err != nil {
 		return err
-	}
-
-	// If server info is available, display it
-	if serverErr == nil {
-		fmt.Println()
-
-		const serverTemplate = `Server:
- Version:           {{.Version}}
- API version:       {{.APIVersion}}
- Go version:        {{.GoVersion}}
- Git commit:        {{.GitCommit}}
- Built:             {{.FormattedTime}}
- OS/Arch:           {{.OS}}/{{.Arch}}
-`
-
-		tmpl, err = template.New("server").Parse(serverTemplate)
-		if err != nil {
-			return fmt.Errorf("failed to parse server template: %v", err)
-		}
-
-		return tmpl.Execute(os.Stdout, serverInfo)
-	} else {
-		fmt.Printf("\n%s\n", serverErr)
 	}
 
 	return nil

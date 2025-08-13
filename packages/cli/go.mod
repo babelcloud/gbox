@@ -5,7 +5,6 @@ go 1.23.7
 require (
 	github.com/adrg/xdg v0.5.3
 	github.com/babelcloud/gbox-sdk-go v0.1.0-alpha.3
-	github.com/babelcloud/gbox/packages/api-server v0.0.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/spf13/cobra v1.9.1
@@ -49,5 +48,3 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/pflag v1.0.6 // indirect
 )
-
-replace github.com/babelcloud/gbox/packages/api-server => ../api-server

@@ -36,7 +36,7 @@ help: ## Show this help message
 
 # Check if test API server is running
 e2e-env-check: ## Check if test API server is running
-	@if ! curl -s http://localhost:28081/api/v1/boxes > /dev/null; then \
+	@if ! curl -s https://gbox.ai/api/v1/boxes > /dev/null; then \
 		echo "Error: Test API server is not running. Please run 'make e2e-setup' first."; \
 		exit 1; \
 	fi
@@ -50,7 +50,7 @@ e2e-setup: ## Setup e2e test environment (build and start test API server)
 	 docker compose -f ../../manifests/docker/docker-compose.yml up -d --build api-server
 	@echo "Waiting for e2e test API server to be ready..."
 	@for i in $$(seq 1 30); do \
-		if curl -s http://localhost:28081/api/v1/boxes > /dev/null; then \
+		if curl -s https://gbox.ai/api/v1/boxes > /dev/null; then \
 			echo "E2E test API server is ready!"; \
 			exit 0; \
 		fi; \

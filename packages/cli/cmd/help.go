@@ -22,7 +22,7 @@ func showHelp(helpType string) {
 		fmt.Println("\nAvailable Commands:")
 
 		// Display alias commands in fixed order
-		aliases := []string{"setup", "cleanup", "export"}
+		aliases := []string{"export"}
 		for _, alias := range aliases {
 			if cmd, ok := aliasMap[alias]; ok {
 				parts := strings.Split(cmd, " ")
@@ -37,7 +37,7 @@ func showHelp(helpType string) {
 
 		fmt.Println("\nSub Commands:")
 		// Display main commands in fixed order
-		for _, cmd := range []string{"box", "cluster", "mcp"} {
+		for _, cmd := range []string{"box", "mcp"} {
 			scriptPath := filepath.Join(scriptDir, fmt.Sprintf("gbox-%s", cmd))
 			if _, err := os.Stat(scriptPath); err == nil {
 				description := getCommandDescription(cmd)
@@ -49,11 +49,9 @@ func showHelp(helpType string) {
 		fmt.Println("    --help [short|all]  Show this help message (default: all)")
 
 		fmt.Println("\nExamples:")
-		fmt.Println("    gbox setup                 # Initialize the environment")
 		fmt.Println("    gbox box create mybox      # Create a new box")
 		fmt.Println("    gbox box list              # List all boxes")
 		fmt.Println("    gbox export                # Export MCP configuration")
-		fmt.Println("    gbox cleanup               # Clean up everything")
 
 		fmt.Println("\nUse \"gbox <command> --help\" for more information about a command.")
 	default:
