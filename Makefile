@@ -41,8 +41,6 @@ endef
 
 # Image tags
 API_SERVER_TAG := $(call get_git_hash,packages/api-server)
-CUA_SERVER_TAG := $(call get_git_hash,packages/cua-server)
-MCP_SERVER_TAG := $(call get_git_hash,packages/mcp-server)
 MCP_ANDROID_SERVER_TAG := $(call get_git_hash,packages/mcp-android-server)
 PY_IMG_TAG := $(call get_git_hash,images/python)
 PW_IMG_TAG := $(call get_git_hash,images/playwright)
@@ -103,20 +101,16 @@ dist-%: ## Create package for specific platform and architecture (e.g., dist-dar
 	rm -rf $$PLATFORM_DIR; \
 	mkdir -p $$PLATFORM_DIR/bin; \
 	mkdir -p $$PLATFORM_DIR/manifests; \
-	mkdir -p $$PLATFORM_DIR/packages/mcp-server; \
 	mkdir -p $$PLATFORM_DIR/packages/mcp-android-server; \
 	mkdir -p $$PLATFORM_DIR/packages/cli; \
 	mkdir -p $$PLATFORM_DIR/packages/cli/cmd/script; \
 	cp -r manifests/. $$PLATFORM_DIR/manifests/; \
-	rsync -a --exclude='node_modules' packages/mcp-server/ $$PLATFORM_DIR/packages/mcp-server/; \
 	rsync -a --exclude='node_modules' packages/mcp-android-server/ $$PLATFORM_DIR/packages/mcp-android-server/; \
 	cp packages/cli/gbox-$$PLATFORM_ARCH $$PLATFORM_DIR/packages/cli/gbox; \
 	cp -r packages/cli/cmd/script/. $$PLATFORM_DIR/packages/cli/cmd/script/; \
 	cp .env $$PLATFORM_DIR/ 2>/dev/null || true; \
 	cp LICENSE README.md $$PLATFORM_DIR/; \
 	$(call write_env,$$PLATFORM_DIR/manifests/docker,API_SERVER_IMG_TAG,$(API_SERVER_TAG)); \
-	$(call append_env,$$PLATFORM_DIR/manifests/docker,CUA_SERVER_IMG_TAG,$(CUA_SERVER_TAG)); \
-	$(call append_env,$$PLATFORM_DIR/manifests/docker,MCP_SERVER_IMG_TAG,$(MCP_SERVER_TAG)); \
 	$(call append_env,$$PLATFORM_DIR/manifests/docker,MCP_ANDROID_SERVER_IMG_TAG,$(MCP_ANDROID_SERVER_TAG)); \
 	$(call append_env,$$PLATFORM_DIR/manifests/docker,PREFIX,""); \
 	$(call append_env,$$PLATFORM_DIR/manifests/docker,PY_IMG_TAG,$(PY_IMG_TAG)); \
@@ -210,32 +204,13 @@ api-dev: ## Start api server
 api: ## Start api server with docker compose
 	@cd manifests/docker && docker compose up --build
 
-cua-dev:
-	@echo "Starting cua server..."
-	@cd packages/cua-server && pnpm i && pnpm dev
-
-cua:
-	@cd manifests/docker && docker compose up --build
-
-mcp-dev: ## Start mcp server
-	@echo "Starting mcp server..."
-	@cd packages/mcp-server && pnpm dev
-
 mcp-android-dev: ## Start mcp android server
 	@echo "Starting mcp android server..."
 	@cd packages/mcp-android-server && pnpm dev
 
-mcp-inspect: ## Start mcp server
-	@echo "Starting mcp server..."
-	@cd packages/mcp-server && pnpm inspect
-
 mcp-android-inspect: ## Start mcp android server with distribution package
 	@echo "Starting mcp android server with distribution package..."
 	@cd packages/mcp-android-server && pnpm inspect:dist
-
-mcp: build ## Start mcp server with distribution package
-	@echo "Starting mcp server with distribution package..."
-	@cd packages/mcp-server && pnpm inspect:dist
 
 mcp-android: build ## Start mcp android server with distribution package
 	@echo "Starting mcp android server with distribution package..."
