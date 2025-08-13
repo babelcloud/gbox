@@ -143,9 +143,12 @@ jobs:
                   tar -czf "$WORKSPACE_DIR/$MAIN_FILE" .
                 fi
 
-                # Generate new SHA256 for main file
+                # Generate new SHA256 for main file and device-proxy asset
                 cd "$WORKSPACE_DIR"
                 sha256sum "dist/$(basename "$MAIN_FILE")" > "dist/$(basename "$MAIN_FILE").sha256"
+                if [ -f "dist/$ASSET_NAME" ]; then
+                  sha256sum "dist/$ASSET_NAME" > "dist/$ASSET_NAME.sha256"
+                fi
                 rm -rf "$TEMP_DIR"
 
                 echo "Successfully merged $ASSET_NAME into $MAIN_FILE"

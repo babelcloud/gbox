@@ -37,9 +37,6 @@ type GitHubRelease struct {
 func DownloadDeviceProxy() (string, error) {
 	// Get GitHub token - try both sources
 	token := config.GetGithubToken()
-	if token == "" {
-		token = config.GetGithubClientSecret()
-	}
 
 	// Try to download from public repository first (no token required)
 	release, err := getLatestRelease(deviceProxyPublicRepo, "")
