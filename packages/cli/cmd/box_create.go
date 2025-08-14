@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	model "github.com/babelcloud/gbox/packages/api-server/pkg/box"
 	"github.com/spf13/cobra"
 )
 
@@ -22,42 +21,6 @@ func parseKeyValuePairs(pairs []string, pairType string) (map[string]interface{}
 			return nil, fmt.Errorf("invalid %s format: %s (must be KEY=VALUE)", pairType, pair)
 		}
 	}
-	return result, nil
-}
-
-// parseVolumes parses volume mount strings in the format "source:target[:ro][:propagation]"
-func parseVolumes(volumes []string) ([]model.VolumeMount, error) {
-	if len(volumes) == 0 {
-		return nil, nil
-	}
-
-	result := make([]model.VolumeMount, 0, len(volumes))
-	for _, volume := range volumes {
-		parts := strings.Split(volume, ":")
-		if len(parts) < 2 {
-			return nil, fmt.Errorf("invalid volume format: %s (must be source:target[:ro][:propagation])", volume)
-		}
-
-		mount := model.VolumeMount{
-			Source: parts[0],
-			Target: parts[1],
-		}
-
-		// Parse optional flags
-		for i := 2; i < len(parts); i++ {
-			switch parts[i] {
-			case "ro":
-				mount.ReadOnly = true
-			case "private", "rprivate", "shared", "rshared", "slave", "rslave":
-				mount.Propagation = parts[i]
-			default:
-				return nil, fmt.Errorf("invalid volume option: %s", parts[i])
-			}
-		}
-
-		result = append(result, mount)
-	}
-
 	return result, nil
 }
 

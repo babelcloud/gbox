@@ -59,15 +59,6 @@ func NewClientFromProfile() (*sdk.Client, error) {
 		return nil, fmt.Errorf("no current profile found in %s", profilePath)
 	}
 
-	// When organization is local, we don't need API key
-	if current.OrganizationName == "local" {
-		base := strings.TrimSuffix(config.GetLocalAPIURL(), "/") + "/api/v1"
-		client := sdk.NewClient(
-			option.WithBaseURL(base),
-		)
-		return &client, nil
-	}
-
 	if current.APIKey == "" {
 		return nil, fmt.Errorf("current profile does not hold an api_key")
 	}

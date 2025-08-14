@@ -179,8 +179,6 @@ func ExecutePortForward(cmd *cobra.Command, opts *PortForwardOptions, args []str
 	current := pm.GetCurrent()
 	if current == nil || current.APIKey == "" {
 		return fmt.Errorf("No current profile or API key found. Please run 'gbox profile add' and 'gbox profile use'.")
-	} else if current.OrganizationName == "local" {
-		return fmt.Errorf("Local profile is not supported for port-forward.")
 	}
 
 	logPath := fmt.Sprintf("%s/gbox-portforward-%s-%d.log", port_forward.GboxHomeDir(), opts.BoxID, pairs[0].Local) // Use the first local port for log path

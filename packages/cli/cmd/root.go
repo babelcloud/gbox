@@ -13,19 +13,15 @@ import (
 )
 
 var (
-	aliasMap = map[string]string{
-		"setup":   "cluster setup",
-		"cleanup": "cluster cleanup",
-		"export":  "mcp export",
-	}
+	aliasMap = map[string]string{}
 
 	scriptDir string
 
 	rootCmd = &cobra.Command{
 		Use:   "gbox",
 		Short: "Gru CLI Tool",
-		Long: `Gru CLI is a command-line tool for managing and operating box, cluster, and mcp resources.
-It provides a set of commands to create, manage, and operate these resources.`,
+		Long: `Gru CLI is a command-line tool for managing and operating box and mcp resources.
+	It provides a set of commands to create, manage, and operate these resources.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flag("version").Changed {
 				info := version.ClientInfo()
@@ -69,14 +65,8 @@ func init() {
 		createAliasCommand(alias, cmd)
 	}
 
-	cuaCmd := NewCuaCommand()
-	cuaCmd.Hidden = true
-	clusterCmd := NewClusterCommand()
-	clusterCmd.Hidden = true
 	rootCmd.AddCommand(NewBoxCommand())
-	rootCmd.AddCommand(clusterCmd)
 	rootCmd.AddCommand(NewMcpCommand())
-	rootCmd.AddCommand(cuaCmd)
 	rootCmd.AddCommand(NewVersionCommand())
 	rootCmd.AddCommand(NewPortForwardCommand())
 	rootCmd.AddCommand(NewDeviceConnectCommand())

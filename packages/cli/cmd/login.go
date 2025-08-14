@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
+	clilog "github.com/babelcloud/gbox/packages/cli/internal"
 	"github.com/babelcloud/gbox/packages/cli/internal/cloud"
 	"github.com/babelcloud/gbox/packages/cli/internal/profile"
 
@@ -124,6 +125,8 @@ var loginCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 
+		logger := clilog.New()
+
 		// Check if GitHub client secret is available
 		hasClientSecret := config.GetGithubClientSecret() != ""
 
@@ -135,13 +138,13 @@ var loginCmd = &cobra.Command{
 
 		// Force Device Flow if no client secret is available (for reproducible builds)
 		if !hasClientSecret {
-			fmt.Println("GitHub client secret not available. Using device authorization flow for reproducible builds...")
+			logger.Debug("GitHub client secret not available. Using device authorization flow for reproducible builds...")
 			accessToken, err = authenticateWithDevice(ctx)
 		} else if hasBrowser {
-			fmt.Println("Browser environment detected. Using OAuth authorization code flow...")
+			logger.Debug("Browser environment detected. Using OAuth authorization code flow...")
 			accessToken, err = authenticateWithBrowser(ctx)
 		} else {
-			fmt.Println("No browser detected. Using device authorization flow...")
+			logger.Debug("No browser detected. Using device authorization flow...")
 			accessToken, err = authenticateWithDevice(ctx)
 		}
 
@@ -201,7 +204,8 @@ func authenticateWithDevice(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("failed to get device code: %v", err)
 	}
 
-	fmt.Printf("Device code: %s\n", deviceAuth.UserCode)
+	// Highlight device code with ANSI: bold + yellow
+	fmt.Printf("Device code: \x1b[1;33m%s\x1b[0m\n", deviceAuth.UserCode)
 	fmt.Printf("To authenticate, please visit: %s\n", deviceAuth.VerificationURI)
 	fmt.Println("Attempting to open browser...")
 	if err := browser.OpenURL(deviceAuth.VerificationURI); err != nil {
