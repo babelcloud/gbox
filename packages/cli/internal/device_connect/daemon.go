@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
 )
@@ -142,15 +143,22 @@ func FindDeviceProxyBinary() (string, error) {
 		}
 	}
 
-	// Final fallback: Try to download from GitHub
-	fmt.Fprintf(os.Stderr, "gbox-device-proxy binary not found. Attempting to download from GitHub...\n")
+	// Final fallback: Try to download from gbox Releases (public), then fallback to private repo
+	fmt.Fprintf(os.Stderr, "gbox-device-proxy binary not found. Attempting to download from gbox Releases...\n")
 
 	downloadedPath, err := DownloadDeviceProxy()
 	if err != nil {
 		return "", fmt.Errorf("gbox-device-proxy binary not found and download failed: %v", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Successfully downloaded gbox-device-proxy binary to: %s\n", downloadedPath)
+	// Run version command after download and print it to console in one line
+	versionCmd := exec.Command(downloadedPath, "--version")
+	versionCmd.Env = os.Environ()
+	if out, verr := versionCmd.CombinedOutput(); verr != nil {
+		fmt.Fprintf(os.Stderr, "Binary downloaded to: %s\n, but it's not executable: %v\n", downloadedPath, verr)
+	} else {
+		fmt.Fprintf(os.Stderr, "Successfully downloaded gbox-device-proxy to: %s version: %s.\n", downloadedPath, strings.TrimSpace(string(out)))
+	}
 
 	return downloadedPath, nil
 }
