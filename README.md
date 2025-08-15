@@ -38,6 +38,10 @@ gbox mcp export --merge-to cursor
 
 Check [GBOX CLI Reference](https://docs.gbox.ai/cli) for detailed usage.
 
+### SDK Usage
+
+Check [GBOX SDK Reference](https://docs.gbox.ai/sdk) for detailed usage.
+
 ## Use GBOX as a MCP Server(Login required)
 
 Using GBOX CLI to configure MCP server to your Claude Code/Cursor:
