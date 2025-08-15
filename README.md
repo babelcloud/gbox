@@ -19,7 +19,7 @@ You can also plug GBOX MCP to any Agent you like, such as Cursor, Claude Code. T
   - Version: 10.15 or later
   - [Homebrew](https://brew.sh)
 
-> Note: Using gbox on other platforms, please check npm package [@gbox.ai/cli](https://www.npmjs.com/package/@gbox.ai/cli) for installation instructions.
+> Note: Using gbox on other platforms, please check npm package [@gbox.ai/cli](https://www.npmjs.com/package/@gbox.ai/cli) for installation instructions. You can also login to [GBOX.AI](https://gbox.ai) to use web-based dashboard.
 
 ### Installation Steps
 
@@ -87,11 +87,11 @@ There are three types of Android environments, you can choose based on your need
 
 **1. Cloud Virtual Device:** 
 
-Login to GBOX.AI to get a cloud virtual device. Best for testing and development.
+Login to [GBOX.AI](https://gbox.ai) to get a cloud virtual device. Best for testing and development.
 
 **2. Cloud Physical Device:** 
 
-Login to GBOX.AI to get a cloud physical device. Cloud physical device is a real Android phone that you can use for production scenarios.
+Login to [GBOX.AI](https://gbox.ai) to get a cloud physical device. Cloud physical device is a real Android phone that you can use for production scenarios.
 
 **3. Local Physical Device:** 
 
@@ -99,7 +99,7 @@ Use your own physical device [How to use](https://docs.gbox.ai/cli/android-local
 
 ### Linux Desktop/Browser Environment
 
-Login to GBOX.AI to get a Linux desktop/browser environment. Best for testing and development.
+Login to [GBOX.AI](https://gbox.ai) to get a Linux desktop/browser environment. Best for testing and development.
 
 ## Develop gbox
 
