@@ -24,12 +24,12 @@ You can also plug GBOX MCP to any Agent you like, such as Cursor, Claude Code. T
 ### Installation Steps
 
 ```bash
-# Install via Homebrew (on macOS)
+# Install via Homebrew (on MacOS)
 brew install gbox
 # Login to gbox.ai
 gbox login
 
-# Export MCP config and merge into Claude Code/ Cursor
+# Export MCP config and merge into Claude Code/Cursor
 gbox mcp export --merge-to claude-code
 gbox mcp export --merge-to cursor
 ```
@@ -40,7 +40,7 @@ Check [GBOX CLI Reference](https://docs.gbox.ai/cli) for detailed usage.
 
 ## Use GBOX as a MCP Server(Login required)
 
-Using GBOX CLI to configure MCP server to your Claude Code/ Cursor:
+Using GBOX CLI to configure MCP server to your Claude Code/Cursor:
 ```bash
 # Export MCP config for Cursor
 gbox mcp export --merge-to cursor
@@ -50,7 +50,7 @@ gbox mcp export --merge-to claude-code --scope project
 
 ```
 
-Or copy paste the following content into your Claude Code/ Cursor MCP config:
+Or copy paste the following content into your Claude Code/Cursor MCP config:
 ```json
 {
   "mcpServers": {
