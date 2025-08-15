@@ -2,6 +2,7 @@ import { z } from "zod";
 import { attachBox } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { AndroidInstall, ActionScreenshot } from "gbox-sdk";
+import { getImageDataFromUri } from "../gboxsdk/utils.js";
 
 export const INSTALL_APK_TOOL = "install_apk";
 export const INSTALL_APK_DESCRIPTION = "Install an APK file into the Gbox Android box.";
@@ -80,16 +81,7 @@ export function handleInstallApk(logger: MCPLogger) {
       const screenshotParams: ActionScreenshot = { outputFormat: "base64" };
       const screenshotResult = await box.action.screenshot(screenshotParams);
 
-      // Extract base64 data and mime type
-      let mimeType = "image/png";
-      let base64Data = screenshotResult.uri;
-      if (screenshotResult.uri.startsWith("data:")) {
-        const match = screenshotResult.uri.match(/^data:(.+);base64,(.*)$/);
-        if (match) {
-          mimeType = match[1];
-          base64Data = match[2];
-        }
-      }
+      const { base64Data, mimeType } = await getImageDataFromUri(screenshotResult.uri, box);
 
       await logger.info("APK installed successfully", { boxId, apk: apkPath });
 
@@ -174,15 +166,7 @@ export function handleOpenApp(logger: MCPLogger) {
       const screenshotParams: ActionScreenshot = { outputFormat: "base64" };
       const screenshotResult = await box.action.screenshot(screenshotParams);
 
-      let mimeType = "image/png";
-      let base64Data = screenshotResult.uri;
-      if (screenshotResult.uri.startsWith("data:")) {
-        const match = screenshotResult.uri.match(/^data:(.+);base64,(.*)$/);
-        if (match) {
-          mimeType = match[1];
-          base64Data = match[2];
-        }
-      }
+      const { base64Data, mimeType } = await getImageDataFromUri(screenshotResult.uri, box);
       return {
         content: [
           {

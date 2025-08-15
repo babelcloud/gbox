@@ -2,7 +2,7 @@ import { z } from "zod";
 import { CreateAndroid } from "gbox-sdk";
 import { gboxSDK } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
-import { openUrlInBrowser } from "./utils.js";
+import { openUrlInBrowser } from "../gboxsdk/utils.js";
 import { deviceList } from "../gboxsdk/android.service.js";
 
 export const START_GBOX_TOOL = "start_gbox";

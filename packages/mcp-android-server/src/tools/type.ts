@@ -2,7 +2,7 @@ import { z } from "zod";
 import { attachBox } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { ActionType, ActionPressKey } from "gbox-sdk";
-import { parseUri, sanitizeResult } from "./utils.js";
+import { getImageDataFromUri } from "../gboxsdk/utils.js";
 import { ActionPressKeyResponse, ActionTypeResponse } from "gbox-sdk/resources/v1/boxes.mjs";
 
 export const TYPE_TOOL = "type";
@@ -80,7 +80,7 @@ export function handleType(logger: MCPLogger) {
       // Prefer showing the final after screenshot if present
       const afterUri = finalResult?.screenshot?.after?.uri;
       if (afterUri) {
-        const { mimeType, base64Data } = parseUri(afterUri);
+        const { base64Data, mimeType } = await getImageDataFromUri(afterUri, box);
         contentItems.push({ type: "image", data: base64Data, mimeType });
       }
 

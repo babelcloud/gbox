@@ -34,7 +34,8 @@
     "axios": "^1.11.0",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
-    "gbox-sdk": "^0.26.0",
+    "gbox-sdk": "^0.27.0",
+    "sharp": "^0.34.3",
     "zod": "^3.25.67"
   },
   "devDependencies": {

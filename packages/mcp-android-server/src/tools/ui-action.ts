@@ -2,7 +2,7 @@ import { z } from "zod";
 import { attachBox } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { ActionAI } from "gbox-sdk";
-import { parseUri, sanitizeResult } from "./utils.js";
+import { getImageDataFromUri } from "../gboxsdk/utils.js";
 
 export const UI_ACTION_TOOL = "ui_action";
 export const UI_ACTION_DESCRIPTION =
@@ -95,8 +95,7 @@ export function handleUiAction(logger: MCPLogger) {
       const result = (await box.action.ai(actionParams)) as any;
 
       // Prepare image contents for before and after screenshots
-      const images: Array<{ type: "image"; data: string; mimeType: string }> =
-        [];
+      const images: Array<{ type: "image"; data: string; mimeType: string }> = [];
 
       // if (result?.screenshot?.before?.uri) {
       //   const { mimeType, base64Data } = parseUri(result.screenshot.before.uri);
@@ -104,7 +103,7 @@ export function handleUiAction(logger: MCPLogger) {
       // }
 
       if (result?.screenshot?.after?.uri) {
-        const { mimeType, base64Data } = parseUri(result.screenshot.after.uri);
+        const { base64Data, mimeType } = await getImageDataFromUri(result.screenshot.after.uri, box);
         images.push({ type: "image", data: base64Data, mimeType });
       }
 
