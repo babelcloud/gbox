@@ -79,7 +79,7 @@ Or copy paste the following content into your Claude Code/Cursor MCP config:
 
 ### 2. Claude Code Compare Prices on eCommerce Apps
 
-[![Claude Code Compare Prices on eCommerce Apps](https://img.youtube.com/vi/-2vzBaIU3hQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=-2vzBaIU3hQ)
+[![Claude Code Compare Prices on eCommerce Apps](https://img.youtube.com/vi/VQcduvJigUE/maxresdefault.jpg)](https://www.youtube.com/watch?v=VQcduvJigUE)
 
 ## Environments
 Currently, GBOX supports the following environments:
