@@ -2,7 +2,7 @@ import { z } from "zod";
 import { attachBox } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { ActionPressKey } from "gbox-sdk";
-import { sanitizeResult } from "./utils.js";
+import { getImageDataFromUri } from "../gboxsdk/utils.js";
 
 export const PRESS_KEY_TOOL = "press_key";
 
@@ -80,34 +80,8 @@ export function handlePressKey(logger: MCPLogger) {
       // Prepare image contents for screenshots
       const images: Array<{ type: "image"; data: string; mimeType: string }> = [];
 
-      const parseUri = (uri: string) => {
-        let mimeType = "image/png";
-        let base64Data = uri;
-
-        if (uri.startsWith("data:")) {
-          const match = uri.match(/^data:(.+);base64,(.*)$/);
-          if (match) {
-            mimeType = match[1];
-            base64Data = match[2];
-          }
-        }
-
-        return { mimeType, base64Data };
-      };
-
-      // Add screenshots if available
-      if (result?.screenshot?.trace?.uri) {
-        const { mimeType, base64Data } = parseUri(result.screenshot.trace.uri);
-        images.push({ type: "image", data: base64Data, mimeType });
-      }
-
-      if (result?.screenshot?.before?.uri) {
-        const { mimeType, base64Data } = parseUri(result.screenshot.before.uri);
-        images.push({ type: "image", data: base64Data, mimeType });
-      }
-
       if (result?.screenshot?.after?.uri) {
-        const { mimeType, base64Data } = parseUri(result.screenshot.after.uri);
+        const { base64Data, mimeType } = await getImageDataFromUri(result.screenshot.after.uri, box);
         images.push({ type: "image", data: base64Data, mimeType });
       }
 
@@ -119,7 +93,7 @@ export function handlePressKey(logger: MCPLogger) {
       // Add text result with sanitized data
       content.push({
         type: "text" as const,
-        text: JSON.stringify(sanitizeResult(result), null, 2),
+        text: "Keys pressed successfully",
       });
 
       // Add all images

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { attachBox } from "../gboxsdk/index.js";
 import { MCPLogger } from "../mcp-logger.js";
 import type { ActionScreenshot } from "gbox-sdk";
+import { getImageDataFromUri } from "../gboxsdk/utils.js";
 
 export const WAIT_TOOL = "wait";
 export const WAIT_TOOL_DESCRIPTION =
@@ -31,16 +32,7 @@ export function handleWait(logger: MCPLogger) {
       const screenshotParams: ActionScreenshot = { outputFormat: "base64" };
       const screenshotResult = await box.action.screenshot(screenshotParams);
 
-      // Extract base64 data and mime type
-      let mimeType = "image/png";
-      let base64Data = screenshotResult.uri;
-      if (screenshotResult.uri.startsWith("data:")) {
-        const match = screenshotResult.uri.match(/^data:(.+);base64,(.*)$/);
-        if (match) {
-          mimeType = match[1];
-          base64Data = match[2];
-        }
-      }
+      const { base64Data, mimeType } = await getImageDataFromUri(screenshotResult.uri, box);
 
       const message = `Finished waiting for ${duration}ms.`;
       await logger.info(message);

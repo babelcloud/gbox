@@ -2,7 +2,7 @@ import { z } from "zod";
 import { attachBox } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { ActionPressButton } from "gbox-sdk";
-import { parseUri, sanitizeResult } from "./utils.js";
+import { getImageDataFromUri } from "../gboxsdk/utils.js";
 import { ActionPressButtonResponse } from "gbox-sdk/resources/v1/boxes/actions.js";
 
 export const PRESS_BUTTON_TOOL = "press_button";
@@ -71,7 +71,7 @@ export function handlePressButton(logger: MCPLogger) {
       // }
 
       if (result?.screenshot?.after?.uri) {
-        const { mimeType, base64Data } = parseUri(result.screenshot.after.uri);
+        const { base64Data, mimeType } = await getImageDataFromUri(result.screenshot.after.uri, box);
         images.push({ type: "image", data: base64Data, mimeType });
       }
 

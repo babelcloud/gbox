@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { MCPLogger } from "../mcp-logger.js";
 import { attachBox } from "../gboxsdk/index.js";
 import type { ActionSwipe } from "gbox-sdk";
-import { parseUri } from "./utils.js";
+import { getImageDataFromUri } from "../gboxsdk/utils.js";
 import { ActionSwipeResponse } from "gbox-sdk/resources/v1/boxes.mjs";
 
 export const SCROLL_TOOL = "scroll";
@@ -53,7 +53,7 @@ export function handleScroll(logger: MCPLogger) {
       });
 
       if (result?.screenshot?.after?.uri) {
-        const { mimeType, base64Data } = parseUri(result.screenshot.after.uri);
+        const { base64Data, mimeType } = await getImageDataFromUri(result.screenshot.after.uri, box);
         content.push({ type: "image", data: base64Data, mimeType });
       }
 
