@@ -53,7 +53,7 @@ func NewBoxListCommand() *cobra.Command {
 }
 
 func runList(opts *BoxListOptions) error {
-	// 如果显式指定了 API_ENDPOINT，则直接通过 HTTP 调用以保持原始字段（如 image）
+	// if API_ENDPOINT is explicitly set, call HTTP directly to preserve original fields (like image)
 	if base := os.Getenv("API_ENDPOINT"); base != "" {
 		boxes, err := fetchBoxesDirect(base, opts.Filters)
 		if err != nil {
@@ -62,19 +62,19 @@ func runList(opts *BoxListOptions) error {
 		return outputBoxes(boxes, opts.OutputFormat)
 	}
 
-	// 创建 SDK 客户端
+	// create SDK client
 	sdkClient, err := client.NewClientFromProfile()
 	if err != nil {
 		return fmt.Errorf("failed to initialize gbox client: %v", err)
 	}
 
-	// 调用 API using client abstraction
+	// call API using client abstraction
 	resp, err := client.ListBoxes(sdkClient, opts.Filters)
 	if err != nil {
 		return fmt.Errorf("API call failed: %v", err)
 	}
 
-	// 输出结果
+	// output result
 	return printResponse(resp, opts.OutputFormat)
 }
 
@@ -147,7 +147,7 @@ func printResponse(resp interface{}, outputFormat string) error {
 	}
 
 	if outputFormat == "json" {
-		// 构造测试所期望的精简字段
+		// construct simplified fields expected by tests
 		type simpleBox struct {
 			ID     string `json:"id"`
 			Image  string `json:"image"`
@@ -157,7 +157,7 @@ func printResponse(resp interface{}, outputFormat string) error {
 		var out struct {
 			Data []simpleBox `json:"data"`
 		}
-		// 将 SDK 响应转为通用结构以便提取期望字段
+		// convert SDK response to generic structure to extract expected fields
 		var raw struct {
 			Data []map[string]interface{} `json:"data"`
 		}

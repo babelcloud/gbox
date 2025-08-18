@@ -63,13 +63,13 @@ func runTerminate(opts *BoxTerminateOptions, args []string) error {
 }
 
 func terminateAllBoxes(opts *BoxTerminateOptions) error {
-	// 创建 SDK 客户端
+	// create SDK client
 	sdkClient, err := client.NewClientFromProfile()
 	if err != nil {
 		return fmt.Errorf("failed to initialize gbox client: %v", err)
 	}
 
-	// 获取所有 boxes using client abstraction
+	// get all boxes using client abstraction
 	resp, err := client.ListBoxes(sdkClient, []string{})
 	if err != nil {
 		return fmt.Errorf("failed to get box list: %v", err)
@@ -154,7 +154,7 @@ func terminateBox(boxIDPrefix string, opts *BoxTerminateOptions) error {
 		return fmt.Errorf("failed to resolve box ID: %w", err)
 	}
 
-	// 创建 SDK 客户端
+	// create SDK client
 	sdkClient, err := client.NewClientFromProfile()
 	if err != nil {
 		return fmt.Errorf("failed to initialize gbox client: %v", err)

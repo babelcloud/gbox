@@ -14,7 +14,7 @@ import (
 func completeBoxIDs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	debug := os.Getenv("DEBUG") == "true"
 
-	// 创建 SDK 客户端
+	// create SDK client
 	sdkClient, err := client.NewClientFromProfile()
 	if err != nil {
 		if debug {
@@ -27,7 +27,7 @@ func completeBoxIDs(cmd *cobra.Command, args []string, toComplete string) ([]str
 		fmt.Fprintf(os.Stderr, "DEBUG: [completion] Fetching box IDs using client abstraction\n")
 	}
 
-	// 调用 client abstraction 获取 box 列表
+	// call client abstraction to get box list
 	resp, err := client.ListBoxes(sdkClient, []string{})
 	if err != nil {
 		if debug {
@@ -68,7 +68,7 @@ func ResolveBoxIDPrefix(prefix string) (fullID string, matchedIDs []string, err 
 		return "", nil, fmt.Errorf("box ID prefix cannot be empty")
 	}
 
-	// 创建 SDK 客户端
+	// create SDK client
 	sdkClient, err := client.NewClientFromProfile()
 	if err != nil {
 		if debug {
@@ -81,7 +81,7 @@ func ResolveBoxIDPrefix(prefix string) (fullID string, matchedIDs []string, err 
 		fmt.Fprintf(os.Stderr, "DEBUG: [ResolveBoxIDPrefix] Fetching box IDs using client abstraction for prefix '%s'\n", prefix)
 	}
 
-	// 调用 client abstraction 获取 box 列表
+	// call client abstraction to get box list
 	resp, err := client.ListBoxes(sdkClient, []string{})
 	if err != nil {
 		if debug {
@@ -110,7 +110,7 @@ func ResolveBoxIDPrefix(prefix string) (fullID string, matchedIDs []string, err 
 		fmt.Fprintf(os.Stderr, "DEBUG: [ResolveBoxIDPrefix] All fetched IDs: %v\n", allIDs)
 	}
 
-	// 执行前缀匹配
+	// perform prefix matching
 	for _, m := range data {
 		if id, ok := m["id"].(string); ok {
 			if strings.HasPrefix(id, prefix) {
@@ -123,13 +123,13 @@ func ResolveBoxIDPrefix(prefix string) (fullID string, matchedIDs []string, err 
 		fmt.Fprintf(os.Stderr, "DEBUG: [ResolveBoxIDPrefix] Matched IDs for prefix '%s': %v\n", prefix, matchedIDs)
 	}
 
-	// 处理匹配结果
+	// handle matching results
 	if len(matchedIDs) == 0 {
 		return "", nil, fmt.Errorf("no box found with ID prefix: %s", prefix)
 	}
 	if len(matchedIDs) == 1 {
-		return matchedIDs[0], matchedIDs, nil // 唯一匹配
+		return matchedIDs[0], matchedIDs, nil // unique match
 	}
-	// 多个匹配
+	// multiple matches
 	return "", matchedIDs, fmt.Errorf("multiple boxes found with ID prefix '%s'. Please be more specific. Matches:\n  %s", prefix, strings.Join(matchedIDs, "\n  "))
 }

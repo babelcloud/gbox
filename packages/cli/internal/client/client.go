@@ -218,15 +218,15 @@ func buildListParams(filters []string) sdk.V1BoxListParams {
 
 // TerminateBox terminates a box using the SDK
 func TerminateBox(client *sdk.Client, boxID string) error {
-	// 构建 SDK 参数
+	// build SDK parameters
 	terminateParams := sdk.V1BoxTerminateParams{}
 
-	// 调试输出
+	// debug output
 	if os.Getenv("DEBUG") == "true" {
 		fmt.Fprintf(os.Stderr, "Terminating box: %s\n", boxID)
 	}
 
-	// 调用 SDK
+	// call SDK
 	ctx := context.Background()
 	err := client.V1.Boxes.Terminate(ctx, boxID, terminateParams)
 	if err != nil {

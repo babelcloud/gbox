@@ -56,11 +56,11 @@ func runVersion(opts *VersionOptions) error {
 
 	// Display GBOX ASCII art banner with gradient colors
 	// Primary color #704FED (purple)
-	purple := "\033[38;2;112;79;237m"       // 经典紫
-	lightPurple := "\033[38;2;142;109;255m" // 浅紫
-	darkPurple := "\033[38;2;82;49;207m"    // 深紫
-	// 为字母 G 单独准备的高亮颜色（比 primary 更明亮一些的渐变紫）
-	glowPurple := "\033[38;2;180;130;255m" // Glow 紫
+	purple := "\033[38;2;112;79;237m"       // classic purple
+	lightPurple := "\033[38;2;142;109;255m" // light purple
+	darkPurple := "\033[38;2;82;49;207m"    // dark purple
+	// Special highlight color for letter G (brighter gradient purple than primary)
+	glowPurple := "\033[38;2;180;130;255m" // glow purple
 	reset := "\033[0m"
 	bold := "\033[1m"
 
