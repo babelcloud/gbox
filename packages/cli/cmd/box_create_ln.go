@@ -1,14 +1,10 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 
-	// internal SDK client
-	sdk "github.com/babelcloud/gbox-sdk-go"
-	gboxclient "github.com/babelcloud/gbox/packages/cli/internal/gboxsdk"
+	client "github.com/babelcloud/gbox/packages/cli/internal/client"
 	"github.com/spf13/cobra"
 )
 
@@ -53,46 +49,15 @@ Command arguments can be specified directly in the command line or added after t
 
 func runLinuxCreate(opts *LinuxBoxCreateOptions) error {
 	// create SDK client
-	client, err := gboxclient.NewClientFromProfile()
+	sdkClient, err := client.NewClientFromProfile()
 	if err != nil {
 		return fmt.Errorf("failed to initialize gbox client: %v", err)
 	}
 
-	// parse environment variables
-	envMap, err := parseKeyValuePairs(opts.Env, "environment variable")
+	// create Linux box using client abstraction
+	box, err := client.CreateLinuxBox(sdkClient, opts.Env, opts.Labels)
 	if err != nil {
-		return err
-	}
-
-	// parse labels
-	labelMap, err := parseKeyValuePairs(opts.Labels, "label")
-	if err != nil {
-		return err
-	}
-
-	// build SDK parameters
-	createParams := sdk.V1BoxNewLinuxParams{
-		CreateLinuxBox: sdk.CreateLinuxBoxParam{
-			Wait: sdk.Bool(true), // wait for operation to complete
-			Config: sdk.CreateBoxConfigParam{
-				Envs:   envMap,
-				Labels: labelMap,
-			},
-		},
-	}
-
-	// debug output
-	if os.Getenv("DEBUG") == "true" {
-		fmt.Fprintf(os.Stderr, "Request params:\n")
-		requestJSON, _ := json.MarshalIndent(createParams, "", "  ")
-		fmt.Fprintln(os.Stderr, string(requestJSON))
-	}
-
-	// call SDK
-	ctx := context.Background()
-	box, err := client.V1.Boxes.NewLinux(ctx, createParams)
-	if err != nil {
-		return fmt.Errorf("failed to create box: %v", err)
+		return fmt.Errorf("failed to create Linux box: %v", err)
 	}
 
 	// output result
@@ -100,7 +65,16 @@ func runLinuxCreate(opts *LinuxBoxCreateOptions) error {
 		boxJSON, _ := json.MarshalIndent(box, "", "  ")
 		fmt.Println(string(boxJSON))
 	} else {
-		fmt.Printf("Box created with ID \"%s\"\n", box.ID)
+		// Extract ID from the response
+		if boxMap, ok := box.(map[string]interface{}); ok {
+			if id, exists := boxMap["id"].(string); exists {
+				fmt.Printf("Linux box created with ID \"%s\"\n", id)
+			} else {
+				fmt.Println("Linux box created successfully")
+			}
+		} else {
+			fmt.Println("Linux box created successfully")
+		}
 	}
 
 	return nil

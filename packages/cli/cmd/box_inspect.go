@@ -1,14 +1,11 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 
-	// 内部 SDK 客户端
-
-	gboxclient "github.com/babelcloud/gbox/packages/cli/internal/gboxsdk"
+	client "github.com/babelcloud/gbox/packages/cli/internal/client"
 	"github.com/spf13/cobra"
 )
 
@@ -49,7 +46,7 @@ func runInspect(boxIDPrefix string, opts *BoxInspectOptions) error {
 	}
 
 	// 创建 SDK 客户端
-	client, err := gboxclient.NewClientFromProfile()
+	sdkClient, err := client.NewClientFromProfile()
 	if err != nil {
 		return fmt.Errorf("failed to initialize gbox client: %v", err)
 	}
@@ -59,9 +56,8 @@ func runInspect(boxIDPrefix string, opts *BoxInspectOptions) error {
 		fmt.Fprintf(os.Stderr, "Inspecting box: %s\n", resolvedBoxID)
 	}
 
-	// 调用 SDK
-	ctx := context.Background()
-	box, err := client.V1.Boxes.Get(ctx, resolvedBoxID)
+	// 调用 client abstraction
+	box, err := client.GetBox(sdkClient, resolvedBoxID)
 	if err != nil {
 		return fmt.Errorf("failed to get box details: %v", err)
 	}

@@ -1,14 +1,12 @@
 package cmd
 
 import (
-	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
-	// 内部 SDK 客户端
-	sdk "github.com/babelcloud/gbox-sdk-go"
-	gboxclient "github.com/babelcloud/gbox/packages/cli/internal/gboxsdk"
+	client "github.com/babelcloud/gbox/packages/cli/internal/client"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +15,7 @@ func completeBoxIDs(cmd *cobra.Command, args []string, toComplete string) ([]str
 	debug := os.Getenv("DEBUG") == "true"
 
 	// 创建 SDK 客户端
-	client, err := gboxclient.NewClientFromProfile()
+	sdkClient, err := client.NewClientFromProfile()
 	if err != nil {
 		if debug {
 			fmt.Fprintf(os.Stderr, "DEBUG: [completion] Failed to initialize gbox client: %v\n", err)
@@ -26,13 +24,11 @@ func completeBoxIDs(cmd *cobra.Command, args []string, toComplete string) ([]str
 	}
 
 	if debug {
-		fmt.Fprintf(os.Stderr, "DEBUG: [completion] Fetching box IDs using SDK\n")
+		fmt.Fprintf(os.Stderr, "DEBUG: [completion] Fetching box IDs using client abstraction\n")
 	}
 
-	// 调用 SDK 获取 box 列表
-	ctx := context.Background()
-	listParams := sdk.V1BoxListParams{}
-	resp, err := client.V1.Boxes.List(ctx, listParams)
+	// 调用 client abstraction 获取 box 列表
+	resp, err := client.ListBoxes(sdkClient, []string{})
 	if err != nil {
 		if debug {
 			fmt.Fprintf(os.Stderr, "DEBUG: [completion] Failed to get box list: %v\n", err)
@@ -40,9 +36,21 @@ func completeBoxIDs(cmd *cobra.Command, args []string, toComplete string) ([]str
 		return nil, cobra.ShellCompDirectiveError
 	}
 
+	// Extract data from response
+	var data []map[string]interface{}
+	if rawBytes, _ := json.Marshal(resp); rawBytes != nil {
+		var raw struct {
+			Data []map[string]interface{} `json:"data"`
+		}
+		_ = json.Unmarshal(rawBytes, &raw)
+		data = raw.Data
+	}
+
 	var ids []string
-	for _, box := range resp.Data {
-		ids = append(ids, box.ID)
+	for _, m := range data {
+		if id, ok := m["id"].(string); ok {
+			ids = append(ids, id)
+		}
 	}
 
 	if debug {
@@ -61,7 +69,7 @@ func ResolveBoxIDPrefix(prefix string) (fullID string, matchedIDs []string, err 
 	}
 
 	// 创建 SDK 客户端
-	client, err := gboxclient.NewClientFromProfile()
+	sdkClient, err := client.NewClientFromProfile()
 	if err != nil {
 		if debug {
 			fmt.Fprintf(os.Stderr, "DEBUG: [ResolveBoxIDPrefix] Failed to initialize gbox client: %v\n", err)
@@ -70,13 +78,11 @@ func ResolveBoxIDPrefix(prefix string) (fullID string, matchedIDs []string, err 
 	}
 
 	if debug {
-		fmt.Fprintf(os.Stderr, "DEBUG: [ResolveBoxIDPrefix] Fetching box IDs using SDK for prefix '%s'\n", prefix)
+		fmt.Fprintf(os.Stderr, "DEBUG: [ResolveBoxIDPrefix] Fetching box IDs using client abstraction for prefix '%s'\n", prefix)
 	}
 
-	// 调用 SDK 获取 box 列表
-	ctx := context.Background()
-	listParams := sdk.V1BoxListParams{}
-	resp, err := client.V1.Boxes.List(ctx, listParams)
+	// 调用 client abstraction 获取 box 列表
+	resp, err := client.ListBoxes(sdkClient, []string{})
 	if err != nil {
 		if debug {
 			fmt.Fprintf(os.Stderr, "DEBUG: [ResolveBoxIDPrefix] Failed to get box list: %v\n", err)
@@ -84,17 +90,32 @@ func ResolveBoxIDPrefix(prefix string) (fullID string, matchedIDs []string, err 
 		return "", nil, fmt.Errorf("failed to get box list: %w", err)
 	}
 
+	// Extract data from response
+	var data []map[string]interface{}
+	if rawBytes, _ := json.Marshal(resp); rawBytes != nil {
+		var raw struct {
+			Data []map[string]interface{} `json:"data"`
+		}
+		_ = json.Unmarshal(rawBytes, &raw)
+		data = raw.Data
+	}
+
 	if debug {
 		var allIDs []string
-		for _, box := range resp.Data {
-			allIDs = append(allIDs, box.ID)
+		for _, m := range data {
+			if id, ok := m["id"].(string); ok {
+				allIDs = append(allIDs, id)
+			}
 		}
 		fmt.Fprintf(os.Stderr, "DEBUG: [ResolveBoxIDPrefix] All fetched IDs: %v\n", allIDs)
 	}
+
 	// 执行前缀匹配
-	for _, box := range resp.Data {
-		if strings.HasPrefix(box.ID, prefix) {
-			matchedIDs = append(matchedIDs, box.ID)
+	for _, m := range data {
+		if id, ok := m["id"].(string); ok {
+			if strings.HasPrefix(id, prefix) {
+				matchedIDs = append(matchedIDs, id)
+			}
 		}
 	}
 
