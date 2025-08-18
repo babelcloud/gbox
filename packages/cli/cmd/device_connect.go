@@ -149,8 +149,11 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 		return nil
 	}
 
+	fmt.Println("If you can not see your devices here, make sure you have turned on the developers mode [https://docs.gbox.ai/cli]")
+	fmt.Println()
 	fmt.Println("Select a device to register for remote access:")
 	fmt.Println()
+	
 
 	for i, device := range devices {
 		status := "Not Registered"
