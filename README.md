@@ -74,12 +74,12 @@ Or copy paste the following content into your Claude Code/Cursor MCP config:
 
 ### 1. Claude Code Develop/Test Android App
 
-[![Claude Code Develop/Test Android App](https://img.youtube.com/vi/qFrPXKK9RW0/maxresdefault.jpg)](https://www.youtube.com/watch?v=qFrPXKK9RW0)
+[![Claude Code Develop/Test Android App](https://img.youtube.com/vi/IzlZFsqC4CY/maxresdefault.jpg)](https://www.youtube.com/watch?v=IzlZFsqC4CY)
 
 
 ### 2. Claude Code Compare Prices on eCommerce Apps
 
-[![Claude Code Compare Prices on eCommerce Apps](https://img.youtube.com/vi/VQcduvJigUE/maxresdefault.jpg)](https://www.youtube.com/watch?v=VQcduvJigUE)
+[![Claude Code Compare Prices on eCommerce Apps](https://img.youtube.com/vi/Op3ZSVg-qg8/maxresdefault.jpg)](https://www.youtube.com/watch?v=Op3ZSVg-qg8)
 
 ## Environments
 Currently, GBOX supports the following environments:
