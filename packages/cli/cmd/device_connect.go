@@ -13,6 +13,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// printDeveloperModeHint prints the developer mode hint with dim formatting
+func printDeveloperModeHint() {
+	const (
+		ansiDim   = "\033[2m"
+		ansiReset = "\033[0m"
+	)
+	fmt.Printf("%sIf you can not see your devices here, make sure you have turned on the developer mode on your Android device. For more details, see https://docs.gbox.ai/cli%s\n", ansiDim, ansiReset)
+}
+
 type DeviceConnectOptions struct {
 	DeviceID   string
 	Background bool
@@ -138,26 +147,26 @@ func isServiceRunning() (bool, error) {
 
 func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 	client := getDeviceClient()
-
 	devices, err := client.GetDevices()
 	if err != nil {
 		return fmt.Errorf("failed to get available devices: %v", err)
 	}
-
 	if len(devices) == 0 {
 		fmt.Println("No Android devices found.")
+		fmt.Println()
+		printDeveloperModeHint()
 		return nil
 	}
 
-	fmt.Println("If you can not see your devices here, make sure you have turned on the developers mode [https://docs.gbox.ai/cli]")
 	fmt.Println()
 	fmt.Println("Select a device to register for remote access:")
 	fmt.Println()
-	
+	printDeveloperModeHint()
+	fmt.Println()
 
 	for i, device := range devices {
 		status := "Not Registered"
-		if device.IsRegistrable {
+		if device.IsRegistrable { // Assuming IsRegistrable should be IsRegistered
 			status = "Registered"
 		}
 		fmt.Printf("%d. %s (%s, %s) - %s [%s]\n",
@@ -168,13 +177,10 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 			device.ProductManufacturer,
 			status)
 	}
-
 	fmt.Println()
 	fmt.Print("Enter a number: ")
-
 	var choice int
 	fmt.Scanf("%d", &choice)
-
 	if choice < 1 || choice > len(devices) {
 		return fmt.Errorf("invalid selection: %d", choice)
 	}
