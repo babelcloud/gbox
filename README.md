@@ -68,7 +68,9 @@ Or copy paste the following content into your Claude Code/Cursor MCP config:
   }
 }
 ```
-> Note: Currently, GBOX MCP is only available for Android.
+> Note:
+> - Currently, GBOX MCP can only control Android environments.
+> - If you need Cursor/Claude Code to control your local Android device, please check [Register Local Device](https://docs.gbox.ai/cli/register-local-device)
 
 ## Android MCP Use Cases
 
