@@ -172,10 +172,6 @@ jobs:
             dist/gbox-*.tar.gz.sha256
             dist/gbox-*.zip
             dist/gbox-*.zip.sha256
-            dist/gbox-device-proxy-*.tar.gz
-            dist/gbox-device-proxy-*.tar.gz.sha256
-            dist/gbox-device-proxy-*.zip
-            dist/gbox-device-proxy-*.zip.sha256
           draft: true
           prerelease: false
           generate_release_notes: true
