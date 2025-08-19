@@ -98,7 +98,7 @@ Login to [GBOX.AI](https://gbox.ai) to get a cloud physical device. Cloud physic
 
 **3. Local Physical Device:** 
 
-Use your own physical device [Register Local Device]([https://docs.gbox.ai/cli/android-local-device](https://docs.gbox.ai/cli/register-local-device)). Your local device can be any Android device that have Developer Mode enabled. Best for production scenarios and personal use.
+Use your own physical device [Register Local Device](https://docs.gbox.ai/cli/register-local-device). Your local device can be any Android device that have Developer Mode enabled. Best for production scenarios and personal use.
 
 ### Linux Desktop/Browser Environment
 
