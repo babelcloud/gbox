@@ -2,14 +2,12 @@ package cmd
 
 import (
 	"bufio"
-	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
-	// 内部 SDK 客户端
-	sdk "github.com/babelcloud/gbox-sdk-go"
-	gboxclient "github.com/babelcloud/gbox/packages/cli/internal/gboxsdk"
+	client "github.com/babelcloud/gbox/packages/cli/internal/client"
 	"github.com/spf13/cobra"
 )
 
@@ -65,21 +63,29 @@ func runTerminate(opts *BoxTerminateOptions, args []string) error {
 }
 
 func terminateAllBoxes(opts *BoxTerminateOptions) error {
-	// 创建 SDK 客户端
-	client, err := gboxclient.NewClientFromProfile()
+	// create SDK client
+	sdkClient, err := client.NewClientFromProfile()
 	if err != nil {
 		return fmt.Errorf("failed to initialize gbox client: %v", err)
 	}
 
-	// 获取所有 boxes
-	ctx := context.Background()
-	listParams := sdk.V1BoxListParams{}
-	resp, err := client.V1.Boxes.List(ctx, listParams)
+	// get all boxes using client abstraction
+	resp, err := client.ListBoxes(sdkClient, []string{})
 	if err != nil {
 		return fmt.Errorf("failed to get box list: %v", err)
 	}
 
-	if len(resp.Data) == 0 {
+	// Extract data from response
+	var data []map[string]interface{}
+	if rawBytes, _ := json.Marshal(resp); rawBytes != nil {
+		var raw struct {
+			Data []map[string]interface{} `json:"data"`
+		}
+		_ = json.Unmarshal(rawBytes, &raw)
+		data = raw.Data
+	}
+
+	if len(data) == 0 {
 		if opts.OutputFormat == "json" {
 			fmt.Println(`{"status":"success","message":"No boxes to terminate"}`)
 		} else {
@@ -89,8 +95,10 @@ func terminateAllBoxes(opts *BoxTerminateOptions) error {
 	}
 
 	fmt.Println("The following boxes will be terminated:")
-	for _, box := range resp.Data {
-		fmt.Printf("  - %s\n", box.ID)
+	for _, m := range data {
+		if id, ok := m["id"].(string); ok {
+			fmt.Printf("  - %s\n", id)
+		}
 	}
 	fmt.Println()
 
@@ -114,10 +122,12 @@ func terminateAllBoxes(opts *BoxTerminateOptions) error {
 	}
 
 	success := true
-	for _, box := range resp.Data {
-		if err := performBoxTermination(client, box.ID); err != nil {
-			fmt.Printf("Error: Failed to terminate box %s: %v\n", box.ID, err)
-			success = false
+	for _, m := range data {
+		if id, ok := m["id"].(string); ok {
+			if err := client.TerminateBox(sdkClient, id); err != nil {
+				fmt.Printf("Error: Failed to terminate box %s: %v\n", id, err)
+				success = false
+			}
 		}
 	}
 
@@ -144,13 +154,13 @@ func terminateBox(boxIDPrefix string, opts *BoxTerminateOptions) error {
 		return fmt.Errorf("failed to resolve box ID: %w", err)
 	}
 
-	// 创建 SDK 客户端
-	client, err := gboxclient.NewClientFromProfile()
+	// create SDK client
+	sdkClient, err := client.NewClientFromProfile()
 	if err != nil {
 		return fmt.Errorf("failed to initialize gbox client: %v", err)
 	}
 
-	if err := performBoxTermination(client, resolvedBoxID); err != nil {
+	if err := client.TerminateBox(sdkClient, resolvedBoxID); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		return nil
 	}
@@ -160,24 +170,5 @@ func terminateBox(boxIDPrefix string, opts *BoxTerminateOptions) error {
 	} else {
 		fmt.Printf("Box %s terminated successfully\n", resolvedBoxID)
 	}
-	return nil
-}
-
-func performBoxTermination(client *sdk.Client, boxID string) error {
-	// 构建 SDK 参数
-	terminateParams := sdk.V1BoxTerminateParams{}
-
-	// 调试输出
-	if os.Getenv("DEBUG") == "true" {
-		fmt.Fprintf(os.Stderr, "Terminating box: %s\n", boxID)
-	}
-
-	// 调用 SDK
-	ctx := context.Background()
-	err := client.V1.Boxes.Terminate(ctx, boxID, terminateParams)
-	if err != nil {
-		return fmt.Errorf("failed to terminate box: %v", err)
-	}
-
 	return nil
 }

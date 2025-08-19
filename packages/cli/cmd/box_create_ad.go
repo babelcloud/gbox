@@ -1,15 +1,11 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
-	// internal SDK client
-	sdk "github.com/babelcloud/gbox-sdk-go"
-	gboxclient "github.com/babelcloud/gbox/packages/cli/internal/gboxsdk"
+	client "github.com/babelcloud/gbox/packages/cli/internal/client"
 	"github.com/spf13/cobra"
 )
 
@@ -61,27 +57,10 @@ setting environment variables, adding labels, and setting expiration time.`,
 
 func runAndroidCreate(opts *AndroidBoxCreateOptions) error {
 	// create SDK client
-	client, err := gboxclient.NewClientFromProfile()
+	sdkClient, err := client.NewClientFromProfile()
 	if err != nil {
 		return fmt.Errorf("failed to initialize gbox client: %v", err)
 	}
-
-	// parse environment variables
-	envMap, err := parseKeyValuePairs(opts.Env, "environment variable")
-	if err != nil {
-		return err
-	}
-
-	// parse labels
-	labelMap, err := parseKeyValuePairs(opts.Labels, "label")
-	if err != nil {
-		return err
-	}
-	if labelMap == nil {
-		labelMap = make(map[string]interface{})
-	}
-	labelMap["device_type"] = opts.DeviceType
-
 
 	// validate device type
 	if opts.DeviceType != "virtual" && opts.DeviceType != "physical" {
@@ -95,29 +74,8 @@ func runAndroidCreate(opts *AndroidBoxCreateOptions) error {
 		}
 	}
 
-	// build SDK parameters
-	createParams := sdk.V1BoxNewAndroidParams{
-		CreateAndroidBox: sdk.CreateAndroidBoxParam{
-			Wait: sdk.Bool(true), // wait for operation to complete
-			Config: sdk.CreateBoxConfigParam{
-				ExpiresIn: sdk.String(opts.ExpiresIn),
-				Envs:      envMap,
-				Labels:    labelMap,
-				DeviceType: sdk.CreateBoxConfigDeviceType(opts.DeviceType),
-			},
-		},
-	}
-
-	// debug output
-	if os.Getenv("DEBUG") == "true" {
-		fmt.Fprintf(os.Stderr, "Request params:\n")
-		requestJSON, _ := json.MarshalIndent(createParams, "", "  ")
-		fmt.Fprintln(os.Stderr, string(requestJSON))
-	}
-
-	// call SDK
-	ctx := context.Background()
-	box, err := client.V1.Boxes.NewAndroid(ctx, createParams)
+	// create Android box using client abstraction
+	box, err := client.CreateAndroidBox(sdkClient, opts.DeviceType, opts.Env, opts.Labels, opts.ExpiresIn)
 	if err != nil {
 		return fmt.Errorf("failed to create Android box: %v", err)
 	}
@@ -127,7 +85,16 @@ func runAndroidCreate(opts *AndroidBoxCreateOptions) error {
 		boxJSON, _ := json.MarshalIndent(box, "", "  ")
 		fmt.Println(string(boxJSON))
 	} else {
-		fmt.Printf("Android box created with ID \"%s\"\n", box.ID)
+		// Extract ID from the response
+		if boxMap, ok := box.(map[string]interface{}); ok {
+			if id, exists := boxMap["id"].(string); exists {
+				fmt.Printf("Android box created with ID \"%s\"\n", id)
+			} else {
+				fmt.Println("Android box created successfully")
+			}
+		} else {
+			fmt.Println("Android box created successfully")
+		}
 	}
 
 	return nil

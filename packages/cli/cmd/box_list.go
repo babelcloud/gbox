@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,9 +8,7 @@ import (
 	"os"
 	"strings"
 
-	// 内部 SDK 客户端
-	sdk "github.com/babelcloud/gbox-sdk-go"
-	gboxclient "github.com/babelcloud/gbox/packages/cli/internal/gboxsdk"
+	client "github.com/babelcloud/gbox/packages/cli/internal/client"
 	"github.com/spf13/cobra"
 )
 
@@ -56,7 +53,7 @@ func NewBoxListCommand() *cobra.Command {
 }
 
 func runList(opts *BoxListOptions) error {
-	// 如果显式指定了 API_ENDPOINT，则直接通过 HTTP 调用以保持原始字段（如 image）
+	// if API_ENDPOINT is explicitly set, call HTTP directly to preserve original fields (like image)
 	if base := os.Getenv("API_ENDPOINT"); base != "" {
 		boxes, err := fetchBoxesDirect(base, opts.Filters)
 		if err != nil {
@@ -65,23 +62,19 @@ func runList(opts *BoxListOptions) error {
 		return outputBoxes(boxes, opts.OutputFormat)
 	}
 
-	// 创建 SDK 客户端
-	client, err := gboxclient.NewClientFromProfile()
+	// create SDK client
+	sdkClient, err := client.NewClientFromProfile()
 	if err != nil {
 		return fmt.Errorf("failed to initialize gbox client: %v", err)
 	}
 
-	// 解析过滤参数
-	params := buildListParams(opts.Filters)
-
-	// 调用 API
-	ctx := context.Background()
-	resp, err := client.V1.Boxes.List(ctx, params)
+	// call API using client abstraction
+	resp, err := client.ListBoxes(sdkClient, opts.Filters)
 	if err != nil {
 		return fmt.Errorf("API call failed: %v", err)
 	}
 
-	// 输出结果
+	// output result
 	return printResponse(resp, opts.OutputFormat)
 }
 
@@ -136,46 +129,25 @@ func outputBoxes(data []map[string]interface{}, format string) error {
 		return nil
 	}
 
-	fmt.Println("ID                                      TYPE       STATUS")
-	fmt.Println("---------------------------------------- ---------- ---------------")
-	for _, m := range data {
-		id, _ := m["id"].(string)
-		typ, _ := m["type"].(string)
-		status, _ := m["status"].(string)
-		fmt.Printf("%-40s %-10s %s\n", id, typ, status)
+	// Define table columns
+	columns := []TableColumn{
+		{Header: "ID", Key: "id"},
+		{Header: "TYPE", Key: "type"},
+		{Header: "STATUS", Key: "status"},
 	}
+
+	renderTable(columns, data)
 	return nil
 }
 
-// buildListParams parses CLI --filter flags into SDK query parameters
-func buildListParams(filters []string) sdk.V1BoxListParams {
-	var params sdk.V1BoxListParams
-	for _, filter := range filters {
-		parts := strings.SplitN(filter, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key, value := parts[0], parts[1]
-		switch strings.ToLower(key) {
-		case "label", "labels":
-			params.Labels = value
-		case "status":
-			params.Status = strings.Split(value, ",")
-		case "type":
-			params.Type = strings.Split(value, ",")
-		}
-	}
-	return params
-}
-
 // printResponse handles output based on the selected format
-func printResponse(resp *sdk.V1BoxListResponse, outputFormat string) error {
+func printResponse(resp interface{}, outputFormat string) error {
 	if resp == nil {
 		return fmt.Errorf("empty response")
 	}
 
 	if outputFormat == "json" {
-		// 构造测试所期望的精简字段
+		// construct simplified fields expected by tests
 		type simpleBox struct {
 			ID     string `json:"id"`
 			Image  string `json:"image"`
@@ -185,7 +157,7 @@ func printResponse(resp *sdk.V1BoxListResponse, outputFormat string) error {
 		var out struct {
 			Data []simpleBox `json:"data"`
 		}
-		// 将 SDK 响应转为通用结构以便提取期望字段
+		// convert SDK response to generic structure to extract expected fields
 		var raw struct {
 			Data []map[string]interface{} `json:"data"`
 		}
@@ -217,17 +189,28 @@ func printResponse(resp *sdk.V1BoxListResponse, outputFormat string) error {
 		return nil
 	}
 
-	if len(resp.Data) == 0 {
+	// For text output, we need to extract data from the response
+	var data []map[string]interface{}
+	if rawBytes, _ := json.Marshal(resp); rawBytes != nil {
+		var raw struct {
+			Data []map[string]interface{} `json:"data"`
+		}
+		_ = json.Unmarshal(rawBytes, &raw)
+		data = raw.Data
+	}
+
+	if len(data) == 0 {
 		fmt.Println("No boxes found")
 		return nil
 	}
 
-	fmt.Println("ID                                      TYPE       STATUS")
-	fmt.Println("---------------------------------------- ---------- ---------------")
-
-	for _, box := range resp.Data {
-		fmt.Printf("%-40s %-10s %s\n", box.ID, box.Type, box.Status)
+	// Define table columns
+	columns := []TableColumn{
+		{Header: "ID", Key: "id"},
+		{Header: "TYPE", Key: "type"},
+		{Header: "STATUS", Key: "status"},
 	}
 
+	renderTable(columns, data)
 	return nil
 }

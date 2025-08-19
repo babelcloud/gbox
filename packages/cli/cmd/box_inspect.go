@@ -1,14 +1,11 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 
-	// 内部 SDK 客户端
-
-	gboxclient "github.com/babelcloud/gbox/packages/cli/internal/gboxsdk"
+	client "github.com/babelcloud/gbox/packages/cli/internal/client"
 	"github.com/spf13/cobra"
 )
 
@@ -48,45 +45,44 @@ func runInspect(boxIDPrefix string, opts *BoxInspectOptions) error {
 		return fmt.Errorf("failed to resolve box ID: %w", err) // Return error if resolution fails
 	}
 
-	// 创建 SDK 客户端
-	client, err := gboxclient.NewClientFromProfile()
+	// create SDK client
+	sdkClient, err := client.NewClientFromProfile()
 	if err != nil {
 		return fmt.Errorf("failed to initialize gbox client: %v", err)
 	}
 
-	// 调试输出
+	// debug output
 	if os.Getenv("DEBUG") == "true" {
 		fmt.Fprintf(os.Stderr, "Inspecting box: %s\n", resolvedBoxID)
 	}
 
-	// 调用 SDK
-	ctx := context.Background()
-	box, err := client.V1.Boxes.Get(ctx, resolvedBoxID)
+	// call client abstraction
+	box, err := client.GetBox(sdkClient, resolvedBoxID)
 	if err != nil {
 		return fmt.Errorf("failed to get box details: %v", err)
 	}
 
-	// 输出结果
+	// output result
 	if opts.OutputFormat == "json" {
 		boxJSON, _ := json.MarshalIndent(box, "", "  ")
 		fmt.Println(string(boxJSON))
 	} else {
-		// 输出文本格式
+		// output text format
 		fmt.Println("Box details:")
 		fmt.Println("------------")
 
-		// 将 box 转换为 map 以便格式化输出
+		// convert box to map for formatted output
 		boxBytes, _ := json.Marshal(box)
 		var data map[string]interface{}
 		if err := json.Unmarshal(boxBytes, &data); err != nil {
 			return fmt.Errorf("failed to parse box data: %v", err)
 		}
 
-		// 定义期望的键顺序
+		// define expected key order
 		orderedKeys := []string{"id", "image", "status", "createdAt", "extra_labels"}
 		printedKeys := make(map[string]bool)
 
-		// 按期望顺序打印键
+		// print keys in expected order
 		for _, key := range orderedKeys {
 			if value, exists := data[key]; exists {
 				printKeyValue(key, value, opts.OutputFormat)
@@ -94,7 +90,7 @@ func runInspect(boxIDPrefix string, opts *BoxInspectOptions) error {
 			}
 		}
 
-		// 打印任何剩余的键
+		// print any remaining keys
 		for key, value := range data {
 			if !printedKeys[key] {
 				printKeyValue(key, value, opts.OutputFormat)

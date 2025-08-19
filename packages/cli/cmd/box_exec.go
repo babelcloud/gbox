@@ -25,8 +25,6 @@ type BoxExecOptions struct {
 	WorkingDir  string
 }
 
-// (removed) Local HTTP exec types and terminal size helpers are no longer needed
-
 // NewBoxExecCommand creates a new box exec command
 func NewBoxExecCommand() *cobra.Command {
 	opts := &BoxExecOptions{}
@@ -96,11 +94,11 @@ func runExec(opts *BoxExecOptions) error {
 	if err != nil {
 		return fmt.Errorf("failed to resolve box ID: %w", err)
 	}
-	// 统一通过 WebSocket 与云端交互
+	// unified interaction with cloud through WebSocket
 	return runExecWebSocket(opts, resolvedBoxID)
 }
 
-// runExecWebSocket 通过新的 WebSocket API 执行交互式命令
+// runExecWebSocket executes interactive commands through new WebSocket API
 func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
 	pm := profile.NewProfileManager()
 	if err := pm.Load(); err != nil {
@@ -110,7 +108,7 @@ func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
 	_ = currentProfile
 	apiBase := strings.TrimSuffix(config.GetCloudAPIURL(), "/")
 
-	// 将 http(s):// 转成 ws(s)://
+	// convert http(s):// to ws(s)://
 	wsBase := apiBase
 	if strings.HasPrefix(apiBase, "https://") {
 		wsBase = "wss://" + strings.TrimPrefix(apiBase, "https://")
@@ -120,7 +118,7 @@ func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
 
 	wsURL := fmt.Sprintf("%s/api/v1/boxes/%s/exec", wsBase, resolvedBoxID)
 
-	// 解析 URL 以确保合法
+	// parse URL to ensure validity
 	parsedURL, err := url.Parse(wsURL)
 	if err != nil {
 		return fmt.Errorf("invalid websocket url: %v", err)
@@ -145,7 +143,7 @@ func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
 	}
 	defer conn.Close()
 
-	// 发送初始化指令
+	// send initialization command
 	interactive := opts.Interactive || opts.Tty
 	initPayload := map[string]interface{}{
 		"command": map[string]interface{}{
@@ -159,7 +157,7 @@ func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
 		return fmt.Errorf("failed to send init payload: %v", err)
 	}
 
-	// 若开启 TTY，切换终端到 raw
+	// if TTY is enabled, switch terminal to raw mode
 	var oldState *term.State
 	if opts.Tty {
 		state, err := term.MakeRaw(int(os.Stdin.Fd()))
@@ -171,7 +169,7 @@ func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
 	}
 
 	errChan := make(chan error, 2)
-	// 读取远端输出
+	// read remote output
 	go func() {
 		for {
 			msgType, data, err := conn.ReadMessage()
@@ -192,7 +190,7 @@ func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
 
 			switch msgType {
 			case websocket.TextMessage:
-				// 尝试解析为 JSON 事件
+				// try to parse as JSON event
 				var evt struct {
 					Event   string `json:"event"`
 					Data    string `json:"data"`
@@ -217,13 +215,13 @@ func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
 					os.Stdout.Write(data)
 				}
 			case websocket.BinaryMessage:
-				// 直接写到 stdout
+				// write directly to stdout
 				os.Stdout.Write(data)
 			}
 		}
 	}()
 
-	// 发送本地输入
+	// send local input
 	if interactive {
 		go func() {
 			buffer := make([]byte, 1024)
@@ -248,7 +246,7 @@ func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
 					if err != io.EOF {
 						errChan <- err
 					} else {
-						// 正常 EOF，发送关闭帧
+						// normal EOF, send close frame
 						conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 					}
 					return
@@ -257,7 +255,7 @@ func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
 		}()
 	}
 
-	// 等待任意 goroutine 结束
+	// wait for any goroutine to finish
 	err = <-errChan
 	if err == io.EOF {
 		return nil

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net"
@@ -16,8 +15,8 @@ import (
 	"syscall"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
-	"github.com/babelcloud/gbox/packages/cli/internal/gboxsdk"
-	port_forward "github.com/babelcloud/gbox/packages/cli/internal/port-forward"
+	client "github.com/babelcloud/gbox/packages/cli/internal/client"
+	"github.com/babelcloud/gbox/packages/cli/internal/port_forward"
 	"github.com/babelcloud/gbox/packages/cli/internal/profile"
 	"github.com/spf13/cobra"
 )
@@ -521,15 +520,21 @@ func parsePortMaps(portMaps []string) ([]PortPair, error) {
 }
 
 func boxValid(boxID string) bool {
-	client, err := gboxsdk.NewClientFromProfile()
+	sdkClient, err := client.NewClientFromProfile()
 	if err != nil {
 		return false
 	}
-	box, err := client.V1.Boxes.Get(context.Background(), boxID)
+	box, err := client.GetBox(sdkClient, boxID)
 	if err != nil {
 		return false
 	}
-	return box.Status == "running"
+	// Extract status from the response
+	if boxMap, ok := box.(map[string]interface{}); ok {
+		if status, exists := boxMap["status"].(string); exists {
+			return status == "running"
+		}
+	}
+	return false
 }
 
 // getPortUsageInfo attempts to find what process is using a specific port

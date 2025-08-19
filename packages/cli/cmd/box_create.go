@@ -2,27 +2,9 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
-
-func parseKeyValuePairs(pairs []string, pairType string) (map[string]interface{}, error) {
-	if len(pairs) == 0 {
-		return nil, nil
-	}
-
-	result := make(map[string]interface{})
-	for _, pair := range pairs {
-		parts := strings.SplitN(pair, "=", 2)
-		if len(parts) == 2 {
-			result[parts[0]] = parts[1]
-		} else {
-			return nil, fmt.Errorf("invalid %s format: %s (must be KEY=VALUE)", pairType, pair)
-		}
-	}
-	return result, nil
-}
 
 // NewBoxCreateCommand creates the parent command for box creation
 func NewBoxCreateCommand() *cobra.Command {
