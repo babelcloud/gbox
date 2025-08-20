@@ -45,17 +45,19 @@ function getApiKeyFromProfile(): string | null {
 
 // Try to get API key from environment variable first, then from profile
 const apiKey = process.env.GBOX_API_KEY || getApiKeyFromProfile();
+const apiBaseURL = process.env.GBOX_API_BASE_URL || "https://gbox.ai/api/v1";
 
 if (!apiKey) {
   throw new Error(
     "No API key found. Please configure one of the following:\n" +
-    "1. Configure a profile using gbox CLI 'gbox profile add --key YOUR_API_KEY --name YOUR_PROFILE_NAME'\n" +
-    "   Then set it as current with 'gbox profile use'\n" +
-    "2. Set GBOX_API_KEY environment variable or create a .env file with GBOX_API_KEY=YOUR_API_KEY"
+      "1. Configure a profile using gbox CLI 'gbox profile add --key YOUR_API_KEY --name YOUR_PROFILE_NAME'\n" +
+      "   Then set it as current with 'gbox profile use'\n" +
+      "2. Set GBOX_API_KEY environment variable or create a .env file with GBOX_API_KEY=YOUR_API_KEY"
   );
 }
 
 export const config = {
   gboxApiKey: apiKey,
+  gboxApiBaseURL: apiBaseURL,
   mode: process.env.MODE?.toLowerCase() || "stdio",
 };

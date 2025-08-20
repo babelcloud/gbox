@@ -1,7 +1,7 @@
 import { exec } from "child_process";
 import sharp from "sharp";
-import { logger } from "../mcp-server";
-import { getCUACoordinates } from "./cua.service";
+import { logger } from "../mcp-server.js";
+import { getCUACoordinates } from "./cua.service.js";
 import { AndroidBoxOperator } from "gbox-sdk";
 
 
