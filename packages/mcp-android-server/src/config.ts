@@ -45,7 +45,7 @@ function getApiKeyFromProfile(): string | null {
 
 // Try to get API key from environment variable first, then from profile
 const apiKey = process.env.GBOX_API_KEY || getApiKeyFromProfile();
-const apiBaseURL = process.env.GBOX_BASE_URL || "https://gbox.ai/api/v1";
+const baseURL = process.env.GBOX_BASE_URL || "https://gbox.ai/api/v1";
 
 if (!apiKey) {
   throw new Error(
@@ -58,6 +58,6 @@ if (!apiKey) {
 
 export const config = {
   gboxApiKey: apiKey,
-  gboxApiBaseURL: apiBaseURL,
+  gboxBaseURL: baseURL,
   mode: process.env.MODE?.toLowerCase() || "stdio",
 };
