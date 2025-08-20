@@ -3,7 +3,10 @@ import { config } from "../config.js";
 import axios from "axios";
 
 // Initialize Gbox SDK
-const gboxSDK = new GboxSDK({ apiKey: config.gboxApiKey });
+const gboxSDK = new GboxSDK({
+  apiKey: config.gboxApiKey,
+  baseURL: config.gboxBaseURL,
+});
 
 export async function attachBox(boxId: string): Promise<AndroidBoxOperator> {
   try {
