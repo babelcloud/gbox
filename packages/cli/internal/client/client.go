@@ -12,6 +12,16 @@ import (
 	"github.com/babelcloud/gbox/packages/cli/config"
 )
 
+// BoxInfo represents a simplified box information structure for CLI usage
+type BoxInfo struct {
+	ID         string `json:"id"`
+	Type       string `json:"type"`
+	Status     string `json:"status"`
+	Image      string `json:"image,omitempty"`
+	DeviceType string `json:"deviceType,omitempty"`
+	// Add other fields as needed
+}
+
 // profile represents a single entry in the profile file.
 // We keep the structure in sync with the CLI `profile` command.
 // Only the fields we care about are defined.
@@ -193,6 +203,80 @@ func ListBoxes(client *sdk.Client, filters []string) (*sdk.V1BoxListResponse, er
 	}
 
 	return resp, nil
+}
+
+// ListBoxesData extracts box data from the SDK response and returns a slice of BoxInfo
+// This method handles the data parsing logic that was previously done in cmd layer
+func ListBoxesData(client *sdk.Client, filters []string) ([]BoxInfo, error) {
+	resp, err := ListBoxes(client, filters)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract boxes data from response
+	var boxesData []map[string]interface{}
+	if rawBytes, _ := json.Marshal(resp); rawBytes != nil {
+		var raw struct {
+			Data []map[string]interface{} `json:"data"`
+		}
+		if err := json.Unmarshal(rawBytes, &raw); err != nil {
+			return nil, fmt.Errorf("failed to parse response data: %v", err)
+		}
+		boxesData = raw.Data
+	}
+
+	// Convert to typed BoxInfo slice
+	var boxes []BoxInfo
+	for _, box := range boxesData {
+		boxInfo := BoxInfo{}
+
+		if id, ok := box["id"].(string); ok {
+			boxInfo.ID = id
+		}
+		if boxType, ok := box["type"].(string); ok {
+			boxInfo.Type = boxType
+		}
+		if status, ok := box["status"].(string); ok {
+			boxInfo.Status = status
+		}
+		if image, ok := box["image"].(string); ok {
+			boxInfo.Image = image
+		}
+
+		// Extract deviceType from config.deviceType path
+		if config, ok := box["config"].(map[string]interface{}); ok {
+			if deviceType, ok := config["deviceType"].(string); ok {
+				boxInfo.DeviceType = deviceType
+			}
+		}
+
+		boxes = append(boxes, boxInfo)
+	}
+
+	return boxes, nil
+}
+
+// ListBoxesRawData extracts raw box data as map[string]interface{} for backward compatibility
+// This method provides the same data structure that was previously used in cmd layer
+func ListBoxesRawData(client *sdk.Client, filters []string) ([]map[string]interface{}, error) {
+	resp, err := ListBoxes(client, filters)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract boxes data from response
+	var boxesData []map[string]interface{}
+	if rawBytes, _ := json.Marshal(resp); rawBytes != nil {
+		var raw struct {
+			Data []map[string]interface{} `json:"data"`
+		}
+		if err := json.Unmarshal(rawBytes, &raw); err != nil {
+			return nil, fmt.Errorf("failed to parse response data: %v", err)
+		}
+		boxesData = raw.Data
+	}
+
+	return boxesData, nil
 }
 
 // buildListParams parses CLI --filter flags into SDK query parameters

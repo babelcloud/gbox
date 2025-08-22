@@ -68,7 +68,7 @@ func init() {
 	rootCmd.AddCommand(NewBoxCommand())
 	rootCmd.AddCommand(NewMcpCommand())
 	rootCmd.AddCommand(NewVersionCommand())
-	rootCmd.AddCommand(NewPortForwardCommand())
+	rootCmd.AddCommand(NewAdbExposeCommand())
 	rootCmd.AddCommand(NewDeviceConnectCommand())
 
 	// Enable custom help output ordering

@@ -1,4 +1,4 @@
-package port_forward
+package adb_expose
 
 import (
 	"bytes"
@@ -33,7 +33,7 @@ func ensureGboxDir() error {
 	return os.MkdirAll(dir, 0700)
 }
 
-const pidFileNamePrefix = "gbox-port-forward-"
+const pidFileNamePrefix = "gbox-adb-expose-"
 const pidFileNameSuffix = ".pid"
 const logFileNameSuffix = ".log"
 
@@ -45,7 +45,7 @@ func logFilePath(boxId string, localPort int) string {
 	return config.GetGboxHome() + "/" + pidFileNamePrefix + boxId + "-" + strconv.Itoa(localPort) + logFileNameSuffix
 }
 
-const pidFilePattern = "gbox-port-forward-*.pid"
+const pidFilePattern = "gbox-adb-expose-*.pid"
 
 // WritePidFile writes a pid file for multiple ports (first local port is used for file name)
 func WritePidFile(boxId string, localPorts, remotePorts []int) error {
@@ -62,7 +62,7 @@ func WritePidFile(boxId string, localPorts, remotePorts []int) error {
 			decodeErr := json.NewDecoder(f).Decode(&info)
 			f.Close()
 			if decodeErr == nil && IsProcessAlive(info.Pid) {
-				return fmt.Errorf("port-forward already running for boxId=%s, localPort=%d (pid=%d)", boxId, localPorts[0], info.Pid)
+				return fmt.Errorf("adb-expose already running for boxId=%s, localPort=%d (pid=%d)", boxId, localPorts[0], info.Pid)
 			}
 		}
 	}
@@ -199,6 +199,11 @@ func ConnectWebSocket(config Config) *MultiplexClient {
 
 	client := NewMultiplexClient(ws)
 	return client
+}
+
+// PrintStartupMessage prints the startup message for adb-expose
+func PrintStartupMessage(pid int, logPath string, boxID string) {
+	fmt.Printf("[gbox] Adb-expose started in background for box %s (pid=%d). Logs: %s\n\nUse 'gbox adb-expose list' to view, 'gbox adb-expose stop %s' to stop.\n", boxID, pid, logPath, boxID)
 }
 
 func parseMessage(data []byte) (msgType byte, streamID uint32, payload []byte, err error) {
