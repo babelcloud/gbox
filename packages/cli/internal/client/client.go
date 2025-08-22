@@ -91,7 +91,7 @@ func parseKeyValuePairs(pairs []string, pairType string) (map[string]interface{}
 }
 
 // CreateAndroidBox creates a new Android box using the SDK
-func CreateAndroidBox(client *sdk.Client, deviceType string, env []string, labels []string, expiresIn string) (interface{}, error) {
+func CreateAndroidBox(client *sdk.Client, deviceType string, env []string, labels []string, expiresIn string) (*sdk.AndroidBox, error) {
 	// parse environment variables
 	envMap, err := parseKeyValuePairs(env, "environment variable")
 	if err != nil {
@@ -139,7 +139,7 @@ func CreateAndroidBox(client *sdk.Client, deviceType string, env []string, label
 }
 
 // CreateLinuxBox creates a new Linux box using the SDK
-func CreateLinuxBox(client *sdk.Client, env []string, labels []string) (interface{}, error) {
+func CreateLinuxBox(client *sdk.Client, env []string, labels []string) (*sdk.LinuxBox, error) {
 	// parse environment variables
 	envMap, err := parseKeyValuePairs(env, "environment variable")
 	if err != nil {
@@ -181,7 +181,7 @@ func CreateLinuxBox(client *sdk.Client, env []string, labels []string) (interfac
 }
 
 // ListBoxes lists all boxes using the SDK
-func ListBoxes(client *sdk.Client, filters []string) (interface{}, error) {
+func ListBoxes(client *sdk.Client, filters []string) (*sdk.V1BoxListResponse, error) {
 	// build list parameters
 	params := buildListParams(filters)
 
@@ -237,7 +237,7 @@ func TerminateBox(client *sdk.Client, boxID string) error {
 }
 
 // GetBox gets a box by ID using the SDK
-func GetBox(client *sdk.Client, boxID string) (interface{}, error) {
+func GetBox(client *sdk.Client, boxID string) (*sdk.V1BoxGetResponseUnion, error) {
 	// call SDK
 	ctx := context.Background()
 	box, err := client.V1.Boxes.Get(ctx, boxID)

@@ -66,12 +66,8 @@ func runLinuxCreate(opts *LinuxBoxCreateOptions) error {
 		fmt.Println(string(boxJSON))
 	} else {
 		// Extract ID from the response
-		if boxMap, ok := box.(map[string]interface{}); ok {
-			if id, exists := boxMap["id"].(string); exists {
-				fmt.Printf("Linux box created with ID \"%s\"\n", id)
-			} else {
-				fmt.Println("Linux box created successfully")
-			}
+		if box.ID != "" {
+			fmt.Printf("Linux box created with ID \"%s\"\n", box.ID)
 		} else {
 			fmt.Println("Linux box created successfully")
 		}
