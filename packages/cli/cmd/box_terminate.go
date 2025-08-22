@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -70,19 +69,9 @@ func terminateAllBoxes(opts *BoxTerminateOptions) error {
 	}
 
 	// get all boxes using client abstraction
-	resp, err := client.ListBoxes(sdkClient, []string{})
+	data, err := client.ListBoxesRawData(sdkClient, []string{})
 	if err != nil {
 		return fmt.Errorf("failed to get box list: %v", err)
-	}
-
-	// Extract data from response
-	var data []map[string]interface{}
-	if rawBytes, _ := json.Marshal(resp); rawBytes != nil {
-		var raw struct {
-			Data []map[string]interface{} `json:"data"`
-		}
-		_ = json.Unmarshal(rawBytes, &raw)
-		data = raw.Data
 	}
 
 	if len(data) == 0 {

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -28,22 +27,12 @@ func completeBoxIDs(cmd *cobra.Command, args []string, toComplete string) ([]str
 	}
 
 	// call client abstraction to get box list
-	resp, err := client.ListBoxes(sdkClient, []string{})
+	data, err := client.ListBoxesRawData(sdkClient, []string{})
 	if err != nil {
 		if debug {
 			fmt.Fprintf(os.Stderr, "DEBUG: [completion] Failed to get box list: %v\n", err)
 		}
 		return nil, cobra.ShellCompDirectiveError
-	}
-
-	// Extract data from response
-	var data []map[string]interface{}
-	if rawBytes, _ := json.Marshal(resp); rawBytes != nil {
-		var raw struct {
-			Data []map[string]interface{} `json:"data"`
-		}
-		_ = json.Unmarshal(rawBytes, &raw)
-		data = raw.Data
 	}
 
 	var ids []string
@@ -82,22 +71,12 @@ func ResolveBoxIDPrefix(prefix string) (fullID string, matchedIDs []string, err 
 	}
 
 	// call client abstraction to get box list
-	resp, err := client.ListBoxes(sdkClient, []string{})
+	data, err := client.ListBoxesRawData(sdkClient, []string{})
 	if err != nil {
 		if debug {
 			fmt.Fprintf(os.Stderr, "DEBUG: [ResolveBoxIDPrefix] Failed to get box list: %v\n", err)
 		}
 		return "", nil, fmt.Errorf("failed to get box list: %w", err)
-	}
-
-	// Extract data from response
-	var data []map[string]interface{}
-	if rawBytes, _ := json.Marshal(resp); rawBytes != nil {
-		var raw struct {
-			Data []map[string]interface{} `json:"data"`
-		}
-		_ = json.Unmarshal(rawBytes, &raw)
-		data = raw.Data
 	}
 
 	if debug {

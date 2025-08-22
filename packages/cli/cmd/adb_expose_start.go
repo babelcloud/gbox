@@ -1,0 +1,183 @@
+package cmd
+
+import (
+	"fmt"
+	"log"
+	"net"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/babelcloud/gbox/packages/cli/config"
+	"github.com/babelcloud/gbox/packages/cli/internal/adb_expose"
+	"github.com/babelcloud/gbox/packages/cli/internal/profile"
+	"github.com/spf13/cobra"
+)
+
+// ExecuteAdbExpose runs the adb-expose logic
+func ExecuteAdbExpose(cmd *cobra.Command, opts *AdbExposeOptions, args []string) error {
+	if opts.BoxID == "" && len(args) > 0 {
+		opts.BoxID = args[0]
+	}
+	if opts.BoxID == "" || !boxValid(opts.BoxID) {
+		return fmt.Errorf("the box you specified is not valid, check --help for how to add it or using 'gbox box list' to check")
+	}
+
+	// Determine local port to use
+	localPort := opts.LocalPort
+	if localPort == 0 {
+		// Auto-find available port starting from 5555
+		var err error
+		localPort, err = findAvailablePort(5555)
+		if err != nil {
+			return fmt.Errorf("failed to find available port: %v", err)
+		}
+		log.Printf("Auto-selected local port: %d", localPort)
+	} else {
+		// Check if specified port is available
+		if localPort < 1 || localPort > 65535 {
+			return fmt.Errorf("invalid local port %d: port must be between 1 and 65535", localPort)
+		}
+
+		listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", localPort))
+		if err != nil {
+			portInfo := getPortUsageInfo(localPort)
+			if portInfo != "" {
+				return fmt.Errorf("the port %d is already in use by: %s", localPort, portInfo)
+			}
+			return fmt.Errorf("the port %d is not available: %v", localPort, err)
+		}
+		listener.Close()
+	}
+
+	// ADB always uses port 5555 on the remote side
+	remotePort := 5555
+
+	// try to get API_KEY, if not set, return error
+	pm := profile.NewProfileManager()
+	if err := pm.Load(); err != nil {
+		return fmt.Errorf("failed to load profile: %v", err)
+	}
+	current := pm.GetCurrent()
+	if current == nil || current.APIKey == "" {
+		return fmt.Errorf("no current profile or API key found. Please run 'gbox profile add' and 'gbox profile use'")
+	}
+
+	logPath := fmt.Sprintf("%s/gbox-adb-expose-%s-%d.log", config.GetGboxHome(), opts.BoxID, localPort)
+	if shouldReturn, err := adb_expose.DaemonizeIfNeeded(opts.Foreground, logPath, opts.BoxID, true); shouldReturn {
+		return err
+	}
+
+	// Write pid file
+	err := adb_expose.WritePidFile(opts.BoxID, []int{localPort}, []int{remotePort})
+	if err != nil {
+		return fmt.Errorf("failed to write pid file: %v", err)
+	}
+
+	// Clean up pid and log files on exit
+	defer func() {
+		adb_expose.RemovePidFile(opts.BoxID, localPort)
+		adb_expose.RemoveLogFile(opts.BoxID, localPort)
+	}()
+
+	// Signal handling for cleanup
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		adb_expose.RemovePidFile(opts.BoxID, localPort)
+		adb_expose.RemoveLogFile(opts.BoxID, localPort)
+		os.Exit(0)
+	}()
+
+	// Connect to websocket
+	portForwardConfig := adb_expose.Config{
+		APIKey:      current.APIKey,
+		BoxID:       opts.BoxID,
+		GboxURL:     config.GetCloudAPIURL(),
+		TargetPorts: []int{remotePort},
+	}
+
+	retryInterval := 3 * time.Second
+	log.Printf("Starting adb-expose: local port %d <-> remote ADB port %d (auto-reconnect enabled)", localPort, remotePort)
+
+	for {
+		// Listen on local port
+		listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", localPort))
+		if err != nil {
+			return fmt.Errorf("Failed to listen on port %d: %v", localPort, err)
+		}
+		log.Printf("Listening on 127.0.0.1:%d", localPort)
+
+		// Connect to websocket
+		client := adb_expose.ConnectWebSocket(portForwardConfig)
+		if client == nil {
+			listener.Close()
+			log.Printf("Failed to connect to WebSocket, retrying in %v...", retryInterval)
+			time.Sleep(retryInterval)
+			continue
+		}
+
+		// Concurrency & Reconnection Control Logic
+		reconnectCh := make(chan struct{})
+		stopAcceptCh := make(chan struct{})
+
+		// Start the main loop for the WebSocket client.
+		go func() {
+			if err := client.Run(); err != nil {
+				fmt.Printf("client run error: %v", err)
+			}
+			close(reconnectCh)
+		}()
+
+		acceptDone := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(1)
+
+		// Start the local port listener goroutine.
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stopAcceptCh:
+					return
+				default:
+					localConn, err := listener.Accept()
+					if err != nil {
+						log.Printf("accept error: %v", err)
+						time.Sleep(time.Second)
+						continue
+					}
+					log.Printf("new local tcp connection from %v (local port %d)", localConn.RemoteAddr(), localPort)
+					go adb_expose.HandleLocalConnWithClient(localConn, client, remotePort)
+				}
+			}
+		}()
+
+		// Wait for all accept goroutines to exit
+		go func() {
+			wg.Wait()
+			close(acceptDone)
+		}()
+
+		// Main flow waits for:
+		select {
+		case <-reconnectCh:
+			log.Println("websocket disconnected, will attempt to reconnect...")
+			close(stopAcceptCh)
+			listener.Close() // force accept goroutine to exit
+			<-acceptDone
+			client.Close()
+			log.Printf("Reconnecting in %v...", retryInterval)
+			time.Sleep(retryInterval)
+			continue // retry loop
+		case <-acceptDone:
+			log.Println("accept loop ended")
+			listener.Close()
+			client.Close()
+			return nil
+		}
+	}
+}

@@ -1,6 +1,6 @@
 //go:build windows
 
-package port_forward
+package adb_expose
 
 import (
 	"fmt"
@@ -10,9 +10,11 @@ import (
 
 // DaemonizeIfNeeded forks to background if foreground==false and not already daemonized.
 // logPath: if not empty, background process logs to this file.
+// boxID: the box ID for startup message.
+// fromInteractive: indicates if this is called from interactive mode.
 // Returns (shouldReturn, err): if shouldReturn==true, caller should return immediately (parent process or error).
-func DaemonizeIfNeeded(foreground bool, logPath string) (bool, error) {
-	if foreground || os.Getenv("GBOX_PORT_FORWARD_DAEMON") != "" {
+func DaemonizeIfNeeded(foreground bool, logPath string, boxID string, fromInteractive bool) (bool, error) {
+	if foreground || os.Getenv("GBOX_ADB_EXPOSE_DAEMON") != "" {
 		return false, nil
 	}
 	// open log file
@@ -27,11 +29,19 @@ func DaemonizeIfNeeded(foreground bool, logPath string) (bool, error) {
 	}
 	attr := &os.ProcAttr{
 		Dir:   "",
-		Env:   append(os.Environ(), "GBOX_PORT_FORWARD_DAEMON=1"),
+		Env:   append(os.Environ(), "GBOX_ADB_EXPOSE_DAEMON=1"),
 		Files: []*os.File{os.Stdin, logFile, logFile},
 		Sys:   &syscall.SysProcAttr{},
 	}
-	args := os.Args
+	// For daemon mode, determine the command based on context
+	var args []string
+	if fromInteractive {
+		// If called from interactive mode, use start subcommand
+		args = []string{os.Args[0], "adb-expose", "start", boxID}
+	} else {
+		// If called from start subcommand, use the same command but with daemon flag
+		args = os.Args
+	}
 	// Remove -f/--foreground from args if present
 	newArgs := []string{}
 	for i := 0; i < len(args); i++ {
@@ -44,6 +54,6 @@ func DaemonizeIfNeeded(foreground bool, logPath string) (bool, error) {
 	if err != nil {
 		return true, fmt.Errorf("failed to daemonize: %v", err)
 	}
-	fmt.Printf("[gbox] Port-forward started in background (pid=%d). Logs: %s\nUse 'gbox port-forward list' to view, 'gbox port-forward kill <pid>' to stop.\n", proc.Pid, logPath)
+	PrintStartupMessage(proc.Pid, logPath, boxID)
 	return true, nil
 }

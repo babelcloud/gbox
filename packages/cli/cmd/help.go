@@ -103,7 +103,7 @@ func setupHelpCommand(rootCmd *cobra.Command) {
 // printRootHelpOrdered prints the root help with commands ordered by a custom priority
 func printRootHelpOrdered(cmd *cobra.Command) {
 	// Priority order for top-level commands
-	priority := []string{"login", "box", "device-connect", "port-forward", "mcp", "profile", "version", "completion", "help"}
+	priority := []string{"login", "box", "device-connect", "adb-expose", "mcp", "profile", "version", "completion", "help"}
 	priorityIndex := map[string]int{}
 	for i, name := range priority {
 		priorityIndex[name] = i
