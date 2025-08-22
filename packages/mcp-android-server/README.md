@@ -7,7 +7,7 @@
 
 ## Description
 
-This package provides an MCP (Model Context Protocol) server for controlling Android devices via Gbox tools. It exposes a set of tools and APIs for automation, device management, and integration with the Gbox ecosystem.
+This package provides an MCP (Model Context Protocol) server for controlling Android devices via GBOX tools. It exposes a set of tools and APIs for automation, device management, and integration with the GBOX ecosystem.
 
 ## Usage
 
@@ -18,11 +18,12 @@ Copy the following configuration into your Cursor or Claude code MCP config file
   "command": "npx",
   "args": [
     "-y",
-    "@gbox.ai/mcp-android-server"
+    "@gbox.ai/mcp-android-server@latest"
   ],
-  // NOTE: You can omit the 'env' section if you have already configured your Gbox profile locally using the Gbox CLI.
+  // NOTE: You can omit the 'env' section if you have successfully run 'gbox login' in cli.
   "env": {
-    "GBOX_API_KEY": "gbox_xxxx"
+    "GBOX_API_KEY": "gbox_xxxx",
+    "GBOX_BASE_URL": "https://gbox.ai/api/v1"
   }
 }
 ```
