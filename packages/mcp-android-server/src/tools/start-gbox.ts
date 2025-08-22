@@ -10,12 +10,15 @@ export const START_GBOX_DESCRIPTION =
   "Start a GBOX(Android) by the given ID. If the GBOX ID is not provided, a new GBOX will be created. MUST call this tool first when starting a task.";
 
 export const startGboxParamsSchema = {
-  gboxId: z.string().optional().describe("The ID of the GBOX to start. If not provided, a new GBOX will be created."),
+  gboxId: z
+    .string()
+    .optional()
+    .describe(
+      "The ID of the GBOX to start. If not provided, a new GBOX will be created.",
+    ),
 };
 
-type StartGboxParams = z.infer<
-  z.ZodObject<typeof startGboxParamsSchema>
->;
+type StartGboxParams = z.infer<z.ZodObject<typeof startGboxParamsSchema>>;
 
 export function handleStartGbox(logger: MCPLogger) {
   return async (args: StartGboxParams) => {

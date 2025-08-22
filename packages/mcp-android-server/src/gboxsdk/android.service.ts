@@ -10,11 +10,11 @@ const gboxSDK = new GboxSDK({
 
 export async function attachBox(boxId: string): Promise<AndroidBoxOperator> {
   try {
-    const box = await gboxSDK.get(boxId) as AndroidBoxOperator;
+    const box = (await gboxSDK.get(boxId)) as AndroidBoxOperator;
     return box;
   } catch (err) {
     throw new Error(
-      `Failed to attach to box ${boxId}: ${(err as Error).message}`
+      `Failed to attach to box ${boxId}: ${(err as Error).message}`,
     );
   }
 }
@@ -25,9 +25,11 @@ export type AndroidDevice = {
   status: "online" | "offline";
   enabled: boolean;
   isIdle: boolean;
-}
+};
 
-export async function deviceList(availableOnly: boolean = true): Promise<AndroidDevice[]> {
+export async function deviceList(
+  availableOnly: boolean = true,
+): Promise<AndroidDevice[]> {
   // TODO: use gbox-sdk to get device list and should be able to change baseUrl
   const apiUrl = `https://gbox.ai/api/dashboard/v1/device/device_list`;
   const response = await axios.post(
@@ -35,9 +37,9 @@ export async function deviceList(availableOnly: boolean = true): Promise<Android
     {},
     {
       headers: {
-        "x-api-key": config.gboxApiKey
-      }
-    }
+        "x-api-key": config.gboxApiKey,
+      },
+    },
   );
 
   try {
@@ -46,11 +48,14 @@ export async function deviceList(availableOnly: boolean = true): Promise<Android
       model: device.deviceData["ro.product.model"],
       status: device.status,
       enabled: device.enable,
-      isIdle: device.isIdle
+      isIdle: device.isIdle,
     }));
 
     if (availableOnly) {
-      return devices.filter((device: AndroidDevice) => device.status === "online" && device.enabled && device.isIdle);
+      return devices.filter(
+        (device: AndroidDevice) =>
+          device.status === "online" && device.enabled && device.isIdle,
+      );
     }
 
     return devices;

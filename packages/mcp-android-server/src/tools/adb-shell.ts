@@ -8,26 +8,30 @@ export const ADB_SHELL_DESCRIPTION =
   "Executes a shell command inside a given Android box using 'adb shell'. This is useful for file system operations, process management, and other diagnostic commands.";
 
 export const adbShellParamsSchema = {
-  boxId: z.string().describe("The ID of the Android box to run the command on."),
+  boxId: z
+    .string()
+    .describe("The ID of the Android box to run the command on."),
   shellCommand: z
     .string()
     .describe(
-      "The shell command to execute (e.g., 'ls -l /sdcard', 'pm list packages', 'dumpsys battery')."
+      "The shell command to execute (e.g., 'ls -l /sdcard', 'pm list packages', 'dumpsys battery').",
     ),
   timeout: z
     .string()
     .regex(
       /^\d+(ms|s|m|h)$/,
-      "Invalid timeout format. Must be a number followed by 'ms', 's', 'm', or 'h'."
+      "Invalid timeout format. Must be a number followed by 'ms', 's', 'm', or 'h'.",
     )
     .optional()
     .describe(
-      "The timeout for the command. Supported units: ms, s, m, h. (e.g., '5s', '1m'). Defaults to 30s."
+      "The timeout for the command. Supported units: ms, s, m, h. (e.g., '5s', '1m'). Defaults to 30s.",
     ),
   workingDir: z
     .string()
     .optional()
-    .describe("The working directory to run the command in. Defaults to the box's default working directory."),
+    .describe(
+      "The working directory to run the command in. Defaults to the box's default working directory.",
+    ),
 };
 
 type AdbShellParams = z.infer<z.ZodObject<typeof adbShellParamsSchema>>;
@@ -40,7 +44,7 @@ export function handleAdbShell(logger: MCPLogger) {
 
       const box = await attachBox(boxId);
 
-      const commandParts = shellCommand.split(' ');
+      const commandParts = shellCommand.split(" ");
 
       const commandParams: {
         commands: string[];
@@ -108,4 +112,4 @@ export function handleAdbShell(logger: MCPLogger) {
       };
     }
   };
-} 
+}

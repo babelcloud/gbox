@@ -1,7 +1,10 @@
 import { z } from "zod";
 import type { MCPLogger } from "../mcp-logger.js";
 import { attachBox } from "../gboxsdk/index.js";
-import { buildActionReturnValues, getBoxCoordinates } from "../gboxsdk/utils.js";
+import {
+  buildActionReturnValues,
+  getBoxCoordinates,
+} from "../gboxsdk/utils.js";
 
 export const TAP_TOOL = "tap";
 
@@ -13,7 +16,7 @@ export const tapParamsSchema = {
   target: z
     .string()
     .describe(
-      "Description of the element to tap (e.g. 'login button', 'search field'). MUST be detailed enough to identify the element unambiguously."
+      "Description of the element to tap (e.g. 'login button', 'search field'). MUST be detailed enough to identify the element unambiguously.",
     ),
 };
 
@@ -29,9 +32,7 @@ export function handleTap(logger: MCPLogger) {
       const boxCoordinates = await getBoxCoordinates(box, "Click " + target);
       if (boxCoordinates.length === 0) {
         return {
-          content: [
-            { type: "text" as const, text: "No coordinates found" },
-          ],
+          content: [{ type: "text" as const, text: "No coordinates found" }],
         };
       }
       const clickAction = {
@@ -40,7 +41,7 @@ export function handleTap(logger: MCPLogger) {
         outputFormat: "base64" as const,
         screenshotDelay: "500ms" as const,
       };
-      const result = await box.action.click(clickAction) as any;
+      const result = (await box.action.click(clickAction)) as any;
 
       return buildActionReturnValues(result, box);
     } catch (error) {
@@ -60,5 +61,3 @@ export function handleTap(logger: MCPLogger) {
     }
   };
 }
-
-

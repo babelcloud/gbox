@@ -2,7 +2,10 @@ import { z } from "zod";
 import type { MCPLogger } from "../mcp-logger.js";
 import { attachBox } from "../gboxsdk/index.js";
 import { handleUiAction } from "./ui-action.js";
-import { buildActionReturnValues, getBoxCoordinates } from "../gboxsdk/utils.js";
+import {
+  buildActionReturnValues,
+  getBoxCoordinates,
+} from "../gboxsdk/utils.js";
 
 export const DRAG_TOOL = "drag";
 
@@ -14,12 +17,12 @@ export const dragParamsSchema = {
   target: z
     .string()
     .describe(
-      "Description of the element to drag (e.g. ‘app icon’, ‘list item’). MUST be detailed enough to identify the element unambiguously."
+      "Description of the element to drag (e.g. ‘app icon’, ‘list item’). MUST be detailed enough to identify the element unambiguously.",
     ),
   destination: z
     .string()
     .describe(
-      "Description of the destination where the element should be dropped (e.g. ‘trash bin at bottom’, ‘other folder icon’)."
+      "Description of the destination where the element should be dropped (e.g. ‘trash bin at bottom’, ‘other folder icon’).",
     ),
 };
 
@@ -33,7 +36,10 @@ export function handleDrag(logger: MCPLogger) {
       await logger.info("Drag command invoked", { boxId, target, destination });
 
       const box = await attachBox(boxId);
-      const boxCoordinates = await getBoxCoordinates(box, "Drag " + target + " to " + destination);
+      const boxCoordinates = await getBoxCoordinates(
+        box,
+        "Drag " + target + " to " + destination,
+      );
       if (boxCoordinates.length <= 1) {
         return {
           content: [
@@ -48,7 +54,7 @@ export function handleDrag(logger: MCPLogger) {
         outputFormat: "base64" as const,
         screenshotDelay: "500ms" as const,
       };
-      const result = await box.action.drag(dragAction) as any;
+      const result = (await box.action.drag(dragAction)) as any;
       return buildActionReturnValues(result, box);
     } catch (error) {
       await logger.error("Failed to run drag action", {
@@ -67,5 +73,3 @@ export function handleDrag(logger: MCPLogger) {
     }
   };
 }
-
-

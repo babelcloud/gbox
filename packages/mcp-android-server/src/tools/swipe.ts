@@ -1,7 +1,10 @@
 import { z } from "zod";
 import type { MCPLogger } from "../mcp-logger.js";
 import { attachBox } from "../gboxsdk/index.js";
-import { buildActionReturnValues, getBoxCoordinates } from "../gboxsdk/utils.js";
+import {
+  buildActionReturnValues,
+  getBoxCoordinates,
+} from "../gboxsdk/utils.js";
 
 export const SWIPE_TOOL = "swipe";
 
@@ -11,19 +14,19 @@ export const SWIPE_DESCRIPTION =
 export const swipeParamsSchema = {
   boxId: z.string().describe("ID of the box"),
   direction: z
-    .enum(["up", "down", "left", "right"]) 
+    .enum(["up", "down", "left", "right"])
     .describe("Direction of the swipe gesture."),
   distance: z
-    .enum(["tiny", "short", "medium", "long"]) 
+    .enum(["tiny", "short", "medium", "long"])
     .optional()
     .describe(
-      "Distance of the swipe. Supported values are 'tiny', 'short', 'medium', and 'long'. Defaults to 'medium'."
+      "Distance of the swipe. Supported values are 'tiny', 'short', 'medium', and 'long'. Defaults to 'medium'.",
     ),
   location: z
     .string()
     .optional()
     .describe(
-      "Optional description of where on the screen to start the swipe (e.g. 'bottom half', 'toolbar area'). Defaults to the centre of the screen."
+      "Optional description of where on the screen to start the swipe (e.g. 'bottom half', 'toolbar area'). Defaults to the centre of the screen.",
     ),
 };
 
@@ -33,7 +36,12 @@ export function handleSwipe(logger: MCPLogger) {
   return async (args: SwipeParams) => {
     try {
       const { boxId, direction, distance, location } = args;
-      await logger.info("Swipe command invoked", { boxId, direction, distance, location });
+      await logger.info("Swipe command invoked", {
+        boxId,
+        direction,
+        distance,
+        location,
+      });
 
       const box = await attachBox(boxId);
 
@@ -43,19 +51,43 @@ export function handleSwipe(logger: MCPLogger) {
       switch (direction) {
         case "up":
           distanceInPixels =
-            distance === "tiny" ? 40 : distance === "short" ? 150 : distance === "long" ? Math.round(height / 2) : Math.round(height / 4);
+            distance === "tiny"
+              ? 40
+              : distance === "short"
+                ? 150
+                : distance === "long"
+                  ? Math.round(height / 2)
+                  : Math.round(height / 4);
           break;
         case "down":
           distanceInPixels =
-            distance === "tiny" ? 40 : distance === "short" ? 150 : distance === "long" ? Math.round(height / 2) : Math.round(height / 4);
+            distance === "tiny"
+              ? 40
+              : distance === "short"
+                ? 150
+                : distance === "long"
+                  ? Math.round(height / 2)
+                  : Math.round(height / 4);
           break;
         case "left":
           distanceInPixels =
-            distance === "tiny" ? 40 : distance === "short" ? 150 : distance === "long" ? Math.round(width / 2) : Math.round(width / 4);
+            distance === "tiny"
+              ? 40
+              : distance === "short"
+                ? 150
+                : distance === "long"
+                  ? Math.round(width / 2)
+                  : Math.round(width / 4);
           break;
         case "right":
           distanceInPixels =
-            distance === "tiny" ? 40 : distance === "short" ? 150 : distance === "long" ? Math.round(width / 2) : Math.round(width / 4);
+            distance === "tiny"
+              ? 40
+              : distance === "short"
+                ? 150
+                : distance === "long"
+                  ? Math.round(width / 2)
+                  : Math.round(width / 4);
           break;
       }
       let actionResult;
@@ -73,9 +105,7 @@ export function handleSwipe(logger: MCPLogger) {
         const boxCoordinates = await getBoxCoordinates(box, instruction);
         if (boxCoordinates.length === 0) {
           return {
-            content: [
-              { type: "text" as const, text: "No coordinates found" },
-            ],
+            content: [{ type: "text" as const, text: "No coordinates found" }],
           };
         }
         const { x: startX, y: startY } = boxCoordinates[0];
@@ -125,5 +155,3 @@ export function handleSwipe(logger: MCPLogger) {
     }
   };
 }
-
-

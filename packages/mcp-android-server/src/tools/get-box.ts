@@ -17,7 +17,7 @@ export function handleGetBox(logger: MCPLogger) {
     try {
       const { boxId } = args;
       await logger.info("Getting box information", { boxId });
-      
+
       const info = await gboxSDK.getInfo(boxId);
 
       await logger.info("Retrieved box information", { boxId });
@@ -31,7 +31,10 @@ export function handleGetBox(logger: MCPLogger) {
         ],
       };
     } catch (error) {
-      await logger.error("Failed to get box information", { boxId: args?.boxId, error });
+      await logger.error("Failed to get box information", {
+        boxId: args?.boxId,
+        error,
+      });
       return {
         content: [
           {

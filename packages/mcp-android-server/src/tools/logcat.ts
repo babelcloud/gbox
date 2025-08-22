@@ -13,33 +13,33 @@ export const logcatParamsSchema = {
     .string()
     .optional()
     .describe(
-      "Log source/buffer to read from (e.g., 'main', 'system', 'radio', 'events'). Corresponds to the `-b` flag."
+      "Log source/buffer to read from (e.g., 'main', 'system', 'radio', 'events'). Corresponds to the `-b` flag.",
     ),
   filterSpecs: z
     .string()
     .optional()
     .default("*:V")
     .describe(
-      "Filter specification in format 'tag:priority' (default: '*:V' for all verbose)."
+      "Filter specification in format 'tag:priority' (default: '*:V' for all verbose).",
     ),
   regexFilter: z
     .string()
     .optional()
     .describe(
-      "Regular expression to filter log lines (optional). Corresponds to the `--regex` flag."
+      "Regular expression to filter log lines (optional). Corresponds to the `--regex` flag.",
     ),
   pid: z
     .number()
     .optional()
     .describe(
-      "Process ID to filter logs for specific process (optional). Corresponds to the `--pid` flag."
+      "Process ID to filter logs for specific process (optional). Corresponds to the `--pid` flag.",
     ),
   tailLines: z
     .number()
     .optional()
     .default(100)
     .describe(
-      "Number of recent log lines to retrieve (default: 100). Corresponds to the `--tail` flag."
+      "Number of recent log lines to retrieve (default: 100). Corresponds to the `--tail` flag.",
     ),
 };
 

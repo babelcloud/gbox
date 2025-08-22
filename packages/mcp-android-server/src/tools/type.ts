@@ -3,7 +3,10 @@ import { attachBox } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { ActionType, ActionPressKey } from "gbox-sdk";
 import { getImageDataFromUri } from "../gboxsdk/utils.js";
-import { ActionPressKeyResponse, ActionTypeResponse } from "gbox-sdk/resources/v1/boxes.mjs";
+import {
+  ActionPressKeyResponse,
+  ActionTypeResponse,
+} from "gbox-sdk/resources/v1/boxes.mjs";
 
 export const TYPE_TOOL = "type";
 
@@ -17,13 +20,13 @@ export const typeParamsSchema = {
     .boolean()
     .optional()
     .describe(
-      "Whether to press the Enter key after typing the content. Defaults to false."
+      "Whether to press the Enter key after typing the content. Defaults to false.",
     ),
   replace: z
     .boolean()
     .optional()
     .describe(
-      "If true, replace existing text; if false, append to the end of current text. Defaults to false."
+      "If true, replace existing text; if false, append to the end of current text. Defaults to false.",
     ),
 };
 
@@ -51,7 +54,9 @@ export function handleType(logger: MCPLogger) {
         screenshotDelay: "500ms",
       };
 
-      const typeResult = await box.action.type(typeParams) as ActionTypeResponse.ActionIncludeScreenshotResult;
+      const typeResult = (await box.action.type(
+        typeParams,
+      )) as ActionTypeResponse.ActionIncludeScreenshotResult;
 
       // Optionally press Enter afterwards
       let finalResult: any = typeResult;
@@ -62,7 +67,9 @@ export function handleType(logger: MCPLogger) {
           outputFormat: "base64",
           screenshotDelay: "500ms",
         };
-        finalResult = await box.action.pressKey(pressParams) as ActionPressKeyResponse.ActionIncludeScreenshotResult;
+        finalResult = (await box.action.pressKey(
+          pressParams,
+        )) as ActionPressKeyResponse.ActionIncludeScreenshotResult;
       }
 
       // Build response content
@@ -80,7 +87,10 @@ export function handleType(logger: MCPLogger) {
       // Prefer showing the final after screenshot if present
       const afterUri = finalResult?.screenshot?.after?.uri;
       if (afterUri) {
-        const { base64Data, mimeType } = await getImageDataFromUri(afterUri, box);
+        const { base64Data, mimeType } = await getImageDataFromUri(
+          afterUri,
+          box,
+        );
         contentItems.push({ type: "image", data: base64Data, mimeType });
       }
 
@@ -102,5 +112,3 @@ export function handleType(logger: MCPLogger) {
     }
   };
 }
-
-
