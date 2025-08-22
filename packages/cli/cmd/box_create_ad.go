@@ -86,12 +86,8 @@ func runAndroidCreate(opts *AndroidBoxCreateOptions) error {
 		fmt.Println(string(boxJSON))
 	} else {
 		// Extract ID from the response
-		if boxMap, ok := box.(map[string]interface{}); ok {
-			if id, exists := boxMap["id"].(string); exists {
-				fmt.Printf("Android box created with ID \"%s\"\n", id)
-			} else {
-				fmt.Println("Android box created successfully")
-			}
+		if box.ID != "" {
+			fmt.Printf("Android box created with ID \"%s\"\n", box.ID)
 		} else {
 			fmt.Println("Android box created successfully")
 		}

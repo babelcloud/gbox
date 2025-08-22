@@ -14,8 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"os/user"
-
+	"github.com/babelcloud/gbox/packages/cli/config"
 	"github.com/gorilla/websocket"
 )
 
@@ -29,41 +28,32 @@ type PidInfo struct {
 	StartedAt   time.Time `json:"started_at"`
 }
 
-// GboxHomeDir returns the ~/.gbox directory path
-func GboxHomeDir() string {
-	usr, err := user.Current()
-	if err != nil {
-		return os.Getenv("HOME") + "/.gbox"
-	}
-	return usr.HomeDir + "/.gbox"
-}
-
 func ensureGboxDir() error {
-	dir := GboxHomeDir()
+	dir := config.GetGboxHome()
 	return os.MkdirAll(dir, 0700)
 }
 
-const pidFileNamePrefix = "gbox-portforward-"
+const pidFileNamePrefix = "gbox-port-forward-"
 const pidFileNameSuffix = ".pid"
 const logFileNameSuffix = ".log"
 
-func pidFilePath(boxid string, localport int) string {
-	return GboxHomeDir() + "/" + pidFileNamePrefix + boxid + "-" + strconv.Itoa(localport) + pidFileNameSuffix
+func pidFilePath(boxId string, localPort int) string {
+	return config.GetGboxHome() + "/" + pidFileNamePrefix + boxId + "-" + strconv.Itoa(localPort) + pidFileNameSuffix
 }
 
-func logFilePath(boxid string, localport int) string {
-	return GboxHomeDir() + "/" + pidFileNamePrefix + boxid + "-" + strconv.Itoa(localport) + logFileNameSuffix
+func logFilePath(boxId string, localPort int) string {
+	return config.GetGboxHome() + "/" + pidFileNamePrefix + boxId + "-" + strconv.Itoa(localPort) + logFileNameSuffix
 }
 
-const pidFilePattern = "gbox-portforward-*.pid"
+const pidFilePattern = "gbox-port-forward-*.pid"
 
 // WritePidFile writes a pid file for multiple ports (first local port is used for file name)
-func WritePidFile(boxid string, localports, remoteports []int) error {
+func WritePidFile(boxId string, localPorts, remotePorts []int) error {
 	if err := ensureGboxDir(); err != nil {
 		return err
 	}
 	// Use the first local port for the pid file name
-	path := pidFilePath(boxid, localports[0])
+	path := pidFilePath(boxId, localPorts[0])
 	// check if pid file exists
 	if _, err := os.Stat(path); err == nil {
 		f, err := os.Open(path)
@@ -72,15 +62,15 @@ func WritePidFile(boxid string, localports, remoteports []int) error {
 			decodeErr := json.NewDecoder(f).Decode(&info)
 			f.Close()
 			if decodeErr == nil && IsProcessAlive(info.Pid) {
-				return fmt.Errorf("port-forward already running for boxid=%s, localport=%d (pid=%d)", boxid, localports[0], info.Pid)
+				return fmt.Errorf("port-forward already running for boxId=%s, localPort=%d (pid=%d)", boxId, localPorts[0], info.Pid)
 			}
 		}
 	}
 	info := PidInfo{
 		Pid:         os.Getpid(),
-		BoxID:       boxid,
-		LocalPorts:  localports,
-		RemotePorts: remoteports,
+		BoxID:       boxId,
+		LocalPorts:  localPorts,
+		RemotePorts: remotePorts,
 		StartedAt:   time.Now(),
 	}
 	f, err := os.Create(path)
@@ -93,16 +83,16 @@ func WritePidFile(boxid string, localports, remoteports []int) error {
 }
 
 // RemovePidFile removes the pid file for a given local port
-func RemovePidFile(boxid string, localport int) error {
-	return os.Remove(pidFilePath(boxid, localport))
+func RemovePidFile(boxId string, localPort int) error {
+	return os.Remove(pidFilePath(boxId, localPort))
 }
 
-func RemoveLogFile(boxid string, localport int) error {
-	return os.Remove(logFilePath(boxid, localport))
+func RemoveLogFile(boxId string, localPort int) error {
+	return os.Remove(logFilePath(boxId, localPort))
 }
 
 func ListPidFiles() ([]PidInfo, error) {
-	dir := GboxHomeDir()
+	dir := config.GetGboxHome()
 	files, err := filepath.Glob(dir + "/" + pidFilePattern)
 	if err != nil {
 		return nil, err
@@ -135,8 +125,8 @@ func IsProcessAlive(pid int) bool {
 	return proc.Signal(syscall.Signal(0)) == nil
 }
 
-func FindPidFile(boxid string, localport int) (string, error) {
-	path := pidFilePath(boxid, localport)
+func FindPidFile(boxId string, localPort int) (string, error) {
+	path := pidFilePath(boxId, localPort)
 	_, err := os.Stat(path)
 	if err != nil {
 		return "", err

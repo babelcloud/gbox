@@ -109,7 +109,7 @@ func ExecutePortForward(cmd *cobra.Command, opts *PortForwardOptions, args []str
 		opts.BoxID = args[0]
 	}
 	if opts.BoxID == "" || !boxValid(opts.BoxID) {
-		return fmt.Errorf("Box you specified is not valid, check --help for how to add it or using 'gbox box list' to check.")
+		return fmt.Errorf("the box you specified is not valid, check --help for how to add it or using 'gbox box list' to check")
 	}
 
 	// Collect all port mapping arguments
@@ -128,7 +128,7 @@ func ExecutePortForward(cmd *cobra.Command, opts *PortForwardOptions, args []str
 	// Parse all port mappings
 	pairs, err := parsePortMaps(portMaps)
 	if err != nil {
-		return fmt.Errorf("Invalid port map(s): %v", err)
+		return fmt.Errorf("invalid port map(s): %v", err)
 	}
 
 	// Check local port conflict and availability
@@ -136,7 +136,7 @@ func ExecutePortForward(cmd *cobra.Command, opts *PortForwardOptions, args []str
 	localPorts := make(map[int]bool)
 	for _, pair := range pairs {
 		if localPorts[pair.Local] {
-			return fmt.Errorf("Duplicate local port detected: %d. Each local port can only be used once.", pair.Local)
+			return fmt.Errorf("duplicate local port detected: %d, each local port can only be used once", pair.Local)
 		}
 		localPorts[pair.Local] = true
 	}
@@ -144,10 +144,10 @@ func ExecutePortForward(cmd *cobra.Command, opts *PortForwardOptions, args []str
 	// 2. Check port range validity (1-65535)
 	for _, pair := range pairs {
 		if pair.Local < 1 || pair.Local > 65535 {
-			return fmt.Errorf("Invalid local port %d: port must be between 1 and 65535", pair.Local)
+			return fmt.Errorf("invalid local port %d: port must be between 1 and 65535", pair.Local)
 		}
 		if pair.Remote < 1 || pair.Remote > 65535 {
-			return fmt.Errorf("Invalid remote port %d: port must be between 1 and 65535", pair.Remote)
+			return fmt.Errorf("invalid remote port %d: port must be between 1 and 65535", pair.Remote)
 		}
 	}
 
@@ -163,9 +163,9 @@ func ExecutePortForward(cmd *cobra.Command, opts *PortForwardOptions, args []str
 				portInfo = getPortUsageInfo(pair.Local)
 			}
 			if portInfo != "" {
-				return fmt.Errorf("Port %d is already in use by: %s", pair.Local, portInfo)
+				return fmt.Errorf("the port %d is already in use by: %s", pair.Local, portInfo)
 			}
-			return fmt.Errorf("Port %d is not available: %v", pair.Local, err)
+			return fmt.Errorf("the port %d is not available: %v", pair.Local, err)
 		}
 		listener.Close() // Close immediately after checking
 	}
@@ -173,14 +173,14 @@ func ExecutePortForward(cmd *cobra.Command, opts *PortForwardOptions, args []str
 	// try to get API_KEY, if not set, return error
 	pm := profile.NewProfileManager()
 	if err := pm.Load(); err != nil {
-		return fmt.Errorf("Failed to load profile: %v", err)
+		return fmt.Errorf("failed to load profile: %v", err)
 	}
 	current := pm.GetCurrent()
 	if current == nil || current.APIKey == "" {
-		return fmt.Errorf("No current profile or API key found. Please run 'gbox profile add' and 'gbox profile use'.")
+		return fmt.Errorf("no current profile or API key found. Please run 'gbox profile add' and 'gbox profile use'")
 	}
 
-	logPath := fmt.Sprintf("%s/gbox-portforward-%s-%d.log", port_forward.GboxHomeDir(), opts.BoxID, pairs[0].Local) // Use the first local port for log path
+	logPath := fmt.Sprintf("%s/gbox-port-forward-%s-%d.log", config.GetGboxHome(), opts.BoxID, pairs[0].Local) // Use the first local port for log path
 	if shouldReturn, err := port_forward.DaemonizeIfNeeded(opts.Foreground, logPath); shouldReturn {
 		return err
 	}
@@ -202,7 +202,7 @@ func ExecutePortForward(cmd *cobra.Command, opts *PortForwardOptions, args []str
 		}(),
 	)
 	if err != nil {
-		return fmt.Errorf("Failed to write pid file: %v", err)
+		return fmt.Errorf("failed to write pid file: %v", err)
 	}
 	// Clean up pid and log files on exit
 	defer func() {
@@ -338,7 +338,7 @@ func ExecutePortForwardKill(cmd *cobra.Command, opts *PortForwardKillOptions, ar
 		// Try to parse the first argument as pid
 		parsed, err := strconv.Atoi(args[0])
 		if err != nil || parsed <= 0 {
-			return fmt.Errorf("First argument must be a valid PID (integer > 0), or use --pid <pid>")
+			return fmt.Errorf("the first argument must be a valid PID (integer > 0), or use --pid <pid>")
 		}
 		pid = parsed
 	}
@@ -418,7 +418,7 @@ func ExecutePortForwardList(cmd *cobra.Command, opts *PortForwardListOptions) er
 	// Step 4: Check for pid files whose process is not running, and clean up
 	for pid, info := range registeredPids {
 		if !runningPids[pid] && !port_forward.IsProcessAlive(pid) {
-			fmt.Printf("[CLEANUP] Removing stale pid file for dead process (pid=%d, boxid=%s, localports=%v)\n", pid, info.BoxID, info.LocalPorts)
+			fmt.Printf("[CLEANUP] Removing stale pid file for dead process (pid=%d, boxId=%s, localPorts=%v)\n", pid, info.BoxID, info.LocalPorts)
 			for _, lp := range info.LocalPorts {
 				port_forward.RemovePidFile(info.BoxID, lp)
 				port_forward.RemoveLogFile(info.BoxID, lp)
@@ -485,16 +485,16 @@ func parsePortMap(portMap string) (int, int, error) {
 		localPortStr = parts[0]
 		remotePortStr = parts[0]
 	} else {
-		return 0, 0, fmt.Errorf("Invalid port map format")
+		return 0, 0, fmt.Errorf("invalid port map format")
 	}
 
 	localPort, err := strconv.Atoi(localPortStr)
 	if err != nil || localPort < 1 || localPort > 65535 {
-		return 0, 0, fmt.Errorf("Invalid local port: %s", localPortStr)
+		return 0, 0, fmt.Errorf("invalid local port: %s", localPortStr)
 	}
 	remotePort, err := strconv.Atoi(remotePortStr)
 	if err != nil || remotePort < 1 || remotePort > 65535 {
-		return 0, 0, fmt.Errorf("Invalid remote port: %s", remotePortStr)
+		return 0, 0, fmt.Errorf("invalid remote port: %s", remotePortStr)
 	}
 
 	return localPort, remotePort, nil
@@ -520,6 +520,11 @@ func parsePortMaps(portMaps []string) ([]PortPair, error) {
 }
 
 func boxValid(boxID string) bool {
+	// Skip box validation in daemon processes to avoid TLS issues
+	if os.Getenv("GBOX_PORT_FORWARD_DAEMON") != "" {
+		return true
+	}
+
 	sdkClient, err := client.NewClientFromProfile()
 	if err != nil {
 		return false
@@ -528,13 +533,7 @@ func boxValid(boxID string) bool {
 	if err != nil {
 		return false
 	}
-	// Extract status from the response
-	if boxMap, ok := box.(map[string]interface{}); ok {
-		if status, exists := boxMap["status"].(string); exists {
-			return status == "running"
-		}
-	}
-	return false
+	return box.Status == "running"
 }
 
 // getPortUsageInfo attempts to find what process is using a specific port
