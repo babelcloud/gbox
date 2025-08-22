@@ -95,7 +95,8 @@ export function handleUiAction(logger: MCPLogger) {
       const result = (await box.action.ai(actionParams)) as any;
 
       // Prepare image contents for before and after screenshots
-      const images: Array<{ type: "image"; data: string; mimeType: string }> = [];
+      const images: Array<{ type: "image"; data: string; mimeType: string }> =
+        [];
 
       // if (result?.screenshot?.before?.uri) {
       //   const { mimeType, base64Data } = parseUri(result.screenshot.before.uri);
@@ -103,7 +104,10 @@ export function handleUiAction(logger: MCPLogger) {
       // }
 
       if (result?.screenshot?.after?.uri) {
-        const { base64Data, mimeType } = await getImageDataFromUri(result.screenshot.after.uri, box);
+        const { base64Data, mimeType } = await getImageDataFromUri(
+          result.screenshot.after.uri,
+          box
+        );
         images.push({ type: "image", data: base64Data, mimeType });
       }
 
@@ -125,7 +129,7 @@ export function handleUiAction(logger: MCPLogger) {
       });
 
       // Add all images
-      images.forEach((img) => {
+      images.forEach(img => {
         content.push({
           type: "image" as const,
           data: img.data,

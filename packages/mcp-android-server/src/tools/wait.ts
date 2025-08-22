@@ -17,7 +17,7 @@ export const waitParamsSchema = z.object({
     .describe("The duration to wait in milliseconds."),
 });
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export function handleWait(logger: MCPLogger) {
   return async (params: z.infer<typeof waitParamsSchema>) => {
@@ -32,7 +32,10 @@ export function handleWait(logger: MCPLogger) {
       const screenshotParams: ActionScreenshot = { outputFormat: "base64" };
       const screenshotResult = await box.action.screenshot(screenshotParams);
 
-      const { base64Data, mimeType } = await getImageDataFromUri(screenshotResult.uri, box);
+      const { base64Data, mimeType } = await getImageDataFromUri(
+        screenshotResult.uri,
+        box
+      );
 
       const message = `Finished waiting for ${duration}ms.`;
       await logger.info(message);
@@ -53,7 +56,10 @@ export function handleWait(logger: MCPLogger) {
     } catch (error) {
       // If screenshot fails, still return wait text with error information
       const message = `Finished waiting for ${duration}ms, but failed to capture screenshot.`;
-      await logger.error("Failed to capture screenshot after wait", { boxId, error });
+      await logger.error("Failed to capture screenshot after wait", {
+        boxId,
+        error,
+      });
       return {
         content: [
           {
@@ -69,4 +75,4 @@ export function handleWait(logger: MCPLogger) {
       };
     }
   };
-} 
+}

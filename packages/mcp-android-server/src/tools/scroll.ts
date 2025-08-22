@@ -14,7 +14,9 @@ export const scrollParamsSchema = {
   boxId: z.string().describe("ID of the box"),
   direction: z
     .enum(["up", "down"]) // Focus on vertical scrolling for now
-    .describe("Direction to scroll the screen (either 'up' or 'down'). Scroll-down is aimed to see the content below the current view. Scroll-up is aimed to see the content above the current view.")
+    .describe(
+      "Direction to scroll the screen (either 'up' or 'down'). Scroll-down is aimed to see the content below the current view. Scroll-up is aimed to see the content above the current view."
+    ),
 };
 
 type ScrollParams = z.infer<z.ZodObject<typeof scrollParamsSchema>>;
@@ -39,7 +41,9 @@ export function handleScroll(logger: MCPLogger) {
         distance: Math.round(height / 2),
       };
 
-      const result = await box.action.swipe(actionParams) as ActionSwipeResponse.ActionIncludeScreenshotResult;
+      const result = (await box.action.swipe(
+        actionParams
+      )) as ActionSwipeResponse.ActionIncludeScreenshotResult;
 
       // Build content: brief text + after screenshot if available
       const content: Array<
@@ -53,7 +57,10 @@ export function handleScroll(logger: MCPLogger) {
       });
 
       if (result?.screenshot?.after?.uri) {
-        const { base64Data, mimeType } = await getImageDataFromUri(result.screenshot.after.uri, box);
+        const { base64Data, mimeType } = await getImageDataFromUri(
+          result.screenshot.after.uri,
+          box
+        );
         content.push({ type: "image", data: base64Data, mimeType });
       }
 
@@ -75,5 +82,3 @@ export function handleScroll(logger: MCPLogger) {
     }
   };
 }
-
-

@@ -2,7 +2,10 @@ import { z } from "zod";
 import type { MCPLogger } from "../mcp-logger.js";
 import { attachBox } from "../gboxsdk/index.js";
 import { handleUiAction } from "./ui-action.js";
-import { buildActionReturnValues, getBoxCoordinates } from "../gboxsdk/utils.js";
+import {
+  buildActionReturnValues,
+  getBoxCoordinates,
+} from "../gboxsdk/utils.js";
 
 export const DRAG_TOOL = "drag";
 
@@ -33,7 +36,10 @@ export function handleDrag(logger: MCPLogger) {
       await logger.info("Drag command invoked", { boxId, target, destination });
 
       const box = await attachBox(boxId);
-      const boxCoordinates = await getBoxCoordinates(box, "Drag " + target + " to " + destination);
+      const boxCoordinates = await getBoxCoordinates(
+        box,
+        "Drag " + target + " to " + destination
+      );
       if (boxCoordinates.length <= 1) {
         return {
           content: [
@@ -48,7 +54,7 @@ export function handleDrag(logger: MCPLogger) {
         outputFormat: "base64" as const,
         screenshotDelay: "500ms" as const,
       };
-      const result = await box.action.drag(dragAction) as any;
+      const result = (await box.action.drag(dragAction)) as any;
       return buildActionReturnValues(result, box);
     } catch (error) {
       await logger.error("Failed to run drag action", {
@@ -67,5 +73,3 @@ export function handleDrag(logger: MCPLogger) {
     }
   };
 }
-
-

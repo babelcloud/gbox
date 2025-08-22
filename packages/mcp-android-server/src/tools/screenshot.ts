@@ -18,9 +18,7 @@ export const screenshotParamsSchema = {
 };
 
 // Define parameter types - infer from the Zod schema
-type ScreenshotParams = z.infer<
-  z.ZodObject<typeof screenshotParamsSchema>
->;
+type ScreenshotParams = z.infer<z.ZodObject<typeof screenshotParamsSchema>>;
 
 export function handleScreenshot(logger: MCPLogger) {
   return async (args: ScreenshotParams) => {
@@ -38,7 +36,10 @@ export function handleScreenshot(logger: MCPLogger) {
       const result = await box.action.screenshot(actionParams);
 
       await logger.info("Screenshot taken successfully", { boxId });
-      const { base64Data, mimeType } = await getImageDataFromUri(result.uri, box);
+      const { base64Data, mimeType } = await getImageDataFromUri(
+        result.uri,
+        box
+      );
 
       // Return image content for MCP
       return {
@@ -54,11 +55,11 @@ export function handleScreenshot(logger: MCPLogger) {
       // if (outputFormat === "storageKey") {
       //   // For storageKey format, get the presigned URL for the storage key using SDK
       //   const presignedUrl = await box.storage.createPresignedUrl({ storageKey: result.uri });
-        
-      //   await logger.info("Presigned URL created", { 
-      //     boxId, 
+
+      //   await logger.info("Presigned URL created", {
+      //     boxId,
       //     storageKey: result.uri,
-      //     presignedUrl 
+      //     presignedUrl
       //   });
 
       //   return {

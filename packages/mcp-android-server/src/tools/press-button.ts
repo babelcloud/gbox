@@ -32,7 +32,7 @@ export const pressButtonParamsSchema = {
     .min(1)
     .describe(
       "Array of hardware buttons to press. Can be a single button like ['power'] or multiple like ['power', 'volumeUp']"
-    )   
+    ),
 };
 
 // Define parameter types - infer from the Zod schema
@@ -42,7 +42,10 @@ export function handlePressButton(logger: MCPLogger) {
   return async (args: PressButtonParams) => {
     try {
       const { boxId, buttons } = args;
-      await logger.info("Pressing buttons", { boxId, buttons: buttons.join(" + ") });
+      await logger.info("Pressing buttons", {
+        boxId,
+        buttons: buttons.join(" + "),
+      });
 
       const box = await attachBox(boxId);
 
@@ -54,10 +57,13 @@ export function handlePressButton(logger: MCPLogger) {
         screenshotDelay: "500ms",
       };
 
-      const result = await box.action.pressButton(actionParams) as ActionPressButtonResponse.ActionIncludeScreenshotResult;
+      const result = (await box.action.pressButton(
+        actionParams
+      )) as ActionPressButtonResponse.ActionIncludeScreenshotResult;
 
       // Prepare image contents for screenshots
-      const images: Array<{ type: "image"; data: string; mimeType: string }> = [];
+      const images: Array<{ type: "image"; data: string; mimeType: string }> =
+        [];
 
       // Add screenshots if available
       // if (result?.screenshot?.trace?.uri) {
@@ -71,7 +77,10 @@ export function handlePressButton(logger: MCPLogger) {
       // }
 
       if (result?.screenshot?.after?.uri) {
-        const { base64Data, mimeType } = await getImageDataFromUri(result.screenshot.after.uri, box);
+        const { base64Data, mimeType } = await getImageDataFromUri(
+          result.screenshot.after.uri,
+          box
+        );
         images.push({ type: "image", data: base64Data, mimeType });
       }
 
@@ -90,11 +99,11 @@ export function handlePressButton(logger: MCPLogger) {
       // Add text result with sanitized data
       content.push({
         type: "text" as const,
-        text: "Button pressed successfully"
+        text: "Button pressed successfully",
       });
 
       // Add all images
-      images.forEach((img) => {
+      images.forEach(img => {
         content.push({
           type: "image" as const,
           data: img.data,
@@ -119,4 +128,4 @@ export function handlePressButton(logger: MCPLogger) {
       };
     }
   };
-} 
+}
