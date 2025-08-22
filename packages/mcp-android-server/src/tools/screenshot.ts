@@ -38,7 +38,7 @@ export function handleScreenshot(logger: MCPLogger) {
       await logger.info("Screenshot taken successfully", { boxId });
       const { base64Data, mimeType } = await getImageDataFromUri(
         result.uri,
-        box,
+        box
       );
 
       // Return image content for MCP

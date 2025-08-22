@@ -23,13 +23,13 @@ export const uiActionParamsSchema = {
   instruction: z
     .string()
     .describe(
-      "Direct instruction of the UI action to perform, e.g. 'Tap the login button'",
+      "Direct instruction of the UI action to perform, e.g. 'Tap the login button'"
     ),
   background: z
     .string()
     .optional()
     .describe(
-      "Contextual background for the action, to help the AI understand previous steps and the current state of the UI.",
+      "Contextual background for the action, to help the AI understand previous steps and the current state of the UI."
     ),
   // includeScreenshot: z
   //   .boolean()
@@ -106,7 +106,7 @@ export function handleUiAction(logger: MCPLogger) {
       if (result?.screenshot?.after?.uri) {
         const { base64Data, mimeType } = await getImageDataFromUri(
           result.screenshot.after.uri,
-          box,
+          box
         );
         images.push({ type: "image", data: base64Data, mimeType });
       }
@@ -129,7 +129,7 @@ export function handleUiAction(logger: MCPLogger) {
       });
 
       // Add all images
-      images.forEach((img) => {
+      images.forEach(img => {
         content.push({
           type: "image" as const,
           data: img.data,

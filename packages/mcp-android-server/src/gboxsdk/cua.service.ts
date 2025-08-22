@@ -8,7 +8,7 @@ export type Coordinates = {
 
 export async function getCUACoordinates(
   instruction: string,
-  screenshotUri: string,
+  screenshotUri: string
 ): Promise<Coordinates> {
   const baseUrl = (
     process.env.AGENT_BASE_URL ||
@@ -44,5 +44,5 @@ function extractCoordinates(text: string): { x: number; y: number }[] | null {
   if (!text) return null;
   const matches = Array.from(text.matchAll(/\(?\s*(\d+)\s*,\s*(\d+)\s*\)?/g));
   if (!matches.length) return null;
-  return matches.map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
+  return matches.map(m => ({ x: Number(m[1]), y: Number(m[2]) }));
 }

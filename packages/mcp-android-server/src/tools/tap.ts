@@ -16,7 +16,7 @@ export const tapParamsSchema = {
   target: z
     .string()
     .describe(
-      "Description of the element to tap (e.g. 'login button', 'search field'). MUST be detailed enough to identify the element unambiguously.",
+      "Description of the element to tap (e.g. 'login button', 'search field'). MUST be detailed enough to identify the element unambiguously."
     ),
 };
 

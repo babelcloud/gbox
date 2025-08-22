@@ -14,7 +14,7 @@ export const startGboxParamsSchema = {
     .string()
     .optional()
     .describe(
-      "The ID of the GBOX to start. If not provided, a new GBOX will be created.",
+      "The ID of the GBOX to start. If not provided, a new GBOX will be created."
     ),
 };
 

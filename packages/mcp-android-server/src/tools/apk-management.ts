@@ -26,13 +26,13 @@ export const installApkParamsSchema = {
     .string()
     .optional()
     .describe(
-      "Local file path or HTTP(S) URL of the APK to install, for example: '/Users/jack/abc.apk', if local file provided, Gbox SDK will upload it to the box and install it. if apk is a url, Gbox SDK will download it to the box and install it (please make sure the url is public internet accessible).",
+      "Local file path or HTTP(S) URL of the APK to install, for example: '/Users/jack/abc.apk', if local file provided, Gbox SDK will upload it to the box and install it. if apk is a url, Gbox SDK will download it to the box and install it (please make sure the url is public internet accessible)."
     ),
   open: z
     .boolean()
     .optional()
     .describe(
-      "Whether to open the app after installation. Will find and launch the launcher activity of the installed app. If there are multiple launcher activities, only one will be opened. If the installed APK has no launcher activity, this parameter will have no effect.",
+      "Whether to open the app after installation. Will find and launch the launcher activity of the installed app. If there are multiple launcher activities, only one will be opened. If the installed APK has no launcher activity, this parameter will have no effect."
     ),
 };
 
@@ -46,7 +46,7 @@ export const openAppParamsSchema = {
   packageName: z
     .string()
     .describe(
-      "Android package name to open, for example: 'com.android.settings'",
+      "Android package name to open, for example: 'com.android.settings'"
     ),
 };
 
@@ -55,7 +55,7 @@ export const closeAppParamsSchema = {
   packageName: z
     .string()
     .describe(
-      "Android package name to close, for example: 'com.android.settings'",
+      "Android package name to close, for example: 'com.android.settings'"
     ),
 };
 
@@ -82,14 +82,14 @@ export function handleInstallApk(logger: MCPLogger) {
       const appOperator = await box.app.install(installParams);
 
       // wait for 3 seconds
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
       if (open) {
         await appOperator.open();
       }
 
       // wait for 2 seconds
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       // Take a screenshot after installation (and optional open)
       const screenshotParams: ActionScreenshot = { outputFormat: "base64" };
@@ -97,7 +97,7 @@ export function handleInstallApk(logger: MCPLogger) {
 
       const { base64Data, mimeType } = await getImageDataFromUri(
         screenshotResult.uri,
-        box,
+        box
       );
 
       await logger.info("APK installed successfully", { boxId, apk: apkPath });
@@ -185,7 +185,7 @@ export function handleOpenApp(logger: MCPLogger) {
       await logger.info("App opened successfully", { boxId, packageName });
 
       // wait for 1 second
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Take a screenshot after opening the app
       const screenshotParams: ActionScreenshot = { outputFormat: "base64" };
@@ -193,7 +193,7 @@ export function handleOpenApp(logger: MCPLogger) {
 
       const { base64Data, mimeType } = await getImageDataFromUri(
         screenshotResult.uri,
-        box,
+        box
       );
       return {
         content: [

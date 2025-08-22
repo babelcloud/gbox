@@ -20,13 +20,13 @@ export const swipeParamsSchema = {
     .enum(["tiny", "short", "medium", "long"])
     .optional()
     .describe(
-      "Distance of the swipe. Supported values are 'tiny', 'short', 'medium', and 'long'. Defaults to 'medium'.",
+      "Distance of the swipe. Supported values are 'tiny', 'short', 'medium', and 'long'. Defaults to 'medium'."
     ),
   location: z
     .string()
     .optional()
     .describe(
-      "Optional description of where on the screen to start the swipe (e.g. 'bottom half', 'toolbar area'). Defaults to the centre of the screen.",
+      "Optional description of where on the screen to start the swipe (e.g. 'bottom half', 'toolbar area'). Defaults to the centre of the screen."
     ),
 };
 

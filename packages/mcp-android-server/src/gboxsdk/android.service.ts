@@ -14,7 +14,7 @@ export async function attachBox(boxId: string): Promise<AndroidBoxOperator> {
     return box;
   } catch (err) {
     throw new Error(
-      `Failed to attach to box ${boxId}: ${(err as Error).message}`,
+      `Failed to attach to box ${boxId}: ${(err as Error).message}`
     );
   }
 }
@@ -28,7 +28,7 @@ export type AndroidDevice = {
 };
 
 export async function deviceList(
-  availableOnly: boolean = true,
+  availableOnly: boolean = true
 ): Promise<AndroidDevice[]> {
   // TODO: use gbox-sdk to get device list and should be able to change baseUrl
   const apiUrl = `https://gbox.ai/api/dashboard/v1/device/device_list`;
@@ -39,7 +39,7 @@ export async function deviceList(
       headers: {
         "x-api-key": config.gboxApiKey,
       },
-    },
+    }
   );
 
   try {
@@ -54,7 +54,7 @@ export async function deviceList(
     if (availableOnly) {
       return devices.filter(
         (device: AndroidDevice) =>
-          device.status === "online" && device.enabled && device.isIdle,
+          device.status === "online" && device.enabled && device.isIdle
       );
     }
 

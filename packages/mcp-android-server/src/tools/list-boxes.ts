@@ -16,7 +16,7 @@ export const listBoxesParamsSchema = {
     .array(z.string())
     .optional()
     .describe(
-      "Filter boxes by their labels. Labels are key-value pairs that help identify and categorize boxes.",
+      "Filter boxes by their labels. Labels are key-value pairs that help identify and categorize boxes."
     ),
   page: z.number().int().optional().describe("Page number"),
   pageSize: z.number().int().optional().describe("Page size"),
@@ -24,13 +24,13 @@ export const listBoxesParamsSchema = {
     .array(z.enum(["all", "pending", "running", "error", "terminated"]))
     .optional()
     .describe(
-      "Filter boxes by their current status (pending, running, stopped, error, terminated, all).",
+      "Filter boxes by their current status (pending, running, stopped, error, terminated, all)."
     ),
   type: z
     .array(z.enum(["all", "linux", "android"]))
     .optional()
     .describe(
-      "Filter boxes by their type (linux, android, all). Must be an array of types.",
+      "Filter boxes by their type (linux, android, all). Must be an array of types."
     ),
 };
 

@@ -14,23 +14,23 @@ export const adbShellParamsSchema = {
   shellCommand: z
     .string()
     .describe(
-      "The shell command to execute (e.g., 'ls -l /sdcard', 'pm list packages', 'dumpsys battery').",
+      "The shell command to execute (e.g., 'ls -l /sdcard', 'pm list packages', 'dumpsys battery')."
     ),
   timeout: z
     .string()
     .regex(
       /^\d+(ms|s|m|h)$/,
-      "Invalid timeout format. Must be a number followed by 'ms', 's', 'm', or 'h'.",
+      "Invalid timeout format. Must be a number followed by 'ms', 's', 'm', or 'h'."
     )
     .optional()
     .describe(
-      "The timeout for the command. Supported units: ms, s, m, h. (e.g., '5s', '1m'). Defaults to 30s.",
+      "The timeout for the command. Supported units: ms, s, m, h. (e.g., '5s', '1m'). Defaults to 30s."
     ),
   workingDir: z
     .string()
     .optional()
     .describe(
-      "The working directory to run the command in. Defaults to the box's default working directory.",
+      "The working directory to run the command in. Defaults to the box's default working directory."
     ),
 };
 

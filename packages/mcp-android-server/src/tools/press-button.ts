@@ -31,7 +31,7 @@ export const pressButtonParamsSchema = {
     .array(z.enum(SUPPORTED_BUTTONS))
     .min(1)
     .describe(
-      "Array of hardware buttons to press. Can be a single button like ['power'] or multiple like ['power', 'volumeUp']",
+      "Array of hardware buttons to press. Can be a single button like ['power'] or multiple like ['power', 'volumeUp']"
     ),
 };
 
@@ -58,7 +58,7 @@ export function handlePressButton(logger: MCPLogger) {
       };
 
       const result = (await box.action.pressButton(
-        actionParams,
+        actionParams
       )) as ActionPressButtonResponse.ActionIncludeScreenshotResult;
 
       // Prepare image contents for screenshots
@@ -79,7 +79,7 @@ export function handlePressButton(logger: MCPLogger) {
       if (result?.screenshot?.after?.uri) {
         const { base64Data, mimeType } = await getImageDataFromUri(
           result.screenshot.after.uri,
-          box,
+          box
         );
         images.push({ type: "image", data: base64Data, mimeType });
       }
@@ -103,7 +103,7 @@ export function handlePressButton(logger: MCPLogger) {
       });
 
       // Add all images
-      images.forEach((img) => {
+      images.forEach(img => {
         content.push({
           type: "image" as const,
           data: img.data,

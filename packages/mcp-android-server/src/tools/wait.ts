@@ -17,7 +17,7 @@ export const waitParamsSchema = z.object({
     .describe("The duration to wait in milliseconds."),
 });
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export function handleWait(logger: MCPLogger) {
   return async (params: z.infer<typeof waitParamsSchema>) => {
@@ -34,7 +34,7 @@ export function handleWait(logger: MCPLogger) {
 
       const { base64Data, mimeType } = await getImageDataFromUri(
         screenshotResult.uri,
-        box,
+        box
       );
 
       const message = `Finished waiting for ${duration}ms.`;

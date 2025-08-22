@@ -53,7 +53,7 @@ export const openUrlInBrowser = (url: string) => {
         : `xdg-open "${url}"`;
 
   // Execute the command to open the browser
-  exec(command, (err) => {
+  exec(command, err => {
     if (err) {
       console.error(`Failed to open browser for URL ${url}:`, err);
     }
@@ -86,7 +86,7 @@ export function calculateResizeRatio(width: number, height: number): number {
 export function restoreCoordinate(
   x: number,
   y: number,
-  resizeRatio: number,
+  resizeRatio: number
 ): { x: number; y: number } {
   // round to integer
   const restored = {
@@ -107,7 +107,7 @@ export function restoreCoordinate(
  */
 export async function resizeImage(
   buffer: Buffer,
-  resizeRatio: number,
+  resizeRatio: number
 ): Promise<Buffer> {
   // If ratio indicates no resize, return as-is
   if (resizeRatio >= 1) {
@@ -146,16 +146,16 @@ export async function resizeImage(
 export async function maybeResizeAndCompressImage(
   base64Data: string,
   mimeType: string,
-  screenSize: { width: number; height: number },
+  screenSize: { width: number; height: number }
 ): Promise<{ base64Data: string; mimeType: string }> {
   try {
     const resizeRatio = calculateResizeRatio(
       screenSize.width,
-      screenSize.height,
+      screenSize.height
     );
     const resizedBuffer = await resizeImage(
       Buffer.from(base64Data, "base64"),
-      resizeRatio,
+      resizeRatio
     );
 
     if (resizedBuffer.length <= SCREENSHOT_SIZE_THRESHOLD) {
@@ -204,7 +204,7 @@ export async function maybeResizeAndCompressImage(
 export async function getImageDataFromUri(
   uri: string,
   box: AndroidBoxOperator,
-  compress: boolean = true,
+  compress: boolean = true
 ): Promise<{ base64Data: string; mimeType: string }> {
   const { mimeType, base64Data } = parseUri(uri);
   if (compress) {
@@ -216,7 +216,7 @@ export async function getImageDataFromUri(
 
 export async function buildActionReturnValues(
   result: any,
-  box: AndroidBoxOperator,
+  box: AndroidBoxOperator
 ): Promise<{
   content: Array<
     | { type: "text"; text: string }
@@ -228,7 +228,7 @@ export async function buildActionReturnValues(
   if (result?.screenshot?.after?.uri) {
     const { base64Data, mimeType } = await getImageDataFromUri(
       result.screenshot.after.uri,
-      box,
+      box
     );
     images.push({ type: "image", data: base64Data, mimeType });
   }
@@ -245,7 +245,7 @@ export async function buildActionReturnValues(
   });
 
   // Add all images
-  images.forEach((img) => {
+  images.forEach(img => {
     content.push({
       type: "image" as const,
       data: img.data,
@@ -258,16 +258,16 @@ export async function buildActionReturnValues(
 
 export async function getBoxCoordinates(
   box: AndroidBoxOperator,
-  instruction: string,
+  instruction: string
 ): Promise<{ x: number; y: number }[]> {
   const screenshotUri = (await box.action.screenshot()).uri;
   const { base64Data, mimeType } = await getImageDataFromUri(
     screenshotUri,
-    box,
+    box
   );
   const coordinates = await getCUACoordinates(
     instruction,
-    "data:" + mimeType + ";base64," + base64Data,
+    "data:" + mimeType + ";base64," + base64Data
   );
   if (coordinates.length === 0) {
     await logger.info("No CUA Coordinates found", { instruction });
@@ -277,8 +277,8 @@ export async function getBoxCoordinates(
   // restore coordinates to original screen size
   const { width, height } = (await box.display()).resolution;
   const resizeRatio = calculateResizeRatio(width, height);
-  const restoredCoordinates = coordinates.map((coordinate) =>
-    restoreCoordinate(coordinate.x, coordinate.y, resizeRatio),
+  const restoredCoordinates = coordinates.map(coordinate =>
+    restoreCoordinate(coordinate.x, coordinate.y, resizeRatio)
   );
   logger.info("Restored coordinates", { restoredCoordinates });
   return restoredCoordinates;

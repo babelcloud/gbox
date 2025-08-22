@@ -20,13 +20,13 @@ export const typeParamsSchema = {
     .boolean()
     .optional()
     .describe(
-      "Whether to press the Enter key after typing the content. Defaults to false.",
+      "Whether to press the Enter key after typing the content. Defaults to false."
     ),
   replace: z
     .boolean()
     .optional()
     .describe(
-      "If true, replace existing text; if false, append to the end of current text. Defaults to false.",
+      "If true, replace existing text; if false, append to the end of current text. Defaults to false."
     ),
 };
 
@@ -55,7 +55,7 @@ export function handleType(logger: MCPLogger) {
       };
 
       const typeResult = (await box.action.type(
-        typeParams,
+        typeParams
       )) as ActionTypeResponse.ActionIncludeScreenshotResult;
 
       // Optionally press Enter afterwards
@@ -68,7 +68,7 @@ export function handleType(logger: MCPLogger) {
           screenshotDelay: "500ms",
         };
         finalResult = (await box.action.pressKey(
-          pressParams,
+          pressParams
         )) as ActionPressKeyResponse.ActionIncludeScreenshotResult;
       }
 
@@ -89,7 +89,7 @@ export function handleType(logger: MCPLogger) {
       if (afterUri) {
         const { base64Data, mimeType } = await getImageDataFromUri(
           afterUri,
-          box,
+          box
         );
         contentItems.push({ type: "image", data: base64Data, mimeType });
       }

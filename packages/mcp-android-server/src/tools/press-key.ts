@@ -132,7 +132,7 @@ export const pressKeyParamsSchema = {
     .array(z.enum(SUPPORTED_KEYS))
     .min(1)
     .describe(
-      "Array of keyboard keys to press. Supports cross-platform compatibility. Can be single key like ['Enter'] or key combination like ['Control', 'c']",
+      "Array of keyboard keys to press. Supports cross-platform compatibility. Can be single key like ['Enter'] or key combination like ['Control', 'c']"
     ),
   outputFormat: z
     .enum(["base64", "storageKey"])
@@ -144,7 +144,7 @@ export const pressKeyParamsSchema = {
     .default(false)
     .optional()
     .describe(
-      "Whether to include screenshots in the action response. If false, the screenshot object will still be returned but with empty URIs. Default is false.",
+      "Whether to include screenshots in the action response. If false, the screenshot object will still be returned but with empty URIs. Default is false."
     ),
   screenshotDelay: z
     .string()
@@ -152,7 +152,7 @@ export const pressKeyParamsSchema = {
     .default("500ms")
     .optional()
     .describe(
-      "Delay after performing the action before taking the final screenshot. Supports time units: ms (milliseconds), s (seconds), m (minutes), h (hours). Example: '500ms', '30s', '5m', '1h'. Default: 500ms. Maximum allowed: 30s",
+      "Delay after performing the action before taking the final screenshot. Supports time units: ms (milliseconds), s (seconds), m (minutes), h (hours). Example: '500ms', '30s', '5m', '1h'. Default: 500ms. Maximum allowed: 30s"
     ),
 };
 
@@ -187,7 +187,7 @@ export function handlePressKey(logger: MCPLogger) {
       if (result?.screenshot?.after?.uri) {
         const { base64Data, mimeType } = await getImageDataFromUri(
           result.screenshot.after.uri,
-          box,
+          box
         );
         images.push({ type: "image", data: base64Data, mimeType });
       }
@@ -211,7 +211,7 @@ export function handlePressKey(logger: MCPLogger) {
       });
 
       // Add all images
-      images.forEach((img) => {
+      images.forEach(img => {
         content.push({
           type: "image" as const,
           data: img.data,

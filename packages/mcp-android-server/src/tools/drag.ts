@@ -17,12 +17,12 @@ export const dragParamsSchema = {
   target: z
     .string()
     .describe(
-      "Description of the element to drag (e.g. ‘app icon’, ‘list item’). MUST be detailed enough to identify the element unambiguously.",
+      "Description of the element to drag (e.g. ‘app icon’, ‘list item’). MUST be detailed enough to identify the element unambiguously."
     ),
   destination: z
     .string()
     .describe(
-      "Description of the destination where the element should be dropped (e.g. ‘trash bin at bottom’, ‘other folder icon’).",
+      "Description of the destination where the element should be dropped (e.g. ‘trash bin at bottom’, ‘other folder icon’)."
     ),
 };
 
@@ -38,7 +38,7 @@ export function handleDrag(logger: MCPLogger) {
       const box = await attachBox(boxId);
       const boxCoordinates = await getBoxCoordinates(
         box,
-        "Drag " + target + " to " + destination,
+        "Drag " + target + " to " + destination
       );
       if (boxCoordinates.length <= 1) {
         return {

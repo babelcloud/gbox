@@ -15,7 +15,7 @@ export const scrollParamsSchema = {
   direction: z
     .enum(["up", "down"]) // Focus on vertical scrolling for now
     .describe(
-      "Direction to scroll the screen (either 'up' or 'down'). Scroll-down is aimed to see the content below the current view. Scroll-up is aimed to see the content above the current view.",
+      "Direction to scroll the screen (either 'up' or 'down'). Scroll-down is aimed to see the content below the current view. Scroll-up is aimed to see the content above the current view."
     ),
 };
 
@@ -42,7 +42,7 @@ export function handleScroll(logger: MCPLogger) {
       };
 
       const result = (await box.action.swipe(
-        actionParams,
+        actionParams
       )) as ActionSwipeResponse.ActionIncludeScreenshotResult;
 
       // Build content: brief text + after screenshot if available
@@ -59,7 +59,7 @@ export function handleScroll(logger: MCPLogger) {
       if (result?.screenshot?.after?.uri) {
         const { base64Data, mimeType } = await getImageDataFromUri(
           result.screenshot.after.uri,
-          box,
+          box
         );
         content.push({ type: "image", data: base64Data, mimeType });
       }
