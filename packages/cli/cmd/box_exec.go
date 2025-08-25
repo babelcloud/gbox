@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/babelcloud/gbox/packages/cli/config"
 	"github.com/babelcloud/gbox/packages/cli/internal/profile"
 	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
@@ -104,9 +103,12 @@ func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
 	if err := pm.Load(); err != nil {
 		// handle error, maybe default to cloud
 	}
-	currentProfile := pm.GetCurrent()
-	_ = currentProfile
-	apiBase := strings.TrimSuffix(config.GetCloudAPIURL(), "/")
+	// Get effective base URL from profile with priority: GBOX_BASE_URL > profile > default
+	effectiveBaseURL, err := profile.GetEffectiveBaseURL()
+	if err != nil {
+		return fmt.Errorf("failed to get effective base URL: %v", err)
+	}
+	apiBase := strings.TrimSuffix(effectiveBaseURL, "/")
 
 	// convert http(s):// to ws(s)://
 	wsBase := apiBase

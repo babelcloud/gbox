@@ -92,11 +92,17 @@ func ExecuteAdbExpose(cmd *cobra.Command, opts *AdbExposeOptions, args []string)
 		os.Exit(0)
 	}()
 
+	// Get effective base URL for connection
+	effectiveBaseURL, err := profile.GetEffectiveBaseURL()
+	if err != nil {
+		return fmt.Errorf("failed to get effective base URL: %v", err)
+	}
+
 	// Connect to websocket
 	portForwardConfig := adb_expose.Config{
 		APIKey:      current.APIKey,
 		BoxID:       opts.BoxID,
-		GboxURL:     config.GetCloudAPIURL(),
+		GboxURL:     effectiveBaseURL,
 		TargetPorts: []int{remotePort},
 	}
 

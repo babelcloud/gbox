@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
 )
@@ -50,10 +51,16 @@ func NewClient(token string) (*Client, error) {
 		return nil, fmt.Errorf("token cannot be empty")
 	}
 
+	// Use GBOX_BASE_URL environment variable if set, otherwise use default
+	baseURL := os.Getenv("GBOX_BASE_URL")
+	if baseURL == "" {
+		baseURL = config.GetDefaultBaseURL()
+	}
+
 	return &Client{
 		httpClient: &http.Client{},
 		token:      token,
-		baseURL:    config.GetCloudAPIURL(),
+		baseURL:    baseURL,
 	}, nil
 }
 
