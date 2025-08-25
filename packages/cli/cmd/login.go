@@ -230,7 +230,12 @@ func getLocalToken(githubToken string) (string, error) {
 		return "", err
 	}
 
-	apiURL := config.GetCloudAPIURL() + "/api/public/v1/auth/github/callback/token"
+	// Use GBOX_BASE_URL environment variable if set, otherwise use default
+	baseURL := os.Getenv("GBOX_BASE_URL")
+	if baseURL == "" {
+		baseURL = config.GetDefaultBaseURL()
+	}
+	apiURL := baseURL + "/api/public/v1/auth/github/callback/token"
 	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", err
@@ -315,8 +320,17 @@ func getLocalToken(githubToken string) (string, error) {
 			return "", fmt.Errorf("failed to load profile manager: %v", err)
 		}
 
-		if err := pm.Add(apiKeyInfo.APIKey, apiKeyInfo.KeyName, selectedOrg.Name); err != nil {
+		// Use the organization name from API response
+		orgName := selectedOrg.Name
+
+		if err := pm.Add("", orgName, apiKeyInfo.APIKey, ""); err != nil {
 			return "", fmt.Errorf("failed to add profile: %v", err)
+		}
+
+		// Print success message with current profile info
+		currentProfile := pm.GetCurrent()
+		if currentProfile != nil {
+			fmt.Printf("Login successful! Switched to profile: \033[32m%s\033[0m\n", pm.GetCurrentProfileID())
 		}
 	}
 

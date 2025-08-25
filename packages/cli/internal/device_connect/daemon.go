@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
+	"github.com/babelcloud/gbox/packages/cli/internal/profile"
 )
 
 // isExecutableFile checks if the given path is an executable file (not a directory)
@@ -193,8 +194,12 @@ func setupDeviceProxyEnvironment(apiKey string) []string {
 	env = append(env, "GBOX_PROVIDER_TYPE=org")
 	env = append(env, fmt.Sprintf("GBOX_API_KEY=%s", apiKey))
 
-	// Add ANDROID_DEVMGR_ENDPOINT environment variable
-	cloudEndpoint := config.GetCloudAPIURL()
+	// Add ANDROID_DEVMGR_ENDPOINT environment variable with effective base URL
+	cloudEndpoint, err := profile.GetEffectiveBaseURL()
+	if err != nil {
+		// Fallback to default if profile is not available
+		cloudEndpoint = config.GetDefaultBaseURL()
+	}
 	androidDevmgrEndpoint := fmt.Sprintf("%s/devmgr", cloudEndpoint)
 	env = append(env, fmt.Sprintf("ANDROID_DEVMGR_ENDPOINT=%s", androidDevmgrEndpoint))
 

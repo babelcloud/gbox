@@ -1,34 +1,55 @@
 package profile
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
+	"strings"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
+	"github.com/pelletier/go-toml/v2"
 )
 
-// Profile represents a configuration item
+// ProfileConfig represents the complete profile configuration
+type ProfileConfig struct {
+	Current  string             `toml:"current"`
+	Profiles map[string]Profile `toml:"profiles"`
+	Defaults ProfileDefaults    `toml:"defaults"`
+}
+
+// Profile represents a configuration profile
 type Profile struct {
-	APIKey           string `json:"api_key"`
-	Name             string `json:"name"`
-	OrganizationName string `json:"organization_name"`
-	Current          bool   `json:"current"`
+	Org     string `toml:"org"`
+	APIKey  string `toml:"key"`
+	BaseURL string `toml:"base_url,omitempty"`
+}
+
+// ProfileDefaults represents global defaults
+type ProfileDefaults struct {
+	BaseURL string `toml:"base_url,omitempty"`
 }
 
 // ProfileManager manages profile files
 type ProfileManager struct {
-	profiles []Profile
-	path     string
+	config ProfileConfig
+	path   string
 }
 
 // NewProfileManager creates a new ProfileManager
 func NewProfileManager() *ProfileManager {
 	return &ProfileManager{
-		profiles: []Profile{},
-		path:     config.GetProfilePath(),
+		config: ProfileConfig{
+			Profiles: make(map[string]Profile),
+			Defaults: ProfileDefaults{
+				BaseURL: config.GetDefaultBaseURL(),
+			},
+		},
+		path: config.GetProfilePath(),
 	}
 }
 
@@ -45,12 +66,27 @@ func (pm *ProfileManager) Load() error {
 	}
 
 	if len(data) == 0 {
-		pm.profiles = []Profile{}
+		pm.config = ProfileConfig{
+			Profiles: make(map[string]Profile),
+			Defaults: ProfileDefaults{
+				BaseURL: config.GetDefaultBaseURL(),
+			},
+		}
 		return nil
 	}
 
-	if err := json.Unmarshal(data, &pm.profiles); err != nil {
+	if err := toml.Unmarshal(data, &pm.config); err != nil {
 		return fmt.Errorf("failed to parse profile file: %v", err)
+	}
+
+	// Initialize profiles map if it's nil
+	if pm.config.Profiles == nil {
+		pm.config.Profiles = make(map[string]Profile)
+	}
+
+	// Set default base URL if not set
+	if pm.config.Defaults.BaseURL == "" {
+		pm.config.Defaults.BaseURL = config.GetDefaultBaseURL()
 	}
 
 	return nil
@@ -62,7 +98,7 @@ func (pm *ProfileManager) Save() error {
 		return fmt.Errorf("failed to create config directory: %v", err)
 	}
 
-	data, err := json.MarshalIndent(pm.profiles, "", "  ")
+	data, err := toml.Marshal(pm.config)
 	if err != nil {
 		return fmt.Errorf("failed to serialize profile data: %v", err)
 	}
@@ -75,119 +111,265 @@ func (pm *ProfileManager) Save() error {
 }
 
 // List lists all profiles
-func (pm *ProfileManager) List() {
-	if len(pm.profiles) == 0 {
-		fmt.Println("No profiles found")
+func (pm *ProfileManager) List(format string) {
+	if len(pm.config.Profiles) == 0 {
+		if format == "json" {
+			fmt.Println("[]")
+		} else {
+			fmt.Println("No profiles found")
+		}
 		return
 	}
 
-	fmt.Println("Profiles:")
-	fmt.Println("--------")
-	for i, profile := range pm.profiles {
-		current := ""
-		if profile.Current {
-			current = " (*)"
+	// Handle JSON format
+	if format == "json" {
+		pm.listJSON()
+		return
+	}
+
+	// Default to table format
+	pm.listTable()
+}
+
+// listTable displays profiles in table format
+func (pm *ProfileManager) listTable() {
+	// Check if any profile has a non-default base URL
+	showBaseURL := false
+	for _, profile := range pm.config.Profiles {
+		if profile.BaseURL != "" && profile.BaseURL != pm.config.Defaults.BaseURL {
+			showBaseURL = true
+			break
 		}
-		fmt.Printf("%d. %s - %s%s\n", i+1, profile.Name, profile.OrganizationName, current)
+	}
+
+	// Calculate column widths based on content
+	maxIDLen := 2      // "ID" header
+	maxKeyLen := 3     // "Key" header
+	maxOrgLen := 12    // "Organization" header
+	maxBaseURLLen := 8 // "Base URL" header
+
+	for id, profile := range pm.config.Profiles {
+		// Add arrow to current profile ID for width calculation
+		displayID := id
+		if id == pm.config.Current {
+			displayID = "→ " + id
+		}
+		if len(displayID) > maxIDLen {
+			maxIDLen = len(displayID)
+		}
+
+		// Calculate masked key width
+		maskedKey := pm.GetMaskedAPIKey(profile.APIKey)
+		if len(maskedKey) > maxKeyLen {
+			maxKeyLen = len(maskedKey)
+		}
+
+		if len(profile.Org) > maxOrgLen {
+			maxOrgLen = len(profile.Org)
+		}
+		if showBaseURL {
+			baseURL := profile.BaseURL
+			if baseURL == "" {
+				baseURL = pm.config.Defaults.BaseURL + " (default)"
+			}
+			if len(baseURL) > maxBaseURLLen {
+				maxBaseURLLen = len(baseURL)
+			}
+		}
+	}
+
+	// Add some padding
+	maxIDLen += 2
+	maxKeyLen += 2
+	maxOrgLen += 2
+	maxBaseURLLen += 2
+
+	// Print header based on whether base URL column is needed
+	if showBaseURL {
+		fmt.Printf("  %-*s %-*s %-*s %-*s\n", maxIDLen-2, "ID", maxKeyLen, "Key", maxOrgLen, "Organization", maxBaseURLLen, "Base URL")
+		fmt.Println("  " + strings.Repeat("-", maxIDLen+maxKeyLen+maxOrgLen+maxBaseURLLen))
+	} else {
+		fmt.Printf("  %-*s %-*s %-*s\n", maxIDLen-2, "ID", maxKeyLen, "Key", maxOrgLen, "Organization")
+		fmt.Println("  " + strings.Repeat("-", maxIDLen+maxKeyLen+maxOrgLen-1))
+	}
+
+	// Print profiles
+	for id, profile := range pm.config.Profiles {
+		isCurrent := id == pm.config.Current
+
+		// Get masked key
+		maskedKey := pm.GetMaskedAPIKey(profile.APIKey)
+
+		if showBaseURL {
+			baseURL := profile.BaseURL
+			if baseURL == "" {
+				baseURL = pm.config.Defaults.BaseURL + " (default)"
+			}
+			if isCurrent {
+				fmt.Print("\033[32m→ ") // Color the arrow and space
+				fmt.Printf("\033[32m%-*s\033[0m %-*s %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.Org, maxBaseURLLen, baseURL)
+			} else {
+				fmt.Printf("  %-*s %-*s %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.Org, maxBaseURLLen, baseURL)
+			}
+		} else {
+			if isCurrent {
+				fmt.Print("\033[32m→ ") // Color the arrow and space
+				fmt.Printf("\033[32m%-*s\033[0m %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.Org)
+			} else {
+				fmt.Printf("  %-*s %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.Org)
+			}
+		}
 	}
 }
 
 // Add adds a new profile
-func (pm *ProfileManager) Add(apiKey, name, organizationName string) error {
-	// Check if the same profile already exists
-	for _, profile := range pm.profiles {
-		if profile.APIKey == apiKey && profile.Name == name && profile.OrganizationName == organizationName {
-			return fmt.Errorf("same profile already exists")
+func (pm *ProfileManager) Add(id, org, key, baseURL string) error {
+	// Determine base URL with priority: GBOX_BASE_URL > provided baseURL > default
+	if baseURL == "" {
+		baseURL = os.Getenv("GBOX_BASE_URL")
+	}
+	if baseURL == "" {
+		baseURL = config.GetDefaultBaseURL()
+	}
+
+	// Store the effective base URL for this profile
+	effectiveBaseURL := baseURL
+
+	// Try to get org name from API if not provided
+	if org == "" {
+		orgName, err := pm.getOrgNameFromAPI(key, effectiveBaseURL)
+		if err != nil {
+			return fmt.Errorf("failed to validate API key and get organization info: %v", err)
+		}
+		org = orgName
+	}
+
+	// Generate ID if not provided
+	if id == "" {
+		// Check if base URL indicates a specific environment
+		if strings.Contains(effectiveBaseURL, "staging") {
+			id = "staging"
+		} else if strings.Contains(effectiveBaseURL, "localhost") || strings.Contains(effectiveBaseURL, "127.0.0.1") {
+			id = "local"
+		} else if effectiveBaseURL == config.GetDefaultBaseURL() {
+			id = "default"
+		} else {
+			// For other URLs, use the hostname
+			u, err := url.Parse(effectiveBaseURL)
+			if err == nil && u.Host != "" {
+				id = normalizeID(u.Host)
+			} else {
+				id = normalizeID(effectiveBaseURL)
+			}
+		}
+	} else {
+		// Normalize the provided ID
+		id = normalizeID(id)
+	}
+
+	// Ensure unique ID
+	originalID := id
+	counter := 1
+	for {
+		if _, exists := pm.config.Profiles[id]; !exists {
+			break
+		}
+		id = fmt.Sprintf("%s_%d", originalID, counter)
+		counter++
+	}
+
+	// Check if profile with same org and base URL already exists (for override)
+	encodedKey := base64.StdEncoding.EncodeToString([]byte(key))
+	var existingProfileID string
+	var duplicateAPIKeyID string
+
+	// First pass: check for org and base URL combination
+	for existingID, existingProfile := range pm.config.Profiles {
+		if existingProfile.Org == org {
+			existingBaseURL := existingProfile.BaseURL
+			if existingBaseURL == "" {
+				existingBaseURL = pm.config.Defaults.BaseURL
+			}
+			if existingBaseURL == baseURL {
+				existingProfileID = existingID
+				break
+			}
 		}
 	}
 
-	// Clear current flag from all profiles
-	for i := range pm.profiles {
-		pm.profiles[i].Current = false
+	// Second pass: check for duplicate API key only if no org/base_url match found
+	if existingProfileID == "" {
+		for existingID, existingProfile := range pm.config.Profiles {
+			if existingProfile.APIKey == encodedKey {
+				duplicateAPIKeyID = existingID
+				break
+			}
+		}
 	}
 
-	// Add new profile and set as current
-	newProfile := Profile{
-		APIKey:           apiKey,
-		Name:             name,
-		OrganizationName: organizationName,
-		Current:          true,
+	// If we found a profile with the same API key, use it for override (update org info)
+	if existingProfileID == "" && duplicateAPIKeyID != "" {
+		existingProfileID = duplicateAPIKeyID
 	}
 
-	pm.profiles = append(pm.profiles, newProfile)
+	// Create profile, always store the effective base URL
+	profile := Profile{
+		Org:    org,
+		APIKey: encodedKey,
+	}
+
+	// Always store the effective base URL in the profile
+	profile.BaseURL = effectiveBaseURL
+
+	// Override existing profile if same org and base URL combination exists
+	if existingProfileID != "" {
+		pm.config.Profiles[existingProfileID] = profile
+		// Always set as current when overriding
+		pm.config.Current = existingProfileID
+	} else {
+		// Add new profile
+		pm.config.Profiles[id] = profile
+		// Always set as current for new profile
+		pm.config.Current = id
+	}
 
 	return pm.Save()
 }
 
 // Use sets the current profile
-func (pm *ProfileManager) Use(index int) error {
-	if len(pm.profiles) == 0 {
+func (pm *ProfileManager) Use(id string) error {
+	if len(pm.config.Profiles) == 0 {
 		return fmt.Errorf("no profiles available, please add a profile first")
 	}
 
-	// If index is 0, show selection menu
-	if index == 0 {
-		fmt.Println("Available Profiles:")
-		fmt.Println("------------------")
-		for i, profile := range pm.profiles {
-			current := ""
-			if profile.Current {
-				current = " (*)"
-			}
-			fmt.Printf("%d. %s - %s%s\n", i+1, profile.Name, profile.OrganizationName, current)
-		}
-		fmt.Print("\nPlease select a profile (enter number): ")
-
-		var input string
-		fmt.Scanln(&input)
-
-		var err error
-		index, err = strconv.Atoi(input)
-		if err != nil {
-			return fmt.Errorf("invalid input: %s", input)
-		}
+	// Check if profile exists
+	if _, exists := pm.config.Profiles[id]; !exists {
+		return fmt.Errorf("profile '%s' not found", id)
 	}
 
-	if index < 1 || index > len(pm.profiles) {
-		return fmt.Errorf("invalid profile index: %d", index)
-	}
-
-	// Clear current flag from all profiles
-	for i := range pm.profiles {
-		pm.profiles[i].Current = false
-	}
-
-	// Set specified profile as current
-	pm.profiles[index-1].Current = true
-
+	pm.config.Current = id
 	return pm.Save()
 }
 
 // Remove removes the specified profile
-func (pm *ProfileManager) Remove(index int) error {
-	if index < 1 || index > len(pm.profiles) {
-		return fmt.Errorf("invalid profile index: %d", index)
+func (pm *ProfileManager) Remove(id string) error {
+	if _, exists := pm.config.Profiles[id]; !exists {
+		return fmt.Errorf("profile '%s' not found", id)
 	}
 
 	// Check if trying to delete current profile
-	if pm.profiles[index-1].Current && len(pm.profiles) > 1 {
+	if id == pm.config.Current && len(pm.config.Profiles) > 1 {
 		return fmt.Errorf("cannot delete the currently active profile, please switch to another profile first")
 	}
 
 	// Remove specified profile
-	pm.profiles = append(pm.profiles[:index-1], pm.profiles[index:]...)
+	delete(pm.config.Profiles, id)
 
 	// If there are still profiles after deletion and no current profile, set the first one as current
-	if len(pm.profiles) > 0 {
-		hasCurrent := false
-		for _, profile := range pm.profiles {
-			if profile.Current {
-				hasCurrent = true
-				break
-			}
-		}
-		if !hasCurrent {
-			pm.profiles[0].Current = true
+	if len(pm.config.Profiles) > 0 && pm.config.Current == "" {
+		for existingID := range pm.config.Profiles {
+			pm.config.Current = existingID
+			break
 		}
 	}
 
@@ -196,20 +378,30 @@ func (pm *ProfileManager) Remove(index int) error {
 
 // GetCurrent gets the current profile
 func (pm *ProfileManager) GetCurrent() *Profile {
-	for _, profile := range pm.profiles {
-		if profile.Current {
-			return &profile
-		}
+	if pm.config.Current == "" {
+		return nil
+	}
+
+	if profile, exists := pm.config.Profiles[pm.config.Current]; exists {
+		return &profile
+	}
+	return nil
+}
+
+// GetProfile gets a specific profile by ID
+func (pm *ProfileManager) GetProfile(id string) *Profile {
+	if profile, exists := pm.config.Profiles[id]; exists {
+		return &profile
 	}
 	return nil
 }
 
 // GetProfiles returns all profiles
-func (pm *ProfileManager) GetProfiles() []Profile {
-	return pm.profiles
+func (pm *ProfileManager) GetProfiles() map[string]Profile {
+	return pm.config.Profiles
 }
 
-// GetCurrentAPIKey gets the API key from the current profile
+// GetCurrentAPIKey gets the decoded API key from the current profile
 func GetCurrentAPIKey() (string, error) {
 	pm := NewProfileManager()
 	if err := pm.Load(); err != nil {
@@ -225,5 +417,209 @@ func GetCurrentAPIKey() (string, error) {
 		return "", fmt.Errorf("current profile has no API key. Please run 'gbox profile add' to configure a profile first")
 	}
 
-	return current.APIKey, nil
+	return pm.DecodeAPIKey(current.APIKey)
+}
+
+// DecodeAPIKey decodes a base64 encoded API key
+func (pm *ProfileManager) DecodeAPIKey(encodedKey string) (string, error) {
+	if encodedKey == "" {
+		return "", fmt.Errorf("API key is empty")
+	}
+
+	decodedBytes, err := base64.StdEncoding.DecodeString(encodedKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode API key: %v", err)
+	}
+
+	return string(decodedBytes), nil
+}
+
+// GetMaskedAPIKey gets the masked version of an API key
+func (pm *ProfileManager) GetMaskedAPIKey(encodedKey string) string {
+	if encodedKey == "" {
+		return "***"
+	}
+
+	decodedKey, err := pm.DecodeAPIKey(encodedKey)
+	if err != nil {
+		return "***"
+	}
+
+	return maskAPIKey(decodedKey)
+}
+
+// GetCurrentProfileID gets the current profile ID
+func (pm *ProfileManager) GetCurrentProfileID() string {
+	return pm.config.Current
+}
+
+// GetDefaultBaseURL gets the default base URL
+func (pm *ProfileManager) GetDefaultBaseURL() string {
+	return pm.config.Defaults.BaseURL
+}
+
+// GetCurrentBaseURL gets the base URL from the current profile
+func GetCurrentBaseURL() (string, error) {
+	pm := NewProfileManager()
+	if err := pm.Load(); err != nil {
+		return "", fmt.Errorf("failed to load profiles: %v", err)
+	}
+
+	current := pm.GetCurrent()
+	if current == nil {
+		return "", fmt.Errorf("no current profile set. Please run 'gbox profile use' to set a current profile first")
+	}
+
+	if current.BaseURL == "" {
+		return "", fmt.Errorf("current profile has no base URL configured")
+	}
+
+	return current.BaseURL, nil
+}
+
+// GetEffectiveBaseURL gets the effective base URL with priority: GBOX_BASE_URL > profile > default
+func GetEffectiveBaseURL() (string, error) {
+	// First priority: GBOX_BASE_URL environment variable
+	if envURL := os.Getenv("GBOX_BASE_URL"); envURL != "" {
+		return envURL, nil
+	}
+
+	// Second priority: current profile's base URL
+	pm := NewProfileManager()
+	if err := pm.Load(); err != nil {
+		return "", fmt.Errorf("failed to load profiles: %v", err)
+	}
+
+	current := pm.GetCurrent()
+	if current != nil && current.BaseURL != "" {
+		return current.BaseURL, nil
+	}
+
+	// Third priority: default base URL
+	return config.GetDefaultBaseURL(), nil
+}
+
+// normalizeID normalizes an ID string
+func normalizeID(id string) string {
+	// Convert to lowercase and replace spaces/underscores with hyphens
+	normalized := strings.ToLower(id)
+	normalized = strings.ReplaceAll(normalized, " ", "-")
+	normalized = strings.ReplaceAll(normalized, "_", "-")
+
+	// Remove special characters
+	var result strings.Builder
+	for _, char := range normalized {
+		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '-' {
+			result.WriteRune(char)
+		}
+	}
+
+	normalized = result.String()
+
+	// Ensure it's not empty
+	if normalized == "" {
+		normalized = "profile"
+	}
+
+	return normalized
+}
+
+// listJSON displays profiles in JSON format
+func (pm *ProfileManager) listJSON() {
+	// Create a slice to hold profile data
+	profiles := make([]map[string]interface{}, 0, len(pm.config.Profiles))
+
+	for id, profile := range pm.config.Profiles {
+		profileData := map[string]interface{}{
+			"id":      id,
+			"org":     profile.Org,
+			"key":     pm.GetMaskedAPIKey(profile.APIKey),
+			"current": id == pm.config.Current,
+		}
+
+		// Only include base_url if it's different from default
+		if profile.BaseURL != "" && profile.BaseURL != pm.config.Defaults.BaseURL {
+			profileData["base_url"] = profile.BaseURL
+		}
+
+		profiles = append(profiles, profileData)
+	}
+
+	// Output JSON
+	fmt.Printf("%s\n", toJSON(profiles))
+}
+
+// maskAPIKey masks an API key for display
+func maskAPIKey(key string) string {
+	if len(key) <= 8 {
+		return "***"
+	}
+	return key[:4] + "****" + key[len(key)-4:]
+}
+
+// toJSON converts data to JSON string
+func toJSON(data interface{}) string {
+	jsonData, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return "{}"
+	}
+	return string(jsonData)
+}
+
+// getOrgNameFromAPI tries to get organization name from API using the provided API key
+// Returns org name and error. If error is nil, the API key is valid.
+func (pm *ProfileManager) getOrgNameFromAPI(apiKey, baseURL string) (string, error) {
+	// API key from command line is plain text, not base64 encoded
+	// Make HTTP request to get organization info
+	client := &http.Client{}
+	// Ensure baseURL doesn't end with slash to avoid double slashes
+	cleanBaseURL := strings.TrimSuffix(baseURL, "/")
+	req, err := http.NewRequest("GET", cleanBaseURL+"/api/v1/org", nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %v", err)
+	}
+
+	// Set API key in header (plain text)
+	req.Header.Set("X-API-Key", apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return "", fmt.Errorf("invalid API key")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Read response body for debugging
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	// Debug: print response body
+	if os.Getenv("DEBUG") == "true" {
+		fmt.Fprintf(os.Stderr, "Response body: %s\n", string(body))
+	}
+
+	// Parse response
+	var orgInfo struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(body, &orgInfo); err != nil {
+		return "", fmt.Errorf("failed to parse response: %v, body: %s", err, string(body))
+	}
+
+	if orgInfo.Name == "" {
+		return "", fmt.Errorf("organization name is empty")
+	}
+
+	return orgInfo.Name, nil
 }
