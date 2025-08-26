@@ -10,6 +10,8 @@ import (
 	sdk "github.com/babelcloud/gbox-sdk-go"
 	"github.com/babelcloud/gbox-sdk-go/option"
 	"github.com/babelcloud/gbox/packages/cli/config"
+	"github.com/babelcloud/gbox/packages/cli/internal/profile"
+	"github.com/pelletier/go-toml/v2"
 )
 
 // BoxInfo represents a simplified box information structure for CLI usage
@@ -22,14 +24,13 @@ type BoxInfo struct {
 	// Add other fields as needed
 }
 
-// profile represents a single entry in the profile file.
+// profileEntry represents a single entry in the profile file.
 // We keep the structure in sync with the CLI `profile` command.
 // Only the fields we care about are defined.
-type profile struct {
-	APIKey           string `json:"api_key"`
-	Name             string `json:"name"`
-	OrganizationName string `json:"organization_name"`
-	Current          bool   `json:"current"`
+type profileEntry struct {
+	APIKey  string `toml:"key"`
+	Org     string `toml:"org"`
+	BaseURL string `toml:"base_url,omitempty"`
 }
 
 // NewClientFromProfile reads the profile file, selects the profile with
@@ -53,30 +54,51 @@ func NewClientFromProfile() (*sdk.Client, error) {
 		return nil, fmt.Errorf("failed to read profile file (%s): %w", profilePath, err)
 	}
 
-	var profiles []profile
-	if err := json.Unmarshal(data, &profiles); err != nil {
+	// Parse TOML format
+	var profileConfig struct {
+		Current  string                  `toml:"current"`
+		Profiles map[string]profileEntry `toml:"profiles"`
+	}
+
+	if err := toml.Unmarshal(data, &profileConfig); err != nil {
 		return nil, fmt.Errorf("failed to parse profile file: %w", err)
 	}
 
-	var current *profile
-	for i, p := range profiles {
-		if p.Current {
-			current = &profiles[i]
-			break
-		}
+	if profileConfig.Current == "" {
+		return nil, fmt.Errorf("no current profile set")
 	}
 
-	if current == nil {
-		return nil, fmt.Errorf("no current profile found in %s", profilePath)
+	current, exists := profileConfig.Profiles[profileConfig.Current]
+	if !exists {
+		return nil, fmt.Errorf("current profile '%s' not found", profileConfig.Current)
 	}
 
 	if current.APIKey == "" {
 		return nil, fmt.Errorf("current profile does not hold an api_key")
 	}
 
-	base := strings.TrimSuffix(config.GetCloudAPIURL(), "/") + "/api/v1"
+	// Create profile manager to decode API key
+	pm := profile.NewProfileManager()
+	decodedKey, err := pm.DecodeAPIKey(current.APIKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode API key: %w", err)
+	}
+
+	// Use profile's base URL if available, otherwise fall back to config
+	baseURL := current.BaseURL
+	if baseURL == "" {
+		baseURL = config.GetDefaultBaseURL()
+	}
+	base := strings.TrimSuffix(baseURL, "/") + "/api/v1"
+
+	// Debug output
+	if os.Getenv("DEBUG") == "true" {
+		fmt.Fprintf(os.Stderr, "Encoded API key: %s\n", current.APIKey)
+		fmt.Fprintf(os.Stderr, "Decoded API key: %s\n", decodedKey)
+		fmt.Fprintf(os.Stderr, "Base URL: %s\n", base)
+	}
 	client := sdk.NewClient(
-		option.WithAPIKey(current.APIKey),
+		option.WithAPIKey(decodedKey),
 		option.WithBaseURL(base),
 	)
 	return &client, nil

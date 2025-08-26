@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/babelcloud/gbox/packages/cli/config"
+	"github.com/babelcloud/gbox/packages/cli/internal/profile"
 	"github.com/spf13/cobra"
 )
 
@@ -97,8 +97,13 @@ func runCopyCommand(opts *BoxCpOptions) error {
 	src := opts.Source
 	dst := opts.Destination
 	debugEnabled := os.Getenv("DEBUG") == "true"
-	apiBase := config.GetCloudAPIURL()
-	apiURL := fmt.Sprintf("%s/api/v1", strings.TrimSuffix(apiBase, "/"))
+
+	// Get effective base URL for API calls
+	effectiveBaseURL, err := profile.GetEffectiveBaseURL()
+	if err != nil {
+		return fmt.Errorf("failed to get effective base URL: %v", err)
+	}
+	apiURL := fmt.Sprintf("%s/api/v1", strings.TrimSuffix(effectiveBaseURL, "/"))
 
 	// Debug log
 	debug := func(msg string) {

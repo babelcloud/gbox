@@ -31,11 +31,7 @@ func NewBoxCommand() *cobra.Command {
 			if current == nil {
 				fmt.Fprintln(os.Stderr, "No profile selected. Use 'gbox profile use' to select one.")
 			} else {
-				if current.OrganizationName == "" {
-					fmt.Fprintf(os.Stderr, "Using profile: %s\n", current.Name)
-				} else {
-					fmt.Fprintf(os.Stderr, "Using profile: %s (organization: %s)\n", current.Name, current.OrganizationName)
-				}
+				fmt.Fprintf(os.Stderr, "Using profile: %s\n", pm.GetCurrentProfileID())
 			}
 			return nil
 		},
