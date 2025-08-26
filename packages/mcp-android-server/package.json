@@ -1,6 +1,6 @@
 {
   "name": "@gbox.ai/mcp-android-server",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "MCP server exposing Gbox Android control tools via Model Context Protocol",
   "homepage": "https://gbox.ai",
   "author": "Gbox Team",
@@ -52,6 +52,9 @@
     "tsup": "^8.4.0",
     "tsx": "^4.7.1",
     "typescript": "^5.2.0"
+  },
+  "engines": {
+    "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
   },
   "files": [
     "dist/**/*",
