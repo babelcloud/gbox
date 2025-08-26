@@ -5,7 +5,7 @@ const tar = require('tar');
 const unzipper = require('unzipper');
 
 const packageJson = require('./package.json');
-const releaseVersion = '0.1.0';
+const releaseVersion = '0.1.7';
 
 async function install() {
   const repo = packageJson.repository.url.match(/github\.com\/(.*)\.git/)[1];

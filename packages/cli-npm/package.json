@@ -1,9 +1,9 @@
 {
   "name": "@gbox.ai/cli",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Cross-platform CLI for managing GBOX sandboxes",
   "homepage": "https://gbox.ai",
-  "author": "Gbox Team",
+  "author": "GBOX Team",
   "license": "MIT",
   "bin": {
     "gbox": "cli.js"
