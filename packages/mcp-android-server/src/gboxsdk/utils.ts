@@ -394,16 +394,6 @@ export async function startLocalScrcpy(
           }
         }, 30000); // 30 second timeout
 
-        gboxCliProcess.stdout.on("data", (data: any) => {
-          const output = data.toString();
-          logger.info("gbox cli: " + output);
-          if (output.includes("ws dial success")) {
-            wsDialSuccess = true;
-            clearTimeout(timeout);
-            resolve();
-          }
-        });
-
         gboxCliProcess.stderr.on("data", (data: any) => {
           const output = data.toString();
           logger.info("gbox cli stderr: " + output);
