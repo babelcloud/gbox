@@ -2,7 +2,7 @@ import { z } from "zod";
 import { CreateAndroid } from "gbox-sdk";
 import { gboxSDK } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
-import { openUrlInBrowser } from "../gboxsdk/utils.js";
+import { startLocalScrcpy } from "../gboxsdk/utils.js";
 
 export const CREATE_ANDROID_BOX_TOOL = "create_android_box";
 export const CREATE_ANDROID_BOX_DESCRIPTION =
@@ -73,11 +73,19 @@ export function handleCreateAndroidBox(logger: MCPLogger) {
         const box = await gboxSDK.get(created.data.id);
         if (box) {
           const liveViewUrl = await box.liveView();
-          openUrlInBrowser(liveViewUrl.url);
-          await logger.info("Live view opened successfully", {
-            boxId: created.data.id,
-            url: liveViewUrl.url,
-          });
+          // 启动本地 scrcpy 而不是打开浏览器
+          const scrcpyResult = await startLocalScrcpy(created.data.id, logger);
+          if (scrcpyResult.success) {
+            await logger.info("Local scrcpy started successfully", {
+              boxId: created.data.id,
+              message: scrcpyResult.message,
+            });
+          } else {
+            await logger.warning("Local scrcpy started failed", {
+              boxId: created.data.id,
+              message: scrcpyResult.message,
+            });
+          }
           result.success = true;
           result.boxId = created.data.id;
           result.liveViewUrl = liveViewUrl.url;
