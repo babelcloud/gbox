@@ -50,9 +50,7 @@ func calculateSHA256(filePath string) (string, error) {
 
 
 // checkRemoteVersionAndCompare checks if remote version is different from local
-func checkRemoteVersionAndCompare(localBinaryPath string) (bool, error) {
-	fmt.Println("检查远程版本并比对SHA256...")
-	
+func checkRemoteVersionAndCompare(localBinaryPath string, debug bool) (bool, error) {
 	// Get the asset name for current platform
 	assetName := getAssetNameForPlatform()
 	deviceProxyHome := config.GetDeviceProxyHome()
@@ -60,17 +58,14 @@ func checkRemoteVersionAndCompare(localBinaryPath string) (bool, error) {
 	
 	// Check if both local files exist
 	if _, err := os.Stat(localArchivePath); err != nil {
-		fmt.Println("本地压缩包不存在，需要下载")
 		return true, nil
 	}
 	
 	if _, err := os.Stat(localBinaryPath); err != nil {
-		fmt.Println("本地二进制文件不存在，需要下载")
 		return true, nil
 	}
 	
 	// Both files exist, check SHA256
-	fmt.Println("本地文件已存在，开始校验SHA256...")
 	
 	// Get GitHub token
 	token := config.GetGithubToken()
@@ -78,50 +73,48 @@ func checkRemoteVersionAndCompare(localBinaryPath string) (bool, error) {
 	// Try to get latest release from public repository first
 	release, err := getLatestRelease(deviceProxyPublicRepo, "")
 	if err != nil {
-		fmt.Printf("从公共仓库获取最新版本失败: %v，尝试私有仓库\n", err)
+		if debug {
+			fmt.Printf("Failed to get latest version from public repository: %v, trying private repository\n", err)
+		}
 		if token != "" {
 			release, err = getLatestRelease(deviceProxyRepo, token)
 			if err != nil {
-				return false, fmt.Errorf("从私有仓库获取最新版本也失败: %v", err)
+				return false, fmt.Errorf("Failed to get latest version from private repository: %v", err)
 			}
 		} else {
-			return false, fmt.Errorf("无法获取远程版本信息: %v", err)
+			return false, fmt.Errorf("Unable to get remote version information: %v", err)
 		}
 	}
 	
 	// Find device-proxy asset for current platform
 	assetURL, _, err := findDeviceProxyAssetForPlatform(release, token)
 	if err != nil {
-		return false, fmt.Errorf("找不到平台对应的资源: %v", err)
+		return false, fmt.Errorf("Cannot find platform-specific asset: %v", err)
 	}
 	
 	// Try to get remote SHA256 from SHA256 file first (more efficient)
-	fmt.Println("尝试从SHA256文件获取远程压缩包哈希值...")
 	remoteSHA256, err := getRemoteSHA256FromFile(release, assetName, token)
 	if err != nil {
-		fmt.Printf("无法从SHA256文件获取哈希值: %v，回退到下载压缩包方式\n", err)
+		if debug {
+			fmt.Printf("Cannot get hash from SHA256 file: %v, falling back to downloading archive\n", err)
+		}
 		// Fallback to downloading the archive for SHA256 calculation
 		remoteSHA256, err = getRemoteSHA256FromArchive(assetURL, assetName, token)
 		if err != nil {
-			return false, fmt.Errorf("获取远程压缩包SHA256失败: %v", err)
+			return false, fmt.Errorf("Failed to get remote archive SHA256: %v", err)
 		}
-	} else {
-		fmt.Printf("成功从SHA256文件获取远程压缩包SHA256: %s\n", remoteSHA256)
 	}
 	
 	// Calculate local archive SHA256
 	localSHA256, err := calculateSHA256(localArchivePath)
 	if err != nil {
-		return false, fmt.Errorf("计算本地压缩包SHA256失败: %v", err)
+		return false, fmt.Errorf("Failed to calculate local archive SHA256: %v", err)
 	}
-	fmt.Printf("本地压缩包SHA256: %s\n", localSHA256)
 	
 	// Compare SHA256
 	if remoteSHA256 == localSHA256 {
-		fmt.Println("SHA256校验通过，本地版本是最新的")
 		return false, nil
 	} else {
-		fmt.Println("SHA256校验失败，远程版本已更新")
 		return true, nil
 	}
 }
@@ -141,23 +134,21 @@ func getRemoteSHA256FromArchive(assetURL, assetName, token string) (string, erro
 	// Download remote archive to temp to get SHA256
 	tempDir, err := os.MkdirTemp("", "gbox-device-proxy-temp-*")
 	if err != nil {
-		return "", fmt.Errorf("创建临时目录失败: %v", err)
+		return "", fmt.Errorf("Failed to create temporary directory: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
 	
 	tempArchivePath := filepath.Join(tempDir, assetName)
-	fmt.Printf("下载远程压缩包到临时位置进行SHA256校验: %s\n", tempArchivePath)
 	
 	if err := downloadFile(assetURL, tempArchivePath, token); err != nil {
-		return "", fmt.Errorf("下载远程压缩包失败: %v", err)
+		return "", fmt.Errorf("Failed to download remote archive: %v", err)
 	}
 	
 	// Calculate remote archive SHA256
 	remoteSHA256, err := calculateSHA256(tempArchivePath)
 	if err != nil {
-		return "", fmt.Errorf("计算远程压缩包SHA256失败: %v", err)
+		return "", fmt.Errorf("Failed to calculate remote archive SHA256: %v", err)
 	}
-	fmt.Printf("远程压缩包SHA256: %s\n", remoteSHA256)
 	
 	return remoteSHA256, nil
 }
@@ -237,26 +228,27 @@ func FindDeviceProxyBinary() (string, error) {
 		}
 		
 		// Check if remote version is different
-		needUpdate, err := checkRemoteVersionAndCompare(deviceProxyBinaryPath)
+		needUpdate, err := checkRemoteVersionAndCompare(deviceProxyBinaryPath, debug)
 		if err != nil {
-			fmt.Printf("检查远程版本失败: %v，使用本地版本\n", err)
 			return deviceProxyBinaryPath, nil
 		}
 		
-		if needUpdate {
-			fmt.Println("检测到远程版本更新，删除本地文件并重新下载")
-			
+		if needUpdate {			
 			// Remove local files
 			assetName := getAssetNameForPlatform()
 			localArchivePath := filepath.Join(deviceProxyHome, assetName)
 			
 			if _, err := os.Stat(localArchivePath); err == nil {
 				if err := os.Remove(localArchivePath); err != nil {
-					fmt.Printf("警告: 删除本地压缩包失败: %v\n", err)
+					if debug {
+						fmt.Printf("Warning: Failed to remove local archive: %v\n", err)
+					}
 				}
 			}
 			if err := os.Remove(deviceProxyBinaryPath); err != nil {
-				fmt.Printf("警告: 删除本地二进制文件失败: %v\n", err)
+				if debug {
+					fmt.Printf("Warning: Failed to remove local binary file: %v\n", err)
+				}
 			}
 		} else {
 			return deviceProxyBinaryPath, nil
