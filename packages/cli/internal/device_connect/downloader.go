@@ -33,6 +33,66 @@ type GitHubRelease struct {
 	} `json:"assets"`
 }
 
+// findSHA256File finds the SHA256 file for a given asset
+func findSHA256File(release *GitHubRelease, assetName string) (string, error) {
+	sha256FileName := assetName + ".sha256"
+	
+	for _, asset := range release.Assets {
+		if asset.Name == sha256FileName {
+			if asset.DownloadURL != "" {
+				return asset.DownloadURL, nil
+			}
+			if asset.URL != "" {
+				return asset.URL, nil
+			}
+		}
+	}
+	
+	return "", fmt.Errorf("SHA256 file not found for asset: %s", assetName)
+}
+
+// downloadSHA256File downloads and returns the SHA256 hash from a SHA256 file
+func downloadSHA256File(sha256URL, token string) (string, error) {
+	req, err := http.NewRequest("GET", sha256URL, nil)
+	if err != nil {
+		return "", err
+	}
+
+	if token != "" {
+		req.Header.Set("Authorization", "token "+token)
+	}
+	req.Header.Set("Accept", "text/plain")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to download SHA256 file, status: %d", resp.StatusCode)
+	}
+
+	// Read the SHA256 hash from the file
+	sha256Bytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read SHA256 file: %v", err)
+	}
+
+	// Extract the hash (format: "hash filename")
+	sha256Line := strings.TrimSpace(string(sha256Bytes))
+	parts := strings.Fields(sha256Line)
+	if len(parts) < 1 {
+		return "", fmt.Errorf("invalid SHA256 file format: %s", sha256Line)
+	}
+
+	return parts[0], nil
+}
+
 // DownloadDeviceProxy downloads the latest gbox-device-proxy binary from GitHub
 func DownloadDeviceProxy() (string, error) {
 	// Get GitHub token - try both sources
@@ -169,28 +229,28 @@ func findDeviceProxyAssetForPlatform(release *GitHubRelease, token string) (stri
 
 // downloadAndExtractBinary downloads and extracts the binary file
 func downloadAndExtractBinary(assetURL, assetName, token string) (string, error) {
-	// Create temporary directory
+	// Get device proxy home directory first
+	deviceProxyHome := config.GetDeviceProxyHome()
+	if err := os.MkdirAll(deviceProxyHome, 0755); err != nil {
+		return "", err
+	}
+
+	// Download the asset directly to device proxy home directory
+	assetPath := filepath.Join(deviceProxyHome, assetName)
+	if err := downloadFile(assetURL, assetPath, token); err != nil {
+		return "", err
+	}
+
+	// Create temporary directory for extraction
 	tempDir, err := os.MkdirTemp("", "gbox-device-proxy-*")
 	if err != nil {
 		return "", err
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Download the asset
-	assetPath := filepath.Join(tempDir, assetName)
-	if err := downloadFile(assetURL, assetPath, token); err != nil {
-		return "", err
-	}
-
 	// Extract the binary
 	binaryPath, err := extractBinary(assetPath, tempDir)
 	if err != nil {
-		return "", err
-	}
-
-	// Move binary to device proxy home directory
-	deviceProxyHome := config.GetDeviceProxyHome()
-	if err := os.MkdirAll(deviceProxyHome, 0755); err != nil {
 		return "", err
 	}
 
