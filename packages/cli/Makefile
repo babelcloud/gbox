@@ -19,8 +19,7 @@ GOARCH ?= $(shell go env GOARCH)
 LDFLAGS := -ldflags "-X $(MODULE_PREFIX)/packages/cli/internal/version.Version=$(VERSION) \
                      -X $(MODULE_PREFIX)/packages/cli/internal/version.BuildTime=$(BUILD_TIME) \
                      -X $(MODULE_PREFIX)/packages/cli/internal/version.CommitID=$(COMMIT_ID) \
-					 -X $(MODULE_PREFIX)/packages/cli/config.githubClientSecret=$(GBOX_GITHUB_CLIENT_SECRET) \
-					 -X $(MODULE_PREFIX)/packages/cli/config.githubToken=$(GITHUB_TOKEN)"
+					 -X $(MODULE_PREFIX)/packages/cli/config.githubClientSecret=$(GBOX_GITHUB_CLIENT_SECRET) 
 
 # Supported platforms
 PLATFORMS := linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64 windows-arm64

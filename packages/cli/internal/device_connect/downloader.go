@@ -95,8 +95,6 @@ func downloadSHA256File(sha256URL, token string) (string, error) {
 
 // DownloadDeviceProxy downloads the latest gbox-device-proxy binary from GitHub
 func DownloadDeviceProxy() (string, error) {
-	// Get GitHub token - try both sources
-	token := config.GetGithubToken()
 
 	// Try to download from public repository first (no token required)
 	release, err := getLatestRelease(deviceProxyPublicRepo, "")
@@ -111,28 +109,7 @@ func DownloadDeviceProxy() (string, error) {
 		}
 	}
 
-	// If public repository fails and we have a token, try private repository
-	if token != "" {
-		fmt.Println("Trying private repository with authentication...")
-		release, err = getLatestRelease(deviceProxyRepo, token)
-		if err != nil {
-			return "", fmt.Errorf("failed to get latest release from private repository: %v", err)
-		}
-
-		assetURL, assetName, err := findDeviceProxyAssetForPlatform(release, token)
-		if err != nil {
-			return "", fmt.Errorf("failed to find asset for platform in private repository: %v", err)
-		}
-
-		binaryPath, err := downloadAndExtractBinaryWithRetry(assetURL, assetName, token)
-		if err != nil {
-			return "", fmt.Errorf("failed to download from private repository: %v", err)
-		}
-
-		return binaryPath, nil
-	}
-
-	return "", fmt.Errorf("failed to download device-proxy: public repository unavailable and no authentication token provided")
+	return "", fmt.Errorf("failed to download device proxy binary")
 }
 
 // getLatestRelease fetches the latest release from GitHub
