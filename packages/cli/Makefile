@@ -88,7 +88,7 @@ run: ## Run the application with PROJECT_ROOT environment variable (Usage: make 
 	go run main.go $(filter-out $@,$(MAKECMDGOALS))
 
 test: ## Run tests
-	go test ./cmd -v
+	go test ./... -v
 
 # Build binaries for all supported platforms
 binary-all: ## Build binaries for all supported platforms

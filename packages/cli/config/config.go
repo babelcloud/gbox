@@ -32,7 +32,6 @@ func init() {
 	v.SetDefault("profile.path", "")
 
 	v.SetDefault("github.client_secret", "")
-	v.SetDefault("github.token", "")
 
 	// Environment variables
 	v.AutomaticEnv()
