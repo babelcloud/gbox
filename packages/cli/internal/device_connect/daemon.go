@@ -1,10 +1,7 @@
 package device_connect
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,22 +27,6 @@ func isExecutableFile(path string) bool {
 	// Check if it has execute permissions
 	mode := info.Mode()
 	return mode&0111 != 0 // Check if any execute bit is set
-}
-
-// calculateSHA256 calculates the SHA256 hash of a file
-func calculateSHA256(filePath string) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to open file: %v", err)
-	}
-	defer file.Close()
-
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", fmt.Errorf("failed to read file: %v", err)
-	}
-
-	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // EnsureDeviceProxyRunning checks if the service is running, and starts it if not

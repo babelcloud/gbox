@@ -47,40 +47,6 @@ func TestIsExecutableFile(t *testing.T) {
 	}
 }
 
-func TestCalculateSHA256(t *testing.T) {
-	// Create a temporary file with known content
-	tempDir, err := os.MkdirTemp("", "gbox-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp directory: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	testFile := filepath.Join(tempDir, "test.txt")
-	testContent := "Hello, World!"
-	if err := os.WriteFile(testFile, []byte(testContent), 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-
-	// Calculate SHA256
-	hash, err := calculateSHA256(testFile)
-	if err != nil {
-		t.Fatalf("Failed to calculate SHA256: %v", err)
-	}
-
-	if len(hash) != 64 {
-		t.Errorf("Expected SHA256 hash to be 64 characters, got %d: %s", len(hash), hash)
-	}
-
-	// Verify it's a valid hex string
-	for _, char := range hash {
-		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f')) {
-			t.Errorf("SHA256 hash should only contain hex characters, got: %c", char)
-		}
-	}
-
-	t.Logf("SHA256 hash: %s", hash)
-}
-
 func TestFindBabelUmbrellaDir(t *testing.T) {
 	// Test with current directory (should not find babel-umbrella)
 	currentDir, err := os.Getwd()

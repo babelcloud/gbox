@@ -34,63 +34,6 @@ type GitHubRelease struct {
 	} `json:"assets"`
 }
 
-// findSHA256File finds the SHA256 file for a given asset
-func findSHA256File(release *GitHubRelease, assetName string) (string, error) {
-	sha256FileName := assetName + ".sha256"
-
-	for _, asset := range release.Assets {
-		if asset.Name == sha256FileName {
-			if asset.DownloadURL != "" {
-				return asset.DownloadURL, nil
-			}
-			if asset.URL != "" {
-				return asset.URL, nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("SHA256 file not found for asset: %s", assetName)
-}
-
-// downloadSHA256File downloads and returns the SHA256 hash from a SHA256 file
-func downloadSHA256File(sha256URL string) (string, error) {
-	req, err := http.NewRequest("GET", sha256URL, nil)
-	if err != nil {
-		return "", err
-	}
-
-	req.Header.Set("Accept", "text/plain")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to download SHA256 file, status: %d", resp.StatusCode)
-	}
-
-	// Read the SHA256 hash from the file
-	sha256Bytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read SHA256 file: %v", err)
-	}
-
-	// Extract the hash (format: "hash filename")
-	sha256Line := strings.TrimSpace(string(sha256Bytes))
-	parts := strings.Fields(sha256Line)
-	if len(parts) < 1 {
-		return "", fmt.Errorf("invalid SHA256 file format: %s", sha256Line)
-	}
-
-	return parts[0], nil
-}
-
 // VersionInfo represents version information
 type VersionInfo struct {
 	TagName    string `json:"tag_name"`

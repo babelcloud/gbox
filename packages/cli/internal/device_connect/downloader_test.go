@@ -2,7 +2,6 @@ package device_connect
 
 import (
 	"os"
-	"path/filepath"
 	"runtime"
 	"testing"
 
@@ -52,81 +51,6 @@ func TestFindDeviceProxyAssetForPlatform(t *testing.T) {
 	}
 
 	t.Logf("Found asset: %s", assetName)
-}
-
-func TestDownloadSHA256File(t *testing.T) {
-	// First get a release and find an asset
-	release, err := getLatestRelease(deviceProxyPublicRepo)
-	if err != nil {
-		t.Fatalf("Failed to get latest release: %v", err)
-	}
-
-	_, assetName, err := findDeviceProxyAssetForPlatform(release)
-	if err != nil {
-		t.Fatalf("Failed to find device proxy asset: %v", err)
-	}
-
-	// Find the SHA256 file for this asset
-	sha256URL, err := findSHA256File(release, assetName)
-	if err != nil {
-		t.Skipf("SHA256 file not found for asset %s, skipping test: %v", assetName, err)
-	}
-
-	// Download and verify SHA256 file
-	sha256Hash, err := downloadSHA256File(sha256URL)
-	if err != nil {
-		t.Fatalf("Failed to download SHA256 file: %v", err)
-	}
-
-	if len(sha256Hash) != 64 {
-		t.Errorf("Expected SHA256 hash to be 64 characters, got %d: %s", len(sha256Hash), sha256Hash)
-	}
-
-	t.Logf("Downloaded SHA256: %s", sha256Hash)
-}
-
-func TestDownloadFile(t *testing.T) {
-	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("", "gbox-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp directory: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Test downloading a small file (we'll use the SHA256 file as it's small)
-	release, err := getLatestRelease(deviceProxyPublicRepo)
-	if err != nil {
-		t.Fatalf("Failed to get latest release: %v", err)
-	}
-
-	_, assetName, err := findDeviceProxyAssetForPlatform(release)
-	if err != nil {
-		t.Fatalf("Failed to find device proxy asset: %v", err)
-	}
-
-	sha256URL, err := findSHA256File(release, assetName)
-	if err != nil {
-		t.Skipf("SHA256 file not found for asset %s, skipping test: %v", assetName, err)
-	}
-
-	// Download the SHA256 file
-	localPath := filepath.Join(tempDir, "test.sha256")
-	err = downloadFile(sha256URL, localPath)
-	if err != nil {
-		t.Fatalf("Failed to download file: %v", err)
-	}
-
-	// Verify the file was downloaded
-	info, err := os.Stat(localPath)
-	if err != nil {
-		t.Fatalf("Failed to stat downloaded file: %v", err)
-	}
-
-	if info.Size() == 0 {
-		t.Error("Downloaded file should not be empty")
-	}
-
-	t.Logf("Successfully downloaded file: %s (%d bytes)", localPath, info.Size())
 }
 
 func TestDownloadDeviceProxyIntegration(t *testing.T) {
