@@ -3,10 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/url"
-	"os"
-	"strings"
 
 	client "github.com/babelcloud/gbox/packages/cli/internal/client"
 	"github.com/spf13/cobra"
@@ -53,15 +49,6 @@ func NewBoxListCommand() *cobra.Command {
 }
 
 func runList(opts *BoxListOptions) error {
-	// if API_ENDPOINT is explicitly set, call HTTP directly to preserve original fields (like image)
-	if base := os.Getenv("API_ENDPOINT"); base != "" {
-		boxes, err := fetchBoxesDirect(base, opts.Filters)
-		if err != nil {
-			return fmt.Errorf("API call failed: %v", err)
-		}
-		return outputBoxes(boxes, opts.OutputFormat)
-	}
-
 	// create SDK client
 	sdkClient, err := client.NewClientFromProfile()
 	if err != nil {
@@ -76,68 +63,6 @@ func runList(opts *BoxListOptions) error {
 
 	// output result
 	return printResponse(resp, opts.OutputFormat)
-}
-
-// fetchBoxesDirect calls the boxes API directly and returns the raw data slice
-func fetchBoxesDirect(base string, filters []string) ([]map[string]interface{}, error) {
-	u, err := url.Parse(strings.TrimSuffix(base, "/"))
-	if err != nil {
-		return nil, err
-	}
-	u.Path = "/api/v1/boxes"
-
-	// build query
-	q := u.Query()
-	for _, f := range filters {
-		if strings.HasPrefix(f, "label=") || strings.HasPrefix(f, "labels=") {
-			q.Add("labels", strings.TrimPrefix(strings.TrimPrefix(f, "label="), "labels="))
-		}
-		// other filters can be added similarly when needed
-	}
-	u.RawQuery = q.Encode()
-
-	resp, err := http.Get(u.String())
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected HTTP status: %s", resp.Status)
-	}
-
-	var raw struct {
-		Data []map[string]interface{} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return nil, err
-	}
-	return raw.Data, nil
-}
-
-// outputBoxes prints boxes according to output format using raw maps
-func outputBoxes(data []map[string]interface{}, format string) error {
-	if format == "json" {
-		out := map[string]interface{}{"data": data}
-		bytes, _ := json.MarshalIndent(out, "", "  ")
-		fmt.Println(string(bytes))
-		return nil
-	}
-
-	if len(data) == 0 {
-		fmt.Println("No boxes found")
-		return nil
-	}
-
-	// Define table columns
-	columns := []TableColumn{
-		{Header: "ID", Key: "id"},
-		{Header: "TYPE", Key: "type"},
-		{Header: "STATUS", Key: "status"},
-	}
-
-	renderTable(columns, data)
-	return nil
 }
 
 // printResponse handles output based on the selected format

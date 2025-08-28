@@ -15,10 +15,14 @@ var (
 	githubClientSecret string
 )
 
+const (
+	DefaultBaseURL = "https://gbox.ai"
+)
+
 func init() {
 	v = viper.New()
 
-	v.SetDefault("api.base_url", "https://gbox.ai")
+	v.SetDefault("api.base_url", DefaultBaseURL)
 
 	v.SetDefault("project.root", "")
 	v.SetDefault("mcp.server.url", "http://localhost:28090/sse") // Default MCP server URL
@@ -35,7 +39,7 @@ func init() {
 
 	// Environment variables
 	v.AutomaticEnv()
-	v.BindEnv("api.endpoint.cloud", "API_ENDPOINT_CLOUD", "API_ENDPOINT")
+	v.BindEnv("api.base_url", "GBOX_BASE_URL")
 	v.BindEnv("project.root", "PROJECT_ROOT")
 	v.BindEnv("mcp.server.url", "MCP_SERVER_URL") // Bind MCP server URL env var
 	v.BindEnv("gbox.home", "GBOX_HOME")
@@ -69,23 +73,9 @@ func init() {
 	}
 }
 
-// GetDefaultBaseURL returns the default base URL
-func GetDefaultBaseURL() string {
-	return v.GetString("api.base_url")
-}
-
-// GetBaseURL returns the base URL with priority: GBOX_BASE_URL > profile > default
+// GetBaseURL returns the base URL from config (environment variable or default)
 func GetBaseURL() string {
-	// First priority: GBOX_BASE_URL environment variable
-	if envURL := os.Getenv("GBOX_BASE_URL"); envURL != "" {
-		return envURL
-	}
-
-	// Second priority: current profile's base URL
-	// This will be handled by profile manager
-
-	// Third priority: default base URL
-	return GetDefaultBaseURL()
+	return v.GetString("api.base_url")
 }
 
 // GetProjectRoot returns the project root directory

@@ -99,11 +99,8 @@ func runCopyCommand(opts *BoxCpOptions) error {
 	debugEnabled := os.Getenv("DEBUG") == "true"
 
 	// Get effective base URL for API calls
-	effectiveBaseURL, err := profile.GetEffectiveBaseURL()
-	if err != nil {
-		return fmt.Errorf("failed to get effective base URL: %v", err)
-	}
-	apiURL := fmt.Sprintf("%s/api/v1", strings.TrimSuffix(effectiveBaseURL, "/"))
+	effectiveBaseURL := profile.GetEffectiveBaseURL()
+	apiURL := fmt.Sprintf("%s/api/v1", effectiveBaseURL)
 
 	// Debug log
 	debug := func(msg string) {

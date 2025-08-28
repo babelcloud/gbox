@@ -207,11 +207,7 @@ func setupDeviceProxyEnvironment(apiKey string) []string {
 	env = append(env, fmt.Sprintf("GBOX_API_KEY=%s", apiKey))
 
 	// Add ANDROID_DEVMGR_ENDPOINT environment variable with effective base URL
-	cloudEndpoint, err := profile.GetEffectiveBaseURL()
-	if err != nil {
-		// Fallback to default if profile is not available
-		cloudEndpoint = config.GetDefaultBaseURL()
-	}
+	cloudEndpoint := profile.GetEffectiveBaseURL()
 	androidDevmgrEndpoint := fmt.Sprintf("%s/devmgr", cloudEndpoint)
 	env = append(env, fmt.Sprintf("ANDROID_DEVMGR_ENDPOINT=%s", androidDevmgrEndpoint))
 
