@@ -13,7 +13,6 @@ var v *viper.Viper
 
 var (
 	githubClientSecret string
-	githubToken        string
 )
 
 func init() {
@@ -33,7 +32,6 @@ func init() {
 	v.SetDefault("profile.path", "")
 
 	v.SetDefault("github.client_secret", "")
-	v.SetDefault("github.token", "")
 
 	// Environment variables
 	v.AutomaticEnv()
@@ -44,7 +42,6 @@ func init() {
 	v.BindEnv("device_proxy.home", "DEVICE_PROXY_HOME")
 	v.BindEnv("profile.path", "GBOX_PROFILE_PATH") // Bind profile path env var
 	v.BindEnv("github.client_secret", "GBOX_GITHUB_CLIENT_SECRET")
-	v.BindEnv("github.token", "GITHUB_TOKEN")
 
 	// Config file
 	v.SetConfigName("config")
@@ -118,14 +115,6 @@ func GetGithubClientSecret() string {
 		return githubClientSecret
 	}
 	return v.GetString("github.client_secret")
-}
-
-// GetGithubToken returns the GitHub token from env or config
-func GetGithubToken() string {
-	if githubToken != "" {
-		return githubToken
-	}
-	return v.GetString("github.token")
 }
 
 // GetGboxHome returns the gbox home directory

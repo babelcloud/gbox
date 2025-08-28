@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
+	"github.com/babelcloud/gbox/packages/cli/internal/version"
 )
 
 const (
@@ -33,110 +34,198 @@ type GitHubRelease struct {
 	} `json:"assets"`
 }
 
-// findSHA256File finds the SHA256 file for a given asset
-func findSHA256File(release *GitHubRelease, assetName string) (string, error) {
-	sha256FileName := assetName + ".sha256"
-	
-	for _, asset := range release.Assets {
-		if asset.Name == sha256FileName {
-			if asset.DownloadURL != "" {
-				return asset.DownloadURL, nil
-			}
-			if asset.URL != "" {
-				return asset.URL, nil
-			}
-		}
-	}
-	
-	return "", fmt.Errorf("SHA256 file not found for asset: %s", assetName)
+// VersionInfo represents version information
+type VersionInfo struct {
+	TagName    string `json:"tag_name"`
+	CommitID   string `json:"commit_id"`
+	Downloaded string `json:"downloaded"`
 }
 
-// downloadSHA256File downloads and returns the SHA256 hash from a SHA256 file
-func downloadSHA256File(sha256URL, token string) (string, error) {
-	req, err := http.NewRequest("GET", sha256URL, nil)
-	if err != nil {
-		return "", err
-	}
-
-	if token != "" {
-		req.Header.Set("Authorization", "token "+token)
-	}
-	req.Header.Set("Accept", "text/plain")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to download SHA256 file, status: %d", resp.StatusCode)
-	}
-
-	// Read the SHA256 hash from the file
-	sha256Bytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read SHA256 file: %v", err)
-	}
-
-	// Extract the hash (format: "hash filename")
-	sha256Line := strings.TrimSpace(string(sha256Bytes))
-	parts := strings.Fields(sha256Line)
-	if len(parts) < 1 {
-		return "", fmt.Errorf("invalid SHA256 file format: %s", sha256Line)
-	}
-
-	return parts[0], nil
+// getVersionCachePath returns the path to the version cache file
+func getVersionCachePath() string {
+	deviceProxyHome := config.GetDeviceProxyHome()
+	return filepath.Join(deviceProxyHome, "version.json")
 }
 
-// DownloadDeviceProxy downloads the latest gbox-device-proxy binary from GitHub
-func DownloadDeviceProxy() (string, error) {
-	// Get GitHub token - try both sources
-	token := config.GetGithubToken()
+// loadVersionInfo loads version information from cache
+func loadVersionInfo() (*VersionInfo, error) {
+	cachePath := getVersionCachePath()
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		return nil, err
+	}
 
-	// Try to download from public repository first (no token required)
-	release, err := getLatestRelease(deviceProxyPublicRepo, "")
-	if err == nil {
-		assetURL, assetName, err := findDeviceProxyAssetForPlatform(release, "")
+	var info VersionInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		return nil, err
+	}
+
+	return &info, nil
+}
+
+// saveVersionInfo saves version information to cache
+func saveVersionInfo(info *VersionInfo) error {
+	cachePath := getVersionCachePath()
+	deviceProxyHome := config.GetDeviceProxyHome()
+
+	// Ensure directory exists
+	if err := os.MkdirAll(deviceProxyHome, 0755); err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(info, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(cachePath, data, 0644)
+}
+
+// CheckAndDownloadDeviceProxy checks if update is needed and downloads if necessary
+func CheckAndDownloadDeviceProxy() (string, error) {
+	deviceProxyHome := config.GetDeviceProxyHome()
+	binaryName := "gbox-device-proxy"
+	if runtime.GOOS == "windows" {
+		binaryName += ".exe"
+	}
+	binaryPath := filepath.Join(deviceProxyHome, binaryName)
+
+	// Check if binary exists
+	if _, err := os.Stat(binaryPath); err != nil {
+		// Binary doesn't exist, download it
+		return DownloadDeviceProxy()
+	}
+
+	// Load cached version info
+	cachedInfo, err := loadVersionInfo()
+	if err != nil {
+		// No cache, download latest
+		return DownloadDeviceProxy()
+	}
+
+	// Try to find release matching current version first
+	currentVersion := version.ClientInfo()["Version"]
+	currentCommit := version.ClientInfo()["GitCommit"]
+
+	// First try to find exact version match
+	if currentVersion != "dev" {
+		release, err := getReleaseByTag(deviceProxyPublicRepo, currentVersion)
 		if err == nil {
-			binaryPath, err := downloadAndExtractBinaryWithRetry(assetURL, assetName, "")
+			assetURL, assetName, err := findDeviceProxyAssetForPlatform(release)
 			if err == nil {
-				return binaryPath, nil
+				// Found matching version, check if we need to download
+				if cachedInfo.TagName == currentVersion {
+					// Same version, return existing binary
+					return binaryPath, nil
+				}
+				// Different version, download
+				binaryPath, err := downloadAndExtractBinaryWithRetry(assetURL, assetName)
+				if err == nil {
+					// Save version info
+					saveVersionInfo(&VersionInfo{
+						TagName:    currentVersion,
+						CommitID:   currentCommit,
+						Downloaded: time.Now().Format(time.RFC3339),
+					})
+					return binaryPath, nil
+				}
 			}
-			fmt.Fprintf(os.Stderr, "Failed to download from public repository: %v\n", err)
 		}
 	}
 
-	// If public repository fails and we have a token, try private repository
-	if token != "" {
-		fmt.Println("Trying private repository with authentication...")
-		release, err = getLatestRelease(deviceProxyRepo, token)
-		if err != nil {
-			return "", fmt.Errorf("failed to get latest release from private repository: %v", err)
-		}
+	// If no exact match or failed, try latest release
+	release, err := getLatestRelease(deviceProxyPublicRepo)
+	if err != nil {
+		return "", fmt.Errorf("failed to get latest release: %v", err)
+	}
 
-		assetURL, assetName, err := findDeviceProxyAssetForPlatform(release, token)
-		if err != nil {
-			return "", fmt.Errorf("failed to find asset for platform in private repository: %v", err)
-		}
-
-		binaryPath, err := downloadAndExtractBinaryWithRetry(assetURL, assetName, token)
-		if err != nil {
-			return "", fmt.Errorf("failed to download from private repository: %v", err)
-		}
-
+	// Check if we already have this version
+	if cachedInfo.TagName == release.TagName {
 		return binaryPath, nil
 	}
 
-	return "", fmt.Errorf("failed to download device-proxy: public repository unavailable and no authentication token provided")
+	// Download latest version
+	assetURL, assetName, err := findDeviceProxyAssetForPlatform(release)
+	if err != nil {
+		return "", fmt.Errorf("failed to find device proxy asset: %v", err)
+	}
+
+	binaryPath, err = downloadAndExtractBinaryWithRetry(assetURL, assetName)
+	if err != nil {
+		return "", fmt.Errorf("failed to download device proxy: %v", err)
+	}
+
+	// Save version info
+	saveVersionInfo(&VersionInfo{
+		TagName:    release.TagName,
+		CommitID:   currentCommit,
+		Downloaded: time.Now().Format(time.RFC3339),
+	})
+
+	return binaryPath, nil
+}
+
+// DownloadDeviceProxy downloads the gbox-device-proxy binary from GitHub
+// It first tries to download from a release matching the current version,
+// and falls back to the latest release if no matching version is found
+func DownloadDeviceProxy() (string, error) {
+	currentVersion := version.ClientInfo()["Version"]
+	currentCommit := version.ClientInfo()["GitCommit"]
+
+	var release *GitHubRelease
+	var err error
+
+	// First try to find release matching current version
+	if currentVersion != "dev" {
+		release, err = getReleaseByTag(deviceProxyPublicRepo, currentVersion)
+		if err == nil {
+			// Found matching version, try to download from it
+			assetURL, assetName, err := findDeviceProxyAssetForPlatform(release)
+			if err == nil {
+				binaryPath, err := downloadAndExtractBinaryWithRetry(assetURL, assetName)
+				if err == nil {
+					// Save version info for matching version
+					saveVersionInfo(&VersionInfo{
+						TagName:    release.TagName,
+						CommitID:   currentCommit,
+						Downloaded: time.Now().Format(time.RFC3339),
+					})
+					return binaryPath, nil
+				}
+				// If download failed, continue to try latest release
+			}
+		}
+		// If no matching version found or download failed, continue to latest release
+	}
+
+	// Fallback to latest release
+	release, err = getLatestRelease(deviceProxyPublicRepo)
+	if err != nil {
+		return "", fmt.Errorf("failed to get latest release: %v", err)
+	}
+
+	assetURL, assetName, err := findDeviceProxyAssetForPlatform(release)
+	if err != nil {
+		return "", fmt.Errorf("failed to find device proxy asset: %v", err)
+	}
+
+	binaryPath, err := downloadAndExtractBinaryWithRetry(assetURL, assetName)
+	if err != nil {
+		return "", fmt.Errorf("failed to download device proxy: %v", err)
+	}
+
+	// Save version info for latest release
+	saveVersionInfo(&VersionInfo{
+		TagName:    release.TagName,
+		CommitID:   currentCommit,
+		Downloaded: time.Now().Format(time.RFC3339),
+	})
+
+	return binaryPath, nil
 }
 
 // getLatestRelease fetches the latest release from GitHub
-func getLatestRelease(repo, token string) (*GitHubRelease, error) {
+func getLatestRelease(repo string) (*GitHubRelease, error) {
 	url := fmt.Sprintf("%s/repos/%s/releases/latest", githubAPIURL, repo)
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -144,9 +233,37 @@ func getLatestRelease(repo, token string) (*GitHubRelease, error) {
 		return nil, err
 	}
 
-	if token != "" {
-		req.Header.Set("Authorization", "token "+token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "gbox-cli")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
 	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API returned status: %d", resp.StatusCode)
+	}
+
+	var release GitHubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return nil, err
+	}
+
+	return &release, nil
+}
+
+// getReleaseByTag fetches a specific release by tag from GitHub
+func getReleaseByTag(repo, tag string) (*GitHubRelease, error) {
+	url := fmt.Sprintf("%s/repos/%s/releases/tags/%s", githubAPIURL, repo, tag)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "gbox-cli")
 
@@ -170,7 +287,7 @@ func getLatestRelease(repo, token string) (*GitHubRelease, error) {
 }
 
 // findDeviceProxyAssetForPlatform finds the device-proxy asset for the current platform
-func findDeviceProxyAssetForPlatform(release *GitHubRelease, token string) (string, string, error) {
+func findDeviceProxyAssetForPlatform(release *GitHubRelease) (string, string, error) {
 	osName := runtime.GOOS
 	arch := runtime.GOARCH
 
@@ -204,22 +321,13 @@ func findDeviceProxyAssetForPlatform(release *GitHubRelease, token string) (stri
 	// Find device-proxy asset containing the platform
 	for _, asset := range release.Assets {
 		if strings.Contains(asset.Name, "gbox-device-proxy") && strings.Contains(asset.Name, platform) {
-			// If unauthenticated, prefer browser_download_url; otherwise prefer API asset URL
-			if token == "" {
-				if asset.DownloadURL != "" {
-					return asset.DownloadURL, asset.Name, nil
-				}
-				// fallback to API URL even without token (may rate-limit/fail)
-				if asset.URL != "" {
-					return asset.URL, asset.Name, nil
-				}
-			} else {
-				if asset.URL != "" {
-					return asset.URL, asset.Name, nil
-				}
-				if asset.DownloadURL != "" {
-					return asset.DownloadURL, asset.Name, nil
-				}
+			// Use browser_download_url for public access
+			if asset.DownloadURL != "" {
+				return asset.DownloadURL, asset.Name, nil
+			}
+			// fallback to API URL (may rate-limit/fail)
+			if asset.URL != "" {
+				return asset.URL, asset.Name, nil
 			}
 		}
 	}
@@ -228,7 +336,7 @@ func findDeviceProxyAssetForPlatform(release *GitHubRelease, token string) (stri
 }
 
 // downloadAndExtractBinary downloads and extracts the binary file
-func downloadAndExtractBinary(assetURL, assetName, token string) (string, error) {
+func downloadAndExtractBinary(assetURL, assetName string) (string, error) {
 	// Get device proxy home directory first
 	deviceProxyHome := config.GetDeviceProxyHome()
 	if err := os.MkdirAll(deviceProxyHome, 0755); err != nil {
@@ -237,7 +345,7 @@ func downloadAndExtractBinary(assetURL, assetName, token string) (string, error)
 
 	// Download the asset directly to device proxy home directory
 	assetPath := filepath.Join(deviceProxyHome, assetName)
-	if err := downloadFile(assetURL, assetPath, token); err != nil {
+	if err := downloadFile(assetURL, assetPath); err != nil {
 		return "", err
 	}
 
@@ -288,12 +396,12 @@ func downloadAndExtractBinary(assetURL, assetName, token string) (string, error)
 }
 
 // downloadAndExtractBinaryWithRetry downloads and extracts the binary file with retry logic
-func downloadAndExtractBinaryWithRetry(assetURL, assetName, token string) (string, error) {
+func downloadAndExtractBinaryWithRetry(assetURL, assetName string) (string, error) {
 	var binaryPath string
 	var lastErr error
 	maxRetries := 3
 	for i := 0; i < maxRetries; i++ {
-		binaryPath, lastErr = downloadAndExtractBinary(assetURL, assetName, token)
+		binaryPath, lastErr = downloadAndExtractBinary(assetURL, assetName)
 		if lastErr == nil {
 			break
 		}
@@ -312,13 +420,12 @@ func downloadAndExtractBinaryWithRetry(assetURL, assetName, token string) (strin
 }
 
 // downloadFile downloads a file from URL to local path
-func downloadFile(url, filepath string, token string) error {
+func downloadFile(url, filepath string) error {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
 	}
 
-	req.Header.Set("Authorization", "token "+token)
 	req.Header.Set("Accept", "application/octet-stream")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
