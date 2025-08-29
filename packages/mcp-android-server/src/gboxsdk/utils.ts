@@ -290,11 +290,10 @@ export async function getBoxCoordinates(
  */
 export async function startLocalScrcpy(
   boxId: string,
-  logger: any
+  logger: any,
+  deviceId: string
 ): Promise<{ success: boolean; message: string }> {
   // Global process references for unified management
-  let gboxCliProcess: any = null;
-  let adbConnectProcess: any = null;
   let scrcpyProcess: any = null;
 
   try {
@@ -338,10 +337,9 @@ export async function startLocalScrcpy(
           execSync("brew install scrcpy", { stdio: "inherit" });
         } else if (currentOS === "linux") {
           // Linux
-          execSync(
-            "sudo apt-get update && sudo apt-get install -y scrcpy",
-            { stdio: "inherit" }
-          );
+          execSync("sudo apt-get update && sudo apt-get install -y scrcpy", {
+            stdio: "inherit",
+          });
         } else if (currentOS === "win32") {
           // Windows
           execSync("choco install scrcpy", { stdio: "inherit" });
@@ -349,7 +347,9 @@ export async function startLocalScrcpy(
         scrcpyAvailable = true;
         await logger.info("scrcpy installation successful");
       } catch (installError) {
-        await logger.warning("scrcpy installation failed, please install manually");
+        await logger.warning(
+          "scrcpy installation failed, please install manually"
+        );
         const currentOS = process.platform;
         if (currentOS === "darwin") {
           await logger.warning("macOS: brew install scrcpy");
@@ -363,98 +363,41 @@ export async function startLocalScrcpy(
 
     // If tools are available, execute related commands
     if (gboxCliAvailable && scrcpyAvailable) {
-      await logger.info("Executing local commands...");
-
+      await logger.info("Executing local commands...", { deviceId });
       // Stop previous processes first (if they exist)
-      await cleanupProcesses(gboxCliProcess, adbConnectProcess, scrcpyProcess, logger);
-
-      // Start gbox cli to enable adb proxy forwarding
-      await new Promise<void>((resolve, reject) => {
-        gboxCliProcess = spawn("gbox", ["adb-expose"], {
-          stdio: ["pipe", "pipe", "pipe"],
-        });
-
-        // Set process exit handling
-        gboxCliProcess.on("error", (error: string) => {
-          logger.error("gbox cli process error", error);
-          reject(error);
-        });
-
-        gboxCliProcess.on("exit", (code: string) => {
-          logger.warning(`gbox cli process exited, exit code: ${code}`);
-        });
-
-        gboxCliProcess.stdin.write("1\n\n");
-        gboxCliProcess.stdin.write("y\n");
-
-        let wsDialSuccess = false;
-        const timeout = setTimeout(() => {
-          if (!wsDialSuccess) {
-            reject(new Error("gbox cli startup timeout"));
-          }
-        }, 10000);
-
-        gboxCliProcess.stderr.on("data", (data: any) => {
-          const output = data.toString();
-          logger.info("gbox cli stderr: " + output);
-          if (output.includes("ws dial success")) {
-            wsDialSuccess = true;
-            clearTimeout(timeout);
-            resolve();
-          }
-        });
-      });
-
-      // Wait a bit to ensure port forwarding is fully established
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // Connect adb to local port
-      await new Promise<void>((resolve, reject) => {
-        adbConnectProcess = spawn("adb", ["connect", "localhost:5555"], {
-          stdio: ["pipe", "pipe", "pipe"],
-        });
-        adbConnectProcess.on("error", (error: any) => {
-          logger.error("adb connect process error", error);
-          reject(error);
-        });
-        const timeout = setTimeout(() => {
-          reject(new Error("adb connect timeout"));
-        }, 10000);
-
-        adbConnectProcess.stdout.on("data", (data: any) => {
-          const output = data.toString();
-          logger.info("adb connect: " + output);
-          if (output.includes("connected")) {
-            clearTimeout(timeout);
-            resolve();
-          }
-        });
-
-        adbConnectProcess.stderr.on("data", (data: any) => {
-          logger.info("adb connect stderr: " + data.toString());
-        });
-      });
-
-      await logger.info("gbox cli port forwarding completed");
-
+      await cleanupProcesses(scrcpyProcess, logger);
       // Start scrcpy to connect to device
+      const match = deviceId.match(/^([^-]+)-usb$/);
+      if (!match) {
+        throw new Error("Invalid device ID");
+      }
+      const deviceName = match[1];
+      let scrcpyArgs = [
+        "--video-codec=h265",
+        "--max-size=1920",
+        "--max-fps=30",
+        "--no-audio",
+        "--keyboard=uhid",
+      ];
+      if (match[1]) {
+        scrcpyArgs.unshift("-s", deviceName);
+      }
       try {
-        scrcpyProcess = spawn(
-          "scrcpy",
-          [
-            "-s",
-            "localhost:5555", // Explicitly specify device address
-            "--video-codec=h265",
-            "--max-size=1920",
-            "--max-fps=30", // Reduce frame rate for stability
-            "--no-audio",
-            "--keyboard=uhid",
-            "--stay-awake", // Keep device awake
-          ],
-          {
-            stdio: ["pipe", "pipe", "pipe"],
+        scrcpyProcess = spawn("scrcpy", scrcpyArgs, {
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        scrcpyProcess.stdout.on("data", (data: any) => {
+          const output = data.toString();
+          logger.info("scrcpy: " + output);
+          if (output.includes("[server] INFO")) {
+            logger.info("scrcpy started");
           }
-        );
+        });
+
+        scrcpyProcess.stderr.on("data", (data: any) => {
+          const output = data.toString();
+          logger.info("scrcpy stderr: " + output);
+        });
 
         scrcpyProcess.on("error", (error: any) => {
           logger.error("scrcpy process error", error);
@@ -462,52 +405,6 @@ export async function startLocalScrcpy(
 
         scrcpyProcess.on("exit", (code: any) => {
           logger.warning(`scrcpy process exited, exit code: ${code}`);
-          if (code !== 0) {
-            logger.error(`scrcpy abnormal exit, exit code: ${code}`);
-            // Try to reconnect
-            setTimeout(async () => {
-              try {
-                await logger.info("Attempting to restart scrcpy...");
-                const reconnectResult = await startLocalScrcpy(boxId, logger);
-                if (reconnectResult.success) {
-                  await logger.info("scrcpy reconnection successful");
-                }
-              } catch (reconnectError) {
-                await logger.error("scrcpy reconnection failed", reconnectError);
-              }
-            }, 2000);
-          }
-        });
-
-        // Wait for scrcpy to start
-        await new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            reject(new Error("scrcpy startup timeout"));
-          }, 10000);
-
-          scrcpyProcess.stdout.on("data", (data: any) => {
-            const output = data.toString();
-            logger.info("scrcpy: " + output);
-            if (output.includes("Connected to") || output.includes("Starting display")) {
-              clearTimeout(timeout);
-              resolve();
-            }
-          });
-
-          scrcpyProcess.stderr.on("data", (data: any) => {
-            const output = data.toString();
-            logger.info("scrcpy stderr: " + output);
-            if (output.includes("Connected to") || output.includes("Starting display")) {
-              clearTimeout(timeout);
-              resolve();
-            }
-          });
-
-          // If process starts successfully but no specific output, also consider it successful
-          setTimeout(() => {
-            clearTimeout(timeout);
-            resolve();
-          }, 3000);
         });
 
         await logger.info("scrcpy started");
@@ -515,17 +412,19 @@ export async function startLocalScrcpy(
         await logger.warning("scrcpy startup failed", scrcpyError);
         throw scrcpyError;
       }
+      return {
+        success: true,
+        message: "Local scrcpy started successfully",
+      };
     } else {
       throw new Error("Required tools not installed or unavailable");
     }
-
-    return { success: true, message: "Local scrcpy started successfully" };
   } catch (error) {
     await logger.error("Failed to start local scrcpy", error);
-    await cleanupProcesses(gboxCliProcess, adbConnectProcess, scrcpyProcess, logger);
-    return { 
-      success: false, 
-      message: `Failed to start local scrcpy: ${error instanceof Error ? error.message : String(error)}` 
+    await cleanupProcesses(scrcpyProcess, logger);
+    return {
+      success: false,
+      message: `Failed to start local scrcpy: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }
@@ -533,17 +432,8 @@ export async function startLocalScrcpy(
 /**
  * Helper function to clean up processes
  */
-async function cleanupProcesses(
-  gboxCliProcess: any,
-  adbConnectProcess: any,
-  scrcpyProcess: any,
-  logger: any
-) {
-  const processes = [
-    { name: "gbox cli", process: gboxCliProcess },
-    { name: "adb connect", process: adbConnectProcess },
-    { name: "scrcpy", process: scrcpyProcess }
-  ];
+async function cleanupProcesses(scrcpyProcess: any, logger: any) {
+  const processes = [{ name: "scrcpy", process: scrcpyProcess }];
 
   for (const { name, process } of processes) {
     if (process && !process.killed) {

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { CreateAndroid } from "gbox-sdk";
 import { gboxSDK } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
-import { startLocalScrcpy } from "../gboxsdk/utils.js";
+import { openUrlInBrowser, startLocalScrcpy } from "../gboxsdk/utils.js";
 import { deviceList } from "../gboxsdk/android.service.js";
 
 export const START_GBOX_TOOL = "start_gbox";
@@ -30,7 +30,6 @@ export function handleStartGbox(logger: MCPLogger) {
       let box;
       let deviceId = "";
       let deviceModel = "";
-
       if (!gboxId) {
         // If local physical device available, use it
         const devices = await deviceList();
@@ -79,20 +78,27 @@ export function handleStartGbox(logger: MCPLogger) {
             boxId: gboxId,
             url: liveViewUrl.url,
           });
-          // Start local scrcpy instead of opening browser
-          const scrcpyResult = await startLocalScrcpy(gboxId, logger);
-          if (scrcpyResult.success) {
-            await logger.info("Local scrcpy started successfully", {
-              boxId: gboxId,
-              message: scrcpyResult.message,
-            });
+          if (!deviceId) {
+            openUrlInBrowser(liveViewUrl.url);
           } else {
-            await logger.warning("Local scrcpy failed to start", {
-              boxId: gboxId,
-              message: scrcpyResult.message,
-            });
+            // Start local scrcpy instead of opening browser
+            const scrcpyResult = await startLocalScrcpy(
+              gboxId,
+              logger,
+              deviceId
+            );
+            if (scrcpyResult.success) {
+              await logger.info("Local scrcpy started successfully", {
+                boxId: gboxId,
+                message: scrcpyResult.message,
+              });
+            } else {
+              await logger.warning("Local scrcpy failed to start", {
+                boxId: gboxId,
+                message: scrcpyResult.message,
+              });
+            }
           }
-
           result.success = true;
           result.boxId = gboxId;
           result.liveViewUrl = liveViewUrl.url;
