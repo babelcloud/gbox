@@ -10,16 +10,14 @@ import (
 
 	"github.com/babelcloud/gbox/packages/cli/config"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect"
+	"github.com/babelcloud/gbox/packages/cli/internal/profile"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
 // printDeveloperModeHint prints the developer mode hint with dim formatting
 func printDeveloperModeHint() {
-	const (
-		ansiDim   = "\033[2m"
-		ansiReset = "\033[0m"
-	)
-	fmt.Printf("%sIf you can not see your devices here, make sure you have turned on the developer mode on your Android device. For more details, see https://docs.gbox.ai/cli%s\n", ansiDim, ansiReset)
+	color.New(color.Faint).Println("If you can not see your devices here, make sure you have turned on the developer mode on your Android device. For more details, see https://docs.gbox.ai/cli")
 }
 
 type DeviceConnectOptions struct {
@@ -166,16 +164,18 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 
 	for i, device := range devices {
 		status := "Not Registered"
-		if device.IsRegistrable { // Assuming IsRegistrable should be IsRegistered
+		statusColor := color.New(color.Faint) // 使用淡色（灰色）
+		if device.IsRegistrable {             // Assuming IsRegistrable should be IsRegistered
 			status = "Registered"
+			statusColor = color.New(color.FgGreen)
 		}
 		fmt.Printf("%d. %s (%s, %s) - %s [%s]\n",
 			i+1,
-			device.Id,
+			color.New(color.FgCyan).Sprint(device.SerialNo+"-"+device.ConnectionType),
 			device.ProductModel,
 			device.ConnectionType,
 			device.ProductManufacturer,
-			status)
+			statusColor.Sprint(status))
 	}
 	fmt.Println()
 	fmt.Print("Enter a number: ")
@@ -207,12 +207,20 @@ func connectToDevice(deviceID string, opts *DeviceConnectOptions) error {
 
 	fmt.Printf("Connection established successfully!\n")
 
+	// Get and display devices URL for the current profile
+	pm := profile.NewProfileManager()
+	if err := pm.Load(); err == nil {
+		if devicesURL, err := pm.GetDevicesURL(); err == nil {
+			fmt.Printf("You can view your devices at: %s\n", color.CyanString(devicesURL))
+		}
+	}
+
 	if opts.Background {
 		fmt.Println("(Running in background. Use 'gbox device-connect unregister' to stop.)")
 		return nil
 	}
 
-	fmt.Println("(Running in foreground. Press Ctrl+C to disconnect.)")
+	fmt.Printf("(Running in foreground. Press %s to disconnect.)\n", color.New(color.FgYellow, color.Bold).Sprint("Ctrl+C"))
 
 	// Wait for interrupt signal
 	sigChan := make(chan os.Signal, 1)
