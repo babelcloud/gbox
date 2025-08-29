@@ -24,7 +24,9 @@ type ProfileConfig struct {
 
 // Profile represents a configuration profile
 type Profile struct {
-	Org     string `toml:"org"`
+	OrgName string `toml:"org_name,omitempty"` // New field name
+	Org     string `toml:"org,omitempty"`      // Legacy field for backward compatibility
+	OrgSlug string `toml:"org_slug,omitempty"`
 	APIKey  string `toml:"key"`
 	BaseURL string `toml:"base_url,omitempty"`
 }
@@ -32,6 +34,12 @@ type Profile struct {
 // ProfileDefaults represents global defaults
 type ProfileDefaults struct {
 	BaseURL string `toml:"base_url,omitempty"`
+}
+
+// OrgInfo represents organization information returned from API
+type OrgInfo struct {
+	Name string
+	Slug string
 }
 
 // ProfileManager manages profile files
@@ -164,8 +172,8 @@ func (pm *ProfileManager) listTable() {
 			maxKeyLen = len(maskedKey)
 		}
 
-		if len(profile.Org) > maxOrgLen {
-			maxOrgLen = len(profile.Org)
+		if len(profile.GetOrgName()) > maxOrgLen {
+			maxOrgLen = len(profile.GetOrgName())
 		}
 		if showBaseURL {
 			baseURL := profile.BaseURL
@@ -207,16 +215,16 @@ func (pm *ProfileManager) listTable() {
 			}
 			if isCurrent {
 				fmt.Print("\033[32m→ ") // Color the arrow and space
-				fmt.Printf("\033[32m%-*s\033[0m %-*s %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.Org, maxBaseURLLen, baseURL)
+				fmt.Printf("\033[32m%-*s\033[0m %-*s %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.GetOrgName(), maxBaseURLLen, baseURL)
 			} else {
-				fmt.Printf("  %-*s %-*s %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.Org, maxBaseURLLen, baseURL)
+				fmt.Printf("  %-*s %-*s %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.GetOrgName(), maxBaseURLLen, baseURL)
 			}
 		} else {
 			if isCurrent {
 				fmt.Print("\033[32m→ ") // Color the arrow and space
-				fmt.Printf("\033[32m%-*s\033[0m %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.Org)
+				fmt.Printf("\033[32m%-*s\033[0m %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.GetOrgName())
 			} else {
-				fmt.Printf("  %-*s %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.Org)
+				fmt.Printf("  %-*s %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.GetOrgName())
 			}
 		}
 	}
@@ -232,14 +240,18 @@ func (pm *ProfileManager) Add(id, org, key, baseURL string) error {
 	// Store the effective base URL for this profile
 	effectiveBaseURL := baseURL
 
-	// Try to get org name from API if not provided
-	if org == "" {
-		orgName, err := pm.getOrgNameFromAPI(key, effectiveBaseURL)
-		if err != nil {
-			return fmt.Errorf("failed to validate API key and get organization info: %v", err)
-		}
-		org = orgName
+	// Always get org info from API to ensure we have both name and slug
+	var orgSlug string
+	orgInfo, err := pm.getOrgInfoFromAPI(key, effectiveBaseURL)
+	if err != nil {
+		return fmt.Errorf("failed to validate API key and get organization info: %v", err)
 	}
+
+	// Use provided org name if available, otherwise use API response
+	if org == "" {
+		org = orgInfo.Name
+	}
+	orgSlug = orgInfo.Slug
 
 	// Generate ID if not provided
 	if id == "" {
@@ -282,7 +294,7 @@ func (pm *ProfileManager) Add(id, org, key, baseURL string) error {
 
 	// First pass: check for org and base URL combination
 	for existingID, existingProfile := range pm.config.Profiles {
-		if existingProfile.Org == org {
+		if existingProfile.GetOrgName() == org {
 			existingBaseURL := existingProfile.BaseURL
 			if existingBaseURL == "" {
 				existingBaseURL = pm.config.Defaults.BaseURL
@@ -311,8 +323,9 @@ func (pm *ProfileManager) Add(id, org, key, baseURL string) error {
 
 	// Create profile, always store the effective base URL
 	profile := Profile{
-		Org:    org,
-		APIKey: encodedKey,
+		OrgName: org,
+		OrgSlug: orgSlug, // Store orgSlug
+		APIKey:  encodedKey,
 	}
 
 	// Always store the effective base URL in the profile
@@ -395,6 +408,15 @@ func (pm *ProfileManager) GetProfile(id string) *Profile {
 		return &profile
 	}
 	return nil
+}
+
+// GetOrgName returns the organization name with backward compatibility
+func (p *Profile) GetOrgName() string {
+	// Prefer org_name, fallback to org for backward compatibility
+	if p.OrgName != "" {
+		return p.OrgName
+	}
+	return p.Org
 }
 
 // GetProfiles returns all profiles
@@ -541,9 +563,14 @@ func (pm *ProfileManager) listJSON() {
 	for id, profile := range pm.config.Profiles {
 		profileData := map[string]interface{}{
 			"id":      id,
-			"org":     profile.Org,
+			"org":     profile.GetOrgName(),
 			"key":     pm.GetMaskedAPIKey(profile.APIKey),
 			"current": id == pm.config.Current,
+		}
+
+		// Include org_slug if available
+		if profile.OrgSlug != "" {
+			profileData["org_slug"] = profile.OrgSlug
 		}
 
 		// Only include base_url if it's different from default
@@ -575,9 +602,9 @@ func toJSON(data interface{}) string {
 	return string(jsonData)
 }
 
-// getOrgNameFromAPI tries to get organization name from API using the provided API key
-// Returns org name and error. If error is nil, the API key is valid.
-func (pm *ProfileManager) getOrgNameFromAPI(apiKey, baseURL string) (string, error) {
+// getOrgInfoFromAPI tries to get organization info from API using the provided API key
+// Returns OrgInfo and error. If error is nil, the API key is valid.
+func (pm *ProfileManager) getOrgInfoFromAPI(apiKey, baseURL string) (*OrgInfo, error) {
 	// API key from command line is plain text, not base64 encoded
 	// Make HTTP request to get organization info
 	client := &http.Client{}
@@ -585,7 +612,7 @@ func (pm *ProfileManager) getOrgNameFromAPI(apiKey, baseURL string) (string, err
 	cleanBaseURL := strings.TrimSuffix(baseURL, "/")
 	req, err := http.NewRequest("GET", cleanBaseURL+"/api/v1/org", nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %v", err)
+		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
 
 	// Set API key in header (plain text)
@@ -594,23 +621,23 @@ func (pm *ProfileManager) getOrgNameFromAPI(apiKey, baseURL string) (string, err
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to make request: %v", err)
+		return nil, fmt.Errorf("failed to make request: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return "", fmt.Errorf("invalid API key")
+		return nil, fmt.Errorf("invalid API key")
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	// Read response body for debugging
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed to read response body: %v", err)
+		return nil, fmt.Errorf("failed to read response body: %v", err)
 	}
 
 	// Debug: print response body
@@ -621,14 +648,68 @@ func (pm *ProfileManager) getOrgNameFromAPI(apiKey, baseURL string) (string, err
 	// Parse response
 	var orgInfo struct {
 		Name string `json:"name"`
+		Slug string `json:"slug"`
 	}
 	if err := json.Unmarshal(body, &orgInfo); err != nil {
-		return "", fmt.Errorf("failed to parse response: %v, body: %s", err, string(body))
+		return nil, fmt.Errorf("failed to parse response: %v, body: %s", err, string(body))
 	}
 
 	if orgInfo.Name == "" {
-		return "", fmt.Errorf("organization name is empty")
+		return nil, fmt.Errorf("organization name is empty")
 	}
 
-	return orgInfo.Name, nil
+	return &OrgInfo{
+		Name: orgInfo.Name,
+		Slug: orgInfo.Slug,
+	}, nil
+}
+
+// GetDevicesURL returns the devices URL for the current profile
+func (pm *ProfileManager) GetDevicesURL() (string, error) {
+	current := pm.GetCurrent()
+	if current == nil {
+		return "", fmt.Errorf("no current profile set. Please run 'gbox profile use' to set a current profile first")
+	}
+
+	devicesURL := pm.buildDevicesURL(current)
+	if devicesURL == "" {
+		return "", fmt.Errorf("current profile does not have org_slug. Please run 'gbox profile add' to update your profile")
+	}
+
+	return devicesURL, nil
+}
+
+// GetDevicesURLByID returns the devices URL for a specific profile by ID
+func (pm *ProfileManager) GetDevicesURLByID(id string) (string, error) {
+	profile := pm.GetProfile(id)
+	if profile == nil {
+		return "", fmt.Errorf("profile '%s' not found", id)
+	}
+
+	devicesURL := pm.buildDevicesURL(profile)
+	if devicesURL == "" {
+		return "", fmt.Errorf("profile '%s' does not have org_slug. Please run 'gbox profile add' to update your profile", id)
+	}
+
+	return devicesURL, nil
+}
+
+// buildDevicesURL builds the devices URL for a given profile
+func (pm *ProfileManager) buildDevicesURL(profile *Profile) string {
+	baseURL := profile.BaseURL
+	if baseURL == "" {
+		baseURL = pm.config.Defaults.BaseURL
+	}
+
+	// Ensure baseURL doesn't end with slash
+	baseURL = strings.TrimSuffix(baseURL, "/")
+
+	// If org_slug is available, use it to build the devices URL
+	if profile.OrgSlug != "" {
+		return fmt.Sprintf("%s/%s/devices", baseURL, profile.OrgSlug)
+	}
+
+	// If no org_slug (old profile), return empty string
+	// This indicates that the profile needs to be updated with org_slug
+	return ""
 }
