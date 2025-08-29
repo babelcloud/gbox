@@ -212,7 +212,7 @@ func connectToDevice(deviceID string, opts *DeviceConnectOptions) error {
 		return nil
 	}
 
-	fmt.Println("(Running in foreground. Press Ctrl+C to disconnect.)")
+	fmt.Println("(Running in foreground. Press Ctrl+C to disconnect and stop service.)")
 
 	// Wait for interrupt signal
 	sigChan := make(chan os.Signal, 1)
@@ -221,5 +221,27 @@ func connectToDevice(deviceID string, opts *DeviceConnectOptions) error {
 	<-sigChan
 	fmt.Printf("Disconnecting %s (%s, %s)...\n",
 		device.ProductModel, device.ConnectionType, device.ProductManufacturer)
-	return client.UnregisterDevice(deviceID)
+	
+	// First unregister the device
+	if err := client.UnregisterDevice(deviceID); err != nil {
+		fmt.Printf("Warning: failed to unregister device: %v\n", err)
+	}
+	
+	// Then stop the device proxy service using existing kill-server logic
+	if err := executeKillServer(); err != nil {
+		fmt.Printf("Warning: failed to stop device proxy service: %v\n", err)
+	}
+	
+	return nil
+}
+
+// executeKillServer calls the existing kill-server functionality
+func executeKillServer() error {
+	opts := &DeviceConnectKillServerOptions{
+		Force: false,
+		All:   false,
+	}
+	// Create a dummy command for ExecuteDeviceConnectKillServer
+	// We only need this for the function signature, the actual cmd parameter is not used in the implementation
+	return ExecuteDeviceConnectKillServer(nil, opts)
 }
