@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -181,24 +180,19 @@ func getPortForwardURL(config Config) (string, error) {
 	return response.URL, nil
 }
 
-func ConnectWebSocket(config Config) *MultiplexClient {
+func ConnectWebSocket(config Config) (*MultiplexClient, error) {
 	wsURL, err := getPortForwardURL(config)
 	if err != nil {
-		log.Printf("get port forward URL error: %v", err)
-		return nil
+		return nil, fmt.Errorf("failed to get port forward URL: %v", err)
 	}
-
-	log.Printf("connecting to WebSocket: %s", wsURL)
 
 	ws, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
-		log.Printf("ws dial error: %v", err)
-		return nil
+		return nil, fmt.Errorf("failed to establish WebSocket connection: %v", err)
 	}
-	log.Println("ws dial success")
 
 	client := NewMultiplexClient(ws)
-	return client
+	return client, nil
 }
 
 // PrintStartupMessage prints the startup message for adb-expose
