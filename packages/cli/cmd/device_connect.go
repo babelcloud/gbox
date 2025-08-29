@@ -27,6 +27,11 @@ func checkAdbInstalled() bool {
 	return err == nil
 }
 
+func checkFrpcInstalled() bool {
+	_, err := exec.LookPath("frpc")
+	return err == nil
+}
+
 func printAdbInstallationHint() {
 	const (
 		ansiRed    = "\033[31m"
@@ -51,6 +56,37 @@ func printAdbInstallationHint() {
 	fmt.Printf("  3. Run 'adb devices' to confirm device recognition\n")
 	fmt.Println()
 	fmt.Printf("%s%s================================================%s\n", ansiYellow, ansiBold, ansiReset)
+	fmt.Println()
+}
+
+func printFrpcInstallationHint() {
+	const (
+		ansiRed    = "\033[31m"
+		ansiYellow = "\033[33m"
+		ansiBold   = "\033[1m"
+		ansiReset  = "\033[0m"
+	)
+
+	fmt.Println()
+	fmt.Printf("%s%s⚠️  IMPORTANT: FRP Client (frpc) Required%s\n", ansiRed, ansiBold, ansiReset)
+	fmt.Printf("%s%s==============================================%s\n", ansiYellow, ansiBold, ansiReset)
+	fmt.Printf("%sTo use the device-connect feature, you need to install frpc (FRP Client) first:%s\n", ansiYellow, ansiReset)
+	fmt.Println()
+	fmt.Printf("%s🌐 Installation Methods:%s\n", ansiBold, ansiReset)
+	fmt.Printf("  • macOS: brew install frpc\n")
+	fmt.Printf("  • Ubuntu/Debian: Download from https://github.com/fatedier/frp/releases\n")
+	fmt.Printf("  • Windows: Download from https://github.com/fatedier/frp/releases\n")
+	fmt.Println()
+	fmt.Printf("%s📥 Manual Installation:%s\n", ansiBold, ansiReset)
+	fmt.Printf("  1. Download frpc binary for your platform from GitHub releases\n")
+	fmt.Printf("  2. Extract and place frpc in your PATH or current directory\n")
+	fmt.Printf("  3. Ensure frpc is executable: chmod +x frpc\n")
+	fmt.Println()
+	fmt.Printf("%s🔗 After installation, ensure:%s\n", ansiBold, ansiReset)
+	fmt.Printf("  1. frpc is in your PATH or current directory\n")
+	fmt.Printf("  2. Run 'frpc version' to confirm installation\n")
+	fmt.Println()
+	fmt.Printf("%s%s==============================================%s\n", ansiYellow, ansiBold, ansiReset)
 	fmt.Println()
 }
 
@@ -121,6 +157,11 @@ func ExecuteDeviceConnect(cmd *cobra.Command, opts *DeviceConnectOptions, args [
 	if !checkAdbInstalled() {
 		printAdbInstallationHint()
 		return fmt.Errorf("ADB is not installed or not in your PATH. Please install ADB and try again.")
+	}
+
+	if !checkFrpcInstalled() {
+		printFrpcInstallationHint()
+		return fmt.Errorf("frpc is not installed or not in your PATH. Please install frpc and try again.")
 	}
 
 	// Ensure device proxy service is running

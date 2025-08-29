@@ -54,6 +54,11 @@ func ExecuteDeviceConnectList(cmd *cobra.Command, opts *DeviceConnectListOptions
 		return fmt.Errorf("ADB is not installed or not in your PATH. Please install ADB and try again.")
 	}
 
+	if !checkFrpcInstalled() {
+		printFrpcInstallationHint()
+		return fmt.Errorf("frpc is not installed or not in your PATH. Please install frpc and try again.")
+	}
+
 	// Ensure device proxy service is running
 	if err := device_connect.EnsureDeviceProxyRunning(isServiceRunning); err != nil {
 		return fmt.Errorf("failed to start device proxy service: %v", err)
