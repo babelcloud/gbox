@@ -392,7 +392,7 @@ export async function startLocalScrcpy(
           if (!wsDialSuccess) {
             reject(new Error("gbox cli startup timeout"));
           }
-        }, 30000); // 30 second timeout
+        }, 10000);
 
         gboxCliProcess.stderr.on("data", (data: any) => {
           const output = data.toString();
@@ -410,20 +410,16 @@ export async function startLocalScrcpy(
 
       // Connect adb to local port
       await new Promise<void>((resolve, reject) => {
-        adbConnectProcess = spawn(
-          "adb",
-          ["connect", "localhost:5555"],
-          {
-            stdio: ["pipe", "pipe", "pipe"],
-          }
-        );
+        adbConnectProcess = spawn("adb", ["connect", "localhost:5555"], {
+          stdio: ["pipe", "pipe", "pipe"],
+        });
         adbConnectProcess.on("error", (error: any) => {
           logger.error("adb connect process error", error);
           reject(error);
         });
         const timeout = setTimeout(() => {
           reject(new Error("adb connect timeout"));
-        }, 15000); // 15 second timeout
+        }, 10000);
 
         adbConnectProcess.stdout.on("data", (data: any) => {
           const output = data.toString();
@@ -526,7 +522,6 @@ export async function startLocalScrcpy(
     return { success: true, message: "Local scrcpy started successfully" };
   } catch (error) {
     await logger.error("Failed to start local scrcpy", error);
-    // Clean up processes
     await cleanupProcesses(gboxCliProcess, adbConnectProcess, scrcpyProcess, logger);
     return { 
       success: false, 
