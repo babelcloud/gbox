@@ -22,6 +22,38 @@ func printDeveloperModeHint() {
 	fmt.Printf("%sIf you can not see your devices here, make sure you have turned on the developer mode on your Android device. For more details, see https://docs.gbox.ai/cli%s\n", ansiDim, ansiReset)
 }
 
+func checkAdbInstalled() bool {
+	_, err := exec.LookPath("adb")
+	return err == nil
+}
+
+func printAdbInstallationHint() {
+	const (
+		ansiRed    = "\033[31m"
+		ansiYellow = "\033[33m"
+		ansiBold   = "\033[1m"
+		ansiReset  = "\033[0m"
+	)
+
+	fmt.Println()
+	fmt.Printf("%s%s⚠️  IMPORTANT: Android Debug Bridge (ADB) Required%s\n", ansiRed, ansiBold, ansiReset)
+	fmt.Printf("%s%s================================================%s\n", ansiYellow, ansiBold, ansiReset)
+	fmt.Printf("%sTo use the device-connect feature, you need to install ADB tools first:%s\n", ansiYellow, ansiReset)
+	fmt.Println()
+	fmt.Printf("%s📱 Installation Methods:%s\n", ansiBold, ansiReset)
+	fmt.Printf("  • macOS: brew install android-platform-tools\n")
+	fmt.Printf("  • Ubuntu/Debian: sudo apt-get install android-tools-adb\n")
+	fmt.Printf("  • Windows: Download Android SDK Platform Tools\n")
+	fmt.Println()
+	fmt.Printf("%s🔗 After installation, ensure:%s\n", ansiBold, ansiReset)
+	fmt.Printf("  1. Enable Developer Options and USB Debugging on your Android device\n")
+	fmt.Printf("  2. Connect device via USB or start an emulator\n")
+	fmt.Printf("  3. Run 'adb devices' to confirm device recognition\n")
+	fmt.Println()
+	fmt.Printf("%s%s================================================%s\n", ansiYellow, ansiBold, ansiReset)
+	fmt.Println()
+}
+
 type DeviceConnectOptions struct {
 	DeviceID   string
 	Background bool
@@ -45,7 +77,7 @@ func NewDeviceConnectCommand() *cobra.Command {
 		Use:   "device-connect [command] [flags]",
 		Short: "Manage remote connections for local Android development devices",
 		Long: `Manage remote connections for local Android development devices.
-This command allows you to securely connect Android devices (emulators or physical devices) 
+This command allows you to securely connect Android devices (emulators or physical devices)
 to remote cloud services for remote access and debugging.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ExecuteDeviceConnect(cmd, opts, args)
@@ -86,6 +118,11 @@ to remote cloud services for remote access and debugging.`,
 }
 
 func ExecuteDeviceConnect(cmd *cobra.Command, opts *DeviceConnectOptions, args []string) error {
+	if !checkAdbInstalled() {
+		printAdbInstallationHint()
+		return fmt.Errorf("ADB is not installed or not in your PATH. Please install ADB and try again.")
+	}
+
 	// Ensure device proxy service is running
 	if err := device_connect.EnsureDeviceProxyRunning(isServiceRunning); err != nil {
 		return fmt.Errorf("failed to start device proxy service: %v", err)
