@@ -39,12 +39,8 @@ type profileEntry struct {
 // If the active profile's organization is "local" then the client will be
 // created without an API key.
 func NewClientFromProfile() (*sdk.Client, error) {
-	// Environment variable takes precedence: if API_ENDPOINT is set, use it directly
-	if endpoint := os.Getenv("API_ENDPOINT"); endpoint != "" {
-		base := strings.TrimSuffix(endpoint, "/") + "/api/v1"
-		client := sdk.NewClient(option.WithBaseURL(base))
-		return &client, nil
-	}
+	// Get effective base URL with proper priority handling
+	baseURL := profile.GetEffectiveBaseURL()
 
 	// Get profile file path from config
 	profilePath := config.GetProfilePath()
@@ -84,12 +80,7 @@ func NewClientFromProfile() (*sdk.Client, error) {
 		return nil, fmt.Errorf("failed to decode API key: %w", err)
 	}
 
-	// Use profile's base URL if available, otherwise fall back to config
-	baseURL := current.BaseURL
-	if baseURL == "" {
-		baseURL = config.GetDefaultBaseURL()
-	}
-	base := strings.TrimSuffix(baseURL, "/") + "/api/v1"
+	base := baseURL + "/api/v1"
 
 	// Debug output
 	if os.Getenv("DEBUG") == "true" {

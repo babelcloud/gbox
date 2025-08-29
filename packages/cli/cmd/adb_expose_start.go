@@ -64,6 +64,10 @@ func ExecuteAdbExpose(cmd *cobra.Command, opts *AdbExposeOptions, args []string)
 	if current == nil || current.APIKey == "" {
 		return fmt.Errorf("no current profile or API key found. Please run 'gbox profile add' and 'gbox profile use'")
 	}
+	decodedKey, err := pm.DecodeAPIKey(current.APIKey)
+	if err != nil {
+		return fmt.Errorf("failed to decode API key: %w", err)
+	}
 
 	logPath := fmt.Sprintf("%s/gbox-adb-expose-%s-%d.log", config.GetGboxHome(), opts.BoxID, localPort)
 	if shouldReturn, err := adb_expose.DaemonizeIfNeeded(opts.Foreground, logPath, opts.BoxID, true); shouldReturn {
@@ -71,7 +75,7 @@ func ExecuteAdbExpose(cmd *cobra.Command, opts *AdbExposeOptions, args []string)
 	}
 
 	// Write pid file
-	err := adb_expose.WritePidFile(opts.BoxID, []int{localPort}, []int{remotePort})
+	err = adb_expose.WritePidFile(opts.BoxID, []int{localPort}, []int{remotePort})
 	if err != nil {
 		return fmt.Errorf("failed to write pid file: %v", err)
 	}
@@ -93,14 +97,11 @@ func ExecuteAdbExpose(cmd *cobra.Command, opts *AdbExposeOptions, args []string)
 	}()
 
 	// Get effective base URL for connection
-	effectiveBaseURL, err := profile.GetEffectiveBaseURL()
-	if err != nil {
-		return fmt.Errorf("failed to get effective base URL: %v", err)
-	}
+	effectiveBaseURL := profile.GetEffectiveBaseURL()
 
 	// Connect to websocket
 	portForwardConfig := adb_expose.Config{
-		APIKey:      current.APIKey,
+		APIKey:      decodedKey,
 		BoxID:       opts.BoxID,
 		GboxURL:     effectiveBaseURL,
 		TargetPorts: []int{remotePort},
@@ -113,17 +114,25 @@ func ExecuteAdbExpose(cmd *cobra.Command, opts *AdbExposeOptions, args []string)
 		// Listen on local port
 		listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", localPort))
 		if err != nil {
-			return fmt.Errorf("Failed to listen on port %d: %v", localPort, err)
+			return fmt.Errorf("failed to listen on port %d: %v", localPort, err)
 		}
-		log.Printf("Listening on 127.0.0.1:%d", localPort)
 
-		// Connect to websocket
-		client := adb_expose.ConnectWebSocket(portForwardConfig)
-		if client == nil {
+		// Connect to websocket with retry (max 3 attempts)
+		var client *adb_expose.MultiplexClient
+		var connectErr error
+		for attempt := 1; attempt <= 3; attempt++ {
+			client, connectErr = adb_expose.ConnectWebSocket(portForwardConfig)
+			if connectErr == nil {
+				break
+			}
+			if attempt < 3 {
+				log.Printf("adb-expose connection attempt %d failed: %v, retrying...", attempt, connectErr)
+				time.Sleep(5 * time.Second)
+			}
+		}
+		if connectErr != nil {
 			listener.Close()
-			log.Printf("Failed to connect to WebSocket, retrying in %v...", retryInterval)
-			time.Sleep(retryInterval)
-			continue
+			return fmt.Errorf("failed to connect to adb-expose after 3 attempts: %v", connectErr)
 		}
 
 		// Concurrency & Reconnection Control Logic
@@ -133,7 +142,7 @@ func ExecuteAdbExpose(cmd *cobra.Command, opts *AdbExposeOptions, args []string)
 		// Start the main loop for the WebSocket client.
 		go func() {
 			if err := client.Run(); err != nil {
-				fmt.Printf("client run error: %v", err)
+				log.Printf("client run error: %v", err)
 			}
 			close(reconnectCh)
 		}()
@@ -156,7 +165,6 @@ func ExecuteAdbExpose(cmd *cobra.Command, opts *AdbExposeOptions, args []string)
 						time.Sleep(time.Second)
 						continue
 					}
-					log.Printf("new local tcp connection from %v (local port %d)", localConn.RemoteAddr(), localPort)
 					go adb_expose.HandleLocalConnWithClient(localConn, client, remotePort)
 				}
 			}
@@ -167,6 +175,8 @@ func ExecuteAdbExpose(cmd *cobra.Command, opts *AdbExposeOptions, args []string)
 			wg.Wait()
 			close(acceptDone)
 		}()
+
+		log.Printf("adb port is exposed, you can connect to the device by `adb connect 127.0.0.1:%d`", localPort)
 
 		// Main flow waits for:
 		select {

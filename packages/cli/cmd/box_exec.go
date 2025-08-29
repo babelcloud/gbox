@@ -104,11 +104,8 @@ func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
 		// handle error, maybe default to cloud
 	}
 	// Get effective base URL from profile with priority: GBOX_BASE_URL > profile > default
-	effectiveBaseURL, err := profile.GetEffectiveBaseURL()
-	if err != nil {
-		return fmt.Errorf("failed to get effective base URL: %v", err)
-	}
-	apiBase := strings.TrimSuffix(effectiveBaseURL, "/")
+	effectiveBaseURL := profile.GetEffectiveBaseURL()
+	apiBase := effectiveBaseURL
 
 	// convert http(s):// to ws(s)://
 	wsBase := apiBase

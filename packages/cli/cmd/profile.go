@@ -119,7 +119,7 @@ var profileUseCmd = &cobra.Command{
 				if currentProfile != nil && id == pm.GetCurrentProfileID() {
 					current = " (*)"
 				}
-				fmt.Printf("%s. %s%s\n", id, profile.Org, current)
+				fmt.Printf("%s. %s%s\n", id, profile.GetOrgName(), current)
 			}
 			fmt.Print("\nPlease select a profile (enter ID): ")
 
@@ -176,7 +176,7 @@ var profileCurrentCmd = &cobra.Command{
 
 		fmt.Println("Current Profile:")
 		fmt.Printf("  Profile ID: %s\n", pm.GetCurrentProfileID())
-		fmt.Printf("  Organization: %s\n", current.Org)
+		fmt.Printf("  Organization: %s\n", current.GetOrgName())
 		// Decode API key for display
 		decodedBytes, err := base64.StdEncoding.DecodeString(current.APIKey)
 		if err != nil {
@@ -211,7 +211,7 @@ var profileGetCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Profile '%s':\n", profileID)
-		fmt.Printf("  Organization: %s\n", profile.Org)
+		fmt.Printf("  Organization: %s\n", profile.GetOrgName())
 		// Decode API key for display
 		decodedBytes, err := base64.StdEncoding.DecodeString(profile.APIKey)
 		if err != nil {
