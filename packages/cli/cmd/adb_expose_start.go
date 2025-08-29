@@ -93,10 +93,7 @@ func ExecuteAdbExpose(cmd *cobra.Command, opts *AdbExposeOptions, args []string)
 	}()
 
 	// Get effective base URL for connection
-	effectiveBaseURL, err := profile.GetEffectiveBaseURL()
-	if err != nil {
-		return fmt.Errorf("failed to get effective base URL: %v", err)
-	}
+	effectiveBaseURL := profile.GetEffectiveBaseURL()
 
 	// Connect to websocket
 	portForwardConfig := adb_expose.Config{

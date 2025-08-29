@@ -46,7 +46,7 @@ func NewProfileManager() *ProfileManager {
 		config: ProfileConfig{
 			Profiles: make(map[string]Profile),
 			Defaults: ProfileDefaults{
-				BaseURL: config.GetDefaultBaseURL(),
+				BaseURL: config.GetBaseURL(),
 			},
 		},
 		path: config.GetProfilePath(),
@@ -69,7 +69,7 @@ func (pm *ProfileManager) Load() error {
 		pm.config = ProfileConfig{
 			Profiles: make(map[string]Profile),
 			Defaults: ProfileDefaults{
-				BaseURL: config.GetDefaultBaseURL(),
+				BaseURL: config.GetBaseURL(),
 			},
 		}
 		return nil
@@ -86,7 +86,7 @@ func (pm *ProfileManager) Load() error {
 
 	// Set default base URL if not set
 	if pm.config.Defaults.BaseURL == "" {
-		pm.config.Defaults.BaseURL = config.GetDefaultBaseURL()
+		pm.config.Defaults.BaseURL = config.GetBaseURL()
 	}
 
 	return nil
@@ -224,12 +224,9 @@ func (pm *ProfileManager) listTable() {
 
 // Add adds a new profile
 func (pm *ProfileManager) Add(id, org, key, baseURL string) error {
-	// Determine base URL with priority: GBOX_BASE_URL > provided baseURL > default
+	// Determine base URL with priority: provided baseURL > config default
 	if baseURL == "" {
-		baseURL = os.Getenv("GBOX_BASE_URL")
-	}
-	if baseURL == "" {
-		baseURL = config.GetDefaultBaseURL()
+		baseURL = config.GetBaseURL()
 	}
 
 	// Store the effective base URL for this profile
@@ -251,7 +248,7 @@ func (pm *ProfileManager) Add(id, org, key, baseURL string) error {
 			id = "staging"
 		} else if strings.Contains(effectiveBaseURL, "localhost") || strings.Contains(effectiveBaseURL, "127.0.0.1") {
 			id = "local"
-		} else if effectiveBaseURL == config.GetDefaultBaseURL() {
+		} else if effectiveBaseURL == config.DefaultBaseURL {
 			id = "default"
 		} else {
 			// For other URLs, use the hostname
@@ -376,13 +373,17 @@ func (pm *ProfileManager) Remove(id string) error {
 	return pm.Save()
 }
 
-// GetCurrent gets the current profile
+// GetCurrent gets the current profile with default values filled in
 func (pm *ProfileManager) GetCurrent() *Profile {
 	if pm.config.Current == "" {
 		return nil
 	}
 
 	if profile, exists := pm.config.Profiles[pm.config.Current]; exists {
+		// Fill in default values if not set
+		if profile.BaseURL == "" {
+			profile.BaseURL = pm.config.Defaults.BaseURL
+		}
 		return &profile
 	}
 	return nil
@@ -477,26 +478,34 @@ func GetCurrentBaseURL() (string, error) {
 	return current.BaseURL, nil
 }
 
-// GetEffectiveBaseURL gets the effective base URL with priority: GBOX_BASE_URL > profile > default
-func GetEffectiveBaseURL() (string, error) {
+// GetEffectiveBaseURL gets the effective base URL with priority: GBOX_BASE_URL > profile > config default
+func GetEffectiveBaseURL() string {
+	var baseURL string
+
 	// First priority: GBOX_BASE_URL environment variable
 	if envURL := os.Getenv("GBOX_BASE_URL"); envURL != "" {
-		return envURL, nil
+		baseURL = envURL
+	} else {
+		// Second priority: current profile's base URL
+		pm := NewProfileManager()
+		if err := pm.Load(); err != nil {
+			// Log warning and fallback to default
+			fmt.Fprintf(os.Stderr, "Warning: failed to load profiles: %v, using default base URL\n", err)
+			baseURL = config.GetBaseURL()
+		} else {
+			// Get effective base URL from current profile (includes profile defaults)
+			current := pm.GetCurrent()
+			if current != nil {
+				baseURL = current.BaseURL
+			} else {
+				// No current profile, use config default
+				baseURL = config.GetBaseURL()
+			}
+		}
 	}
 
-	// Second priority: current profile's base URL
-	pm := NewProfileManager()
-	if err := pm.Load(); err != nil {
-		return "", fmt.Errorf("failed to load profiles: %v", err)
-	}
-
-	current := pm.GetCurrent()
-	if current != nil && current.BaseURL != "" {
-		return current.BaseURL, nil
-	}
-
-	// Third priority: default base URL
-	return config.GetDefaultBaseURL(), nil
+	// Trim trailing slash for consistency
+	return strings.TrimSuffix(baseURL, "/")
 }
 
 // normalizeID normalizes an ID string
