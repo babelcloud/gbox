@@ -1,4 +1,4 @@
-import { exec } from "child_process";
+import { exec, execSync, spawn } from "child_process";
 import sharp from "sharp";
 import { logger } from "../mcp-server.js";
 import { getCUACoordinates } from "./cua.service.js";
@@ -6,6 +6,47 @@ import { AndroidBoxOperator } from "gbox-sdk";
 
 export const MAX_SCREEN_LENGTH = 1784;
 export const SCREENSHOT_SIZE_THRESHOLD = Math.floor(0.7 * 1024 * 1024); // 700 KB
+
+/**
+ * Install scrcpy based on the current operating system
+ * @returns Promise<boolean> - true if installation successful, false otherwise
+ */
+export async function installScrcpy(): Promise<boolean> {
+  try {
+    const currentOS = process.platform;
+
+    if (currentOS === "darwin") {
+      // macOS
+      execSync("brew install scrcpy", { stdio: "inherit" });
+    } else if (currentOS === "linux") {
+      // Linux
+      execSync("sudo apt-get update && sudo apt-get install -y scrcpy", {
+        stdio: "inherit",
+      });
+    } else if (currentOS === "win32") {
+      // Windows
+      execSync("choco install scrcpy", { stdio: "inherit" });
+    } else {
+      throw new Error(`Unsupported operating system: ${currentOS}`);
+    }
+
+    await logger.info("scrcpy installation successful");
+    return true;
+  } catch (installError) {
+    await logger.warning("scrcpy installation failed, please install manually");
+
+    const currentOS = process.platform;
+    if (currentOS === "darwin") {
+      await logger.warning("macOS: brew install scrcpy");
+    } else if (currentOS === "linux") {
+      await logger.warning("Linux: sudo apt-get install scrcpy");
+    } else if (currentOS === "win32") {
+      await logger.warning("Windows: choco install scrcpy");
+    }
+
+    return false;
+  }
+}
 
 /**
  * Sanitizes result objects by truncating base64 data URIs to improve readability
@@ -289,7 +330,6 @@ export async function getBoxCoordinates(
  * This function handles the local environment setup and scrcpy launch
  */
 export async function startLocalScrcpy(
-  boxId: string,
   logger: any,
   deviceId: string
 ): Promise<{ success: boolean; message: string }> {
@@ -300,25 +340,42 @@ export async function startLocalScrcpy(
     await logger.info("Checking local environment...");
 
     // Check if gbox cli is installed
-    const { execSync, spawn } = await import("child_process");
     let gboxCliAvailable = false;
     let scrcpyAvailable = false;
 
     try {
-      execSync("gbox --version", { stdio: "pipe" });
-      gboxCliAvailable = true;
-      await logger.info("gbox cli is installed");
+      const gboxPath = execSync("which gbox", { stdio: "pipe" })
+        .toString()
+        .trim();
+      if (gboxPath) {
+        gboxCliAvailable = true;
+      } else {
+        throw new Error("gbox command not found");
+      }
     } catch {
       await logger.info("gbox cli not installed, installing...");
       try {
-        // Install gbox cli using brew
-        execSync("brew install gbox", { stdio: "inherit" });
+        // Install gbox cli based on operating system
+        const currentOS = process.platform;
+        if (currentOS === "darwin") {
+          // macOS
+          execSync("brew install gbox", { stdio: "inherit" });
+        } else if (currentOS === "linux") {
+          // Linux
+          execSync("npm install -g @gbox.ai/cli", { stdio: "inherit" });
+        }
         gboxCliAvailable = true;
         await logger.info("gbox cli installation successful");
       } catch (installError) {
         await logger.warning(
-          "gbox cli installation failed, please install manually: brew install gbox"
+          "gbox cli installation failed, please install manually"
         );
+        const currentOS = process.platform;
+        if (currentOS === "darwin") {
+          await logger.warning("macOS: brew install gbox");
+        } else if (currentOS === "linux") {
+          await logger.warning("Linux: npm install -g @gbox.ai/cli");
+        }
       }
     }
 
@@ -329,36 +386,7 @@ export async function startLocalScrcpy(
       await logger.info("scrcpy is installed");
     } catch {
       await logger.info("scrcpy not installed, installing...");
-      try {
-        // Install scrcpy based on operating system
-        const currentOS = process.platform;
-        if (currentOS === "darwin") {
-          // macOS
-          execSync("brew install scrcpy", { stdio: "inherit" });
-        } else if (currentOS === "linux") {
-          // Linux
-          execSync("sudo apt-get update && sudo apt-get install -y scrcpy", {
-            stdio: "inherit",
-          });
-        } else if (currentOS === "win32") {
-          // Windows
-          execSync("choco install scrcpy", { stdio: "inherit" });
-        }
-        scrcpyAvailable = true;
-        await logger.info("scrcpy installation successful");
-      } catch (installError) {
-        await logger.warning(
-          "scrcpy installation failed, please install manually"
-        );
-        const currentOS = process.platform;
-        if (currentOS === "darwin") {
-          await logger.warning("macOS: brew install scrcpy");
-        } else if (currentOS === "linux") {
-          await logger.warning("Linux: sudo apt-get install scrcpy");
-        } else if (currentOS === "win32") {
-          await logger.warning("Windows: choco install scrcpy");
-        }
-      }
+      scrcpyAvailable = await installScrcpy();
     }
 
     // If tools are available, execute related commands

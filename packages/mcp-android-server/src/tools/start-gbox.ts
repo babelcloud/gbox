@@ -82,11 +82,7 @@ export function handleStartGbox(logger: MCPLogger) {
             openUrlInBrowser(liveViewUrl.url);
           } else {
             // Start local scrcpy instead of opening browser
-            const scrcpyResult = await startLocalScrcpy(
-              gboxId,
-              logger,
-              deviceId
-            );
+            const scrcpyResult = await startLocalScrcpy(logger, deviceId);
             if (scrcpyResult.success) {
               await logger.info("Local scrcpy started successfully", {
                 boxId: gboxId,
