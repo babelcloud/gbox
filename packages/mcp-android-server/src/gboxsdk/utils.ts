@@ -37,11 +37,11 @@ export async function installScrcpy(): Promise<boolean> {
 
     const currentOS = process.platform;
     if (currentOS === "darwin") {
-      await logger.warning("macOS: brew install scrcpy");
+      await logger.warning("run: brew install scrcpy");
     } else if (currentOS === "linux") {
-      await logger.warning("Linux: sudo apt-get install scrcpy");
+      await logger.warning("run: sudo apt-get install scrcpy");
     } else if (currentOS === "win32") {
-      await logger.warning("Windows: choco install scrcpy");
+      await logger.warning("run: choco install scrcpy");
     }
 
     return false;
