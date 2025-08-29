@@ -2,7 +2,7 @@ import { z } from "zod";
 import { CreateAndroid } from "gbox-sdk";
 import { gboxSDK } from "../gboxsdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
-import { openUrlInBrowser } from "../gboxsdk/utils.js";
+import { openUrlInBrowser, startLocalScrcpy } from "../gboxsdk/utils.js";
 import { deviceList } from "../gboxsdk/android.service.js";
 
 export const START_GBOX_TOOL = "start_gbox";
@@ -28,12 +28,12 @@ export function handleStartGbox(logger: MCPLogger) {
       let { gboxId } = args;
 
       let box;
+      let deviceId = "";
+      let deviceModel = "";
       if (!gboxId) {
         // If local physical device available, use it
         const devices = await deviceList();
         logger.info("Devices", { devices });
-        let deviceId = "";
-        let deviceModel = "";
         if (devices.length > 0) {
           // Always use the first available device
           deviceId = devices[0].id.trim();
@@ -74,11 +74,27 @@ export function handleStartGbox(logger: MCPLogger) {
       if (box) {
         if (box) {
           const liveViewUrl = await box.liveView();
-          openUrlInBrowser(liveViewUrl.url);
-          await logger.info("Live view opened successfully", {
+          await logger.info("Live view created successfully", {
             boxId: gboxId,
             url: liveViewUrl.url,
           });
+          if (!deviceId) {
+            openUrlInBrowser(liveViewUrl.url);
+          } else {
+            // Start local scrcpy instead of opening browser
+            const scrcpyResult = await startLocalScrcpy(logger, deviceId);
+            if (scrcpyResult.success) {
+              await logger.info("Local scrcpy started successfully", {
+                boxId: gboxId,
+                message: scrcpyResult.message,
+              });
+            } else {
+              await logger.warning("Local scrcpy failed to start", {
+                boxId: gboxId,
+                message: scrcpyResult.message,
+              });
+            }
+          }
           result.success = true;
           result.boxId = gboxId;
           result.liveViewUrl = liveViewUrl.url;

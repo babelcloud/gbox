@@ -1,4 +1,4 @@
-import { exec } from "child_process";
+import { exec, execSync, spawn } from "child_process";
 import sharp from "sharp";
 import { logger } from "../mcp-server.js";
 import { getCUACoordinates } from "./cua.service.js";
@@ -6,6 +6,47 @@ import { AndroidBoxOperator } from "gbox-sdk";
 
 export const MAX_SCREEN_LENGTH = 1784;
 export const SCREENSHOT_SIZE_THRESHOLD = Math.floor(0.7 * 1024 * 1024); // 700 KB
+
+/**
+ * Install scrcpy based on the current operating system
+ * @returns Promise<boolean> - true if installation successful, false otherwise
+ */
+export async function installScrcpy(): Promise<boolean> {
+  try {
+    const currentOS = process.platform;
+
+    if (currentOS === "darwin") {
+      // macOS
+      execSync("brew install scrcpy", { stdio: "inherit" });
+    } else if (currentOS === "linux") {
+      // Linux
+      execSync("sudo apt-get update && sudo apt-get install -y scrcpy", {
+        stdio: "inherit",
+      });
+    } else if (currentOS === "win32") {
+      // Windows
+      execSync("choco install scrcpy", { stdio: "inherit" });
+    } else {
+      throw new Error(`Unsupported operating system: ${currentOS}`);
+    }
+
+    await logger.info("scrcpy installation successful");
+    return true;
+  } catch (installError) {
+    await logger.warning("scrcpy installation failed, please install manually");
+
+    const currentOS = process.platform;
+    if (currentOS === "darwin") {
+      await logger.warning("run: brew install scrcpy");
+    } else if (currentOS === "linux") {
+      await logger.warning("run: sudo apt-get install scrcpy");
+    } else if (currentOS === "win32") {
+      await logger.warning("run: choco install scrcpy");
+    }
+
+    return false;
+  }
+}
 
 /**
  * Sanitizes result objects by truncating base64 data URIs to improve readability
@@ -282,4 +323,154 @@ export async function getBoxCoordinates(
   );
   logger.info("Restored coordinates", { restoredCoordinates });
   return restoredCoordinates;
+}
+
+/**
+ * Start local scrcpy instead of opening browser
+ * This function handles the local environment setup and scrcpy launch
+ */
+export async function startLocalScrcpy(
+  logger: any,
+  deviceId: string
+): Promise<{ success: boolean; message: string }> {
+  // Global process references for unified management
+  let scrcpyProcess: any = null;
+
+  try {
+    await logger.info("Checking local environment...");
+
+    // Check if gbox cli is installed
+    let gboxCliAvailable = false;
+    let scrcpyAvailable = false;
+
+    try {
+      const gboxPath = execSync("which gbox", { stdio: "pipe" })
+        .toString()
+        .trim();
+      if (gboxPath) {
+        gboxCliAvailable = true;
+      } else {
+        throw new Error("gbox command not found");
+      }
+    } catch {
+      await logger.info("gbox cli not installed, installing...");
+      try {
+        // Install gbox cli based on operating system
+        const currentOS = process.platform;
+        if (currentOS === "darwin") {
+          // macOS
+          execSync("brew install gbox", { stdio: "inherit" });
+        } else if (currentOS === "linux") {
+          // Linux
+          execSync("npm install -g @gbox.ai/cli", { stdio: "inherit" });
+        }
+        gboxCliAvailable = true;
+        await logger.info("gbox cli installation successful");
+      } catch (installError) {
+        await logger.warning(
+          "gbox cli installation failed, please install manually"
+        );
+        const currentOS = process.platform;
+        if (currentOS === "darwin") {
+          await logger.warning("macOS: brew install gbox");
+        } else if (currentOS === "linux") {
+          await logger.warning("Linux: npm install -g @gbox.ai/cli");
+        }
+      }
+    }
+
+    // Check if scrcpy is installed
+    try {
+      execSync("scrcpy --version", { stdio: "pipe" });
+      scrcpyAvailable = true;
+      await logger.info("scrcpy is installed");
+    } catch {
+      await logger.info("scrcpy not installed, installing...");
+      scrcpyAvailable = await installScrcpy();
+    }
+
+    // If tools are available, execute related commands
+    if (gboxCliAvailable && scrcpyAvailable) {
+      await logger.info("Executing local commands...", { deviceId });
+      // Stop previous processes first (if they exist)
+      await cleanupProcesses(scrcpyProcess, logger);
+      // Start scrcpy to connect to device
+      const match = deviceId.match(/^([^-]+)-usb$/);
+      if (!match) {
+        throw new Error("Invalid device ID");
+      }
+      const deviceName = match[1];
+      let scrcpyArgs = [
+        "--video-codec=h265",
+        "--max-size=1920",
+        "--max-fps=30",
+        "--no-audio",
+        "--keyboard=uhid",
+      ];
+      if (match[1]) {
+        scrcpyArgs.unshift("-s", deviceName);
+      }
+      try {
+        scrcpyProcess = spawn("scrcpy", scrcpyArgs, {
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        scrcpyProcess.stdout.on("data", (data: any) => {
+          const output = data.toString();
+          logger.info("scrcpy: " + output);
+          if (output.includes("[server] INFO")) {
+            logger.info("scrcpy started");
+          }
+        });
+
+        scrcpyProcess.stderr.on("data", (data: any) => {
+          const output = data.toString();
+          logger.info("scrcpy stderr: " + output);
+        });
+
+        scrcpyProcess.on("error", (error: any) => {
+          logger.error("scrcpy process error", error);
+        });
+
+        scrcpyProcess.on("exit", (code: any) => {
+          logger.warning(`scrcpy process exited, exit code: ${code}`);
+        });
+
+        await logger.info("scrcpy started");
+      } catch (scrcpyError) {
+        await logger.warning("scrcpy startup failed", scrcpyError);
+        throw scrcpyError;
+      }
+      return {
+        success: true,
+        message: "Local scrcpy started successfully",
+      };
+    } else {
+      throw new Error("Required tools not installed or unavailable");
+    }
+  } catch (error) {
+    await logger.error("Failed to start local scrcpy", error);
+    await cleanupProcesses(scrcpyProcess, logger);
+    return {
+      success: false,
+      message: `Failed to start local scrcpy: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+/**
+ * Helper function to clean up processes
+ */
+async function cleanupProcesses(scrcpyProcess: any, logger: any) {
+  const processes = [{ name: "scrcpy", process: scrcpyProcess }];
+
+  for (const { name, process } of processes) {
+    if (process && !process.killed) {
+      try {
+        process.kill();
+        await logger.info(`Stopped previous ${name} process`);
+      } catch (e) {
+        await logger.warning(`Failed to stop previous ${name} process`, e);
+      }
+    }
+  }
 }
