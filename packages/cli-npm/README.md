@@ -18,9 +18,15 @@ You can also plug GBOX MCP to any Agent you like, such as Cursor, Claude Code. T
 brew install gbox
 ```
 
-### Using NPM
+### Using NPM (on Linux)
 ```bash
 npm install -g @gbox.ai/cli
+```
+
+### Using Windows (Coming Soon)
+```bash
+# Windows support will be available soon
+# Stay tuned for updates!
 ```
 
 ## 2. Authenticate
