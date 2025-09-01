@@ -3,6 +3,7 @@ package profile
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,16 @@ import (
 
 	"github.com/babelcloud/gbox/packages/cli/config"
 	"github.com/pelletier/go-toml/v2"
+)
+
+// Common error messages
+const (
+	ErrNoCurrentProfile    = "no current profile set. Please run 'gbox profile use' to set a current profile first"
+	ErrNoAPIKey            = "current profile has no API key. Please run 'gbox profile add' to configure a profile first"
+	ErrProfileNotFound     = "profile '%s' not found"
+	ErrCannotDeleteCurrent = "cannot delete the currently active profile, please switch to another profile first"
+	ErrInvalidAPIKey       = "invalid API key"
+	ErrEmptyAPIKey         = "API key is empty"
 )
 
 // ProfileConfig represents the complete profile configuration
@@ -46,6 +57,30 @@ type OrgInfo struct {
 type ProfileManager struct {
 	config ProfileConfig
 	path   string
+}
+
+// Default is the default ProfileManager instance for package-level operations
+var Default = func() *ProfileManager {
+	pm := NewProfileManager()
+	if err := pm.Load(); err != nil {
+		// Log warning but don't fail - will retry on next access
+		fmt.Fprintf(os.Stderr, "Warning: failed to load default profile manager: %v\n", err)
+	} else {
+		// Check for potential configuration mismatch
+		pm.checkConfigurationMismatch()
+	}
+	return pm
+}()
+
+// RefreshDefault refreshes the default ProfileManager instance
+// This is useful when profile configuration changes and you want to reload from disk
+func RefreshDefault() error {
+	err := Default.Load()
+	if err == nil {
+		// Check for potential configuration mismatch after reload
+		Default.checkConfigurationMismatch()
+	}
+	return err
 }
 
 // NewProfileManager creates a new ProfileManager
@@ -364,12 +399,12 @@ func (pm *ProfileManager) Use(id string) error {
 // Remove removes the specified profile
 func (pm *ProfileManager) Remove(id string) error {
 	if _, exists := pm.config.Profiles[id]; !exists {
-		return fmt.Errorf("profile '%s' not found", id)
+		return fmt.Errorf(ErrProfileNotFound, id)
 	}
 
 	// Check if trying to delete current profile
 	if id == pm.config.Current && len(pm.config.Profiles) > 1 {
-		return fmt.Errorf("cannot delete the currently active profile, please switch to another profile first")
+		return errors.New(ErrCannotDeleteCurrent)
 	}
 
 	// Remove specified profile
@@ -393,11 +428,13 @@ func (pm *ProfileManager) GetCurrent() *Profile {
 	}
 
 	if profile, exists := pm.config.Profiles[pm.config.Current]; exists {
+		// Create a copy to prevent external modification
+		profileCopy := profile
 		// Fill in default values if not set
-		if profile.BaseURL == "" {
-			profile.BaseURL = pm.config.Defaults.BaseURL
+		if profileCopy.BaseURL == "" {
+			profileCopy.BaseURL = pm.config.Defaults.BaseURL
 		}
-		return &profile
+		return &profileCopy
 	}
 	return nil
 }
@@ -405,7 +442,9 @@ func (pm *ProfileManager) GetCurrent() *Profile {
 // GetProfile gets a specific profile by ID
 func (pm *ProfileManager) GetProfile(id string) *Profile {
 	if profile, exists := pm.config.Profiles[id]; exists {
-		return &profile
+		// Return a copy to prevent external modification
+		profileCopy := profile
+		return &profileCopy
 	}
 	return nil
 }
@@ -419,25 +458,24 @@ func (p *Profile) GetOrgName() string {
 	return p.Org
 }
 
-// GetProfiles returns all profiles
+// GetProfiles returns a copy of all profiles to prevent external modification
 func (pm *ProfileManager) GetProfiles() map[string]Profile {
-	return pm.config.Profiles
+	profiles := make(map[string]Profile, len(pm.config.Profiles))
+	for id, profile := range pm.config.Profiles {
+		profiles[id] = profile
+	}
+	return profiles
 }
 
 // GetCurrentAPIKey gets the decoded API key from the current profile
-func GetCurrentAPIKey() (string, error) {
-	pm := NewProfileManager()
-	if err := pm.Load(); err != nil {
-		return "", fmt.Errorf("failed to load profiles: %v", err)
-	}
-
+func (pm *ProfileManager) GetCurrentAPIKey() (string, error) {
 	current := pm.GetCurrent()
 	if current == nil {
-		return "", fmt.Errorf("no current profile set. Please run 'gbox profile use' to set a current profile first")
+		return "", errors.New(ErrNoCurrentProfile)
 	}
 
 	if current.APIKey == "" {
-		return "", fmt.Errorf("current profile has no API key. Please run 'gbox profile add' to configure a profile first")
+		return "", errors.New(ErrNoAPIKey)
 	}
 
 	return pm.DecodeAPIKey(current.APIKey)
@@ -446,7 +484,7 @@ func GetCurrentAPIKey() (string, error) {
 // DecodeAPIKey decodes a base64 encoded API key
 func (pm *ProfileManager) DecodeAPIKey(encodedKey string) (string, error) {
 	if encodedKey == "" {
-		return "", fmt.Errorf("API key is empty")
+		return "", errors.New(ErrEmptyAPIKey)
 	}
 
 	decodedBytes, err := base64.StdEncoding.DecodeString(encodedKey)
@@ -476,13 +514,77 @@ func (pm *ProfileManager) GetCurrentProfileID() string {
 	return pm.config.Current
 }
 
+// HasCurrentProfile checks if a current profile is set
+func (pm *ProfileManager) HasCurrentProfile() bool {
+	return pm.config.Current != "" && pm.GetCurrent() != nil
+}
+
+// GetProfileCount returns the number of profiles
+func (pm *ProfileManager) GetProfileCount() int {
+	return len(pm.config.Profiles)
+}
+
+// GetProfileIDs returns a slice of profile IDs
+func (pm *ProfileManager) GetProfileIDs() []string {
+	ids := make([]string, 0, len(pm.config.Profiles))
+	for id := range pm.config.Profiles {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// ProfileExists checks if a profile with the given ID exists
+func (pm *ProfileManager) ProfileExists(id string) bool {
+	_, exists := pm.config.Profiles[id]
+	return exists
+}
+
+// checkConfigurationMismatch checks for potential configuration issues
+// and warns if environment variables don't match profile configuration
+func (pm *ProfileManager) checkConfigurationMismatch() {
+	envBaseURL := os.Getenv("GBOX_BASE_URL")
+	envAPIKey := os.Getenv("GBOX_API_KEY")
+
+	// Skip check if no environment base URL is set
+	if envBaseURL == "" {
+		return
+	}
+
+	// Skip check if environment API key is set (user is overriding everything)
+	if envAPIKey != "" {
+		return
+	}
+
+	current := pm.GetCurrent()
+	if current == nil {
+		return
+	}
+
+	// Get the effective base URL from profile (with defaults)
+	profileBaseURL := current.BaseURL
+	if profileBaseURL == "" {
+		profileBaseURL = pm.config.Defaults.BaseURL
+	}
+
+	// Normalize URLs for comparison (remove trailing slash)
+	envBaseURL = strings.TrimSuffix(envBaseURL, "/")
+	profileBaseURL = strings.TrimSuffix(profileBaseURL, "/")
+
+	// Warn if they don't match
+	if envBaseURL != profileBaseURL {
+		fmt.Fprintf(os.Stderr, "Warning: GBOX_BASE_URL environment variable (%s) differs from profile base URL (%s). "+
+			"This may cause connection issues. Consider setting GBOX_API_KEY or updating your profile.\n",
+			envBaseURL, profileBaseURL)
+	}
+}
+
 // GetDefaultBaseURL gets the default base URL
 func (pm *ProfileManager) GetDefaultBaseURL() string {
 	return pm.config.Defaults.BaseURL
 }
 
 // GetEffectiveBaseURL gets the effective base URL with priority: GBOX_BASE_URL > profile > config default
-func GetEffectiveBaseURL() string {
+func (pm *ProfileManager) GetEffectiveBaseURL() string {
 	var baseURL string
 
 	// First priority: GBOX_BASE_URL environment variable
@@ -490,20 +592,13 @@ func GetEffectiveBaseURL() string {
 		baseURL = envURL
 	} else {
 		// Second priority: current profile's base URL
-		pm := NewProfileManager()
-		if err := pm.Load(); err != nil {
-			// Log warning and fallback to default
-			fmt.Fprintf(os.Stderr, "Warning: failed to load profiles: %v, using default base URL\n", err)
-			baseURL = config.GetBaseURL()
+		// Get effective base URL from current profile (includes profile defaults)
+		current := pm.GetCurrent()
+		if current != nil {
+			baseURL = current.BaseURL
 		} else {
-			// Get effective base URL from current profile (includes profile defaults)
-			current := pm.GetCurrent()
-			if current != nil {
-				baseURL = current.BaseURL
-			} else {
-				// No current profile, use config default
-				baseURL = config.GetBaseURL()
-			}
+			// No current profile, use config default
+			baseURL = config.GetBaseURL()
 		}
 	}
 
@@ -512,7 +607,7 @@ func GetEffectiveBaseURL() string {
 }
 
 // GetEffectiveAPIKey gets the effective API key with priority: GBOX_API_KEY > profile
-func GetEffectiveAPIKey() (string, error) {
+func (pm *ProfileManager) GetEffectiveAPIKey() (string, error) {
 	// First priority: GBOX_API_KEY environment variable
 	if envAPIKey := os.Getenv("GBOX_API_KEY"); envAPIKey != "" {
 		// Environment variable is already decoded (plain text)
@@ -520,18 +615,13 @@ func GetEffectiveAPIKey() (string, error) {
 	}
 
 	// Second priority: current profile's API key
-	pm := NewProfileManager()
-	if err := pm.Load(); err != nil {
-		return "", fmt.Errorf("failed to load profiles: %v", err)
-	}
-
 	current := pm.GetCurrent()
 	if current == nil {
-		return "", fmt.Errorf("no current profile set. Please run 'gbox profile use' to set a current profile first")
+		return "", errors.New(ErrNoCurrentProfile)
 	}
 
 	if current.APIKey == "" {
-		return "", fmt.Errorf("current profile has no API key. Please run 'gbox profile add' to configure a profile first")
+		return "", errors.New(ErrNoAPIKey)
 	}
 
 	// Decode profile API key (it's base64-encoded at rest)
@@ -676,7 +766,7 @@ func (pm *ProfileManager) getOrgInfoFromAPI(apiKey, baseURL string) (*OrgInfo, e
 func (pm *ProfileManager) GetDevicesURL() (string, error) {
 	current := pm.GetCurrent()
 	if current == nil {
-		return "", fmt.Errorf("no current profile set. Please run 'gbox profile use' to set a current profile first")
+		return "", errors.New(ErrNoCurrentProfile)
 	}
 
 	devicesURL := pm.buildDevicesURL(current)
@@ -691,7 +781,7 @@ func (pm *ProfileManager) GetDevicesURL() (string, error) {
 func (pm *ProfileManager) GetDevicesURLByID(id string) (string, error) {
 	profile := pm.GetProfile(id)
 	if profile == nil {
-		return "", fmt.Errorf("profile '%s' not found", id)
+		return "", fmt.Errorf(ErrProfileNotFound, id)
 	}
 
 	devicesURL := pm.buildDevicesURL(profile)

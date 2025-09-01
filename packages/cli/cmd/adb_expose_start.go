@@ -56,7 +56,7 @@ func ExecuteAdbExpose(cmd *cobra.Command, opts *AdbExposeOptions, args []string)
 	remotePort := 5555
 
 	// Get API Key with priority: GBOX_API_KEY env var > profile
-	apiKey, err := profile.GetEffectiveAPIKey()
+	apiKey, err := profile.Default.GetEffectiveAPIKey()
 	if err != nil {
 		return fmt.Errorf("failed to get API key: %v", err)
 	}
@@ -88,7 +88,7 @@ func ExecuteAdbExpose(cmd *cobra.Command, opts *AdbExposeOptions, args []string)
 	}()
 
 	// Get effective base URL for connection
-	effectiveBaseURL := profile.GetEffectiveBaseURL()
+	effectiveBaseURL := profile.Default.GetEffectiveBaseURL()
 
 	// Connect to websocket
 	portForwardConfig := adb_expose.Config{

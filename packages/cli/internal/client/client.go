@@ -40,7 +40,7 @@ type profileEntry struct {
 // created without an API key.
 func NewClientFromProfile() (*sdk.Client, error) {
 	// Get effective base URL with proper priority handling
-	baseURL := profile.GetEffectiveBaseURL()
+	baseURL := profile.Default.GetEffectiveBaseURL()
 
 	// Get profile file path from config
 	profilePath := config.GetProfilePath()
