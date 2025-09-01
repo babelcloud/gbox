@@ -339,45 +339,7 @@ export async function startLocalScrcpy(
   try {
     await logger.info("Checking local environment...");
 
-    // Check if gbox cli is installed
-    let gboxCliAvailable = false;
     let scrcpyAvailable = false;
-
-    try {
-      const gboxPath = execSync("which gbox", { stdio: "pipe" })
-        .toString()
-        .trim();
-      if (gboxPath) {
-        gboxCliAvailable = true;
-      } else {
-        throw new Error("gbox command not found");
-      }
-    } catch {
-      await logger.info("gbox cli not installed, installing...");
-      try {
-        // Install gbox cli based on operating system
-        const currentOS = process.platform;
-        if (currentOS === "darwin") {
-          // macOS
-          execSync("brew install gbox", { stdio: "inherit" });
-        } else if (currentOS === "linux") {
-          // Linux
-          execSync("npm install -g @gbox.ai/cli", { stdio: "inherit" });
-        }
-        gboxCliAvailable = true;
-        await logger.info("gbox cli installation successful");
-      } catch (installError) {
-        await logger.warning(
-          "gbox cli installation failed, please install manually"
-        );
-        const currentOS = process.platform;
-        if (currentOS === "darwin") {
-          await logger.warning("macOS: brew install gbox");
-        } else if (currentOS === "linux") {
-          await logger.warning("Linux: npm install -g @gbox.ai/cli");
-        }
-      }
-    }
 
     // Check if scrcpy is installed
     try {
@@ -390,7 +352,7 @@ export async function startLocalScrcpy(
     }
 
     // If tools are available, execute related commands
-    if (gboxCliAvailable && scrcpyAvailable) {
+    if (scrcpyAvailable) {
       await logger.info("Executing local commands...", { deviceId });
       // Stop previous processes first (if they exist)
       await cleanupProcesses(scrcpyProcess, logger);
