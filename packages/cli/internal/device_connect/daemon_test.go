@@ -128,6 +128,10 @@ func TestNoProxyWorkaround(t *testing.T) {
 		"PATH=/usr/bin",
 	}
 
+	// Set environment variable for testing
+	os.Setenv("no_proxy", "localhost,127.0.0.1")
+	defer os.Unsetenv("no_proxy")
+
 	result := handleNoProxyWorkaround(env, "https://gbox.ai")
 
 	// Should keep proxy variables since gbox.ai is not in no_proxy
@@ -158,9 +162,9 @@ func TestNoProxyWorkaround(t *testing.T) {
 	}
 
 	// Test case 3: Wildcard pattern
+	os.Setenv("no_proxy", "*.example.com,localhost")
 	env = []string{
 		"http_proxy=http://proxy.example.com:8080",
-		"no_proxy=*.example.com,localhost",
 		"PATH=/usr/bin",
 	}
 
@@ -179,12 +183,12 @@ func TestNoProxyWorkaround(t *testing.T) {
 	}
 
 	// Test case 4: Check that only http_proxy and https_proxy are removed
+	os.Setenv("no_proxy", "localhost")
 	env = []string{
 		"http_proxy=http://proxy.example.com:8080",
 		"https_proxy=https://proxy.example.com:8080",
 		"ftp_proxy=ftp://proxy.example.com:8080",
 		"all_proxy=socks5://proxy.example.com:8080",
-		"no_proxy=localhost",
 		"PATH=/usr/bin",
 	}
 
