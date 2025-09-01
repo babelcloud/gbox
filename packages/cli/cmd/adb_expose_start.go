@@ -55,14 +55,10 @@ func ExecuteAdbExpose(cmd *cobra.Command, opts *AdbExposeOptions, args []string)
 	// ADB always uses port 5555 on the remote side
 	remotePort := 5555
 
-	// try to get API_KEY, if not set, return error
-	pm := profile.NewProfileManager()
-	if err := pm.Load(); err != nil {
-		return fmt.Errorf("failed to load profile: %v", err)
-	}
-	current := pm.GetCurrent()
-	if current == nil || current.APIKey == "" {
-		return fmt.Errorf("no current profile or API key found. Please run 'gbox profile add' and 'gbox profile use'")
+	// Get API Key with priority: GBOX_API_KEY env var > profile
+	apiKey, err := profile.GetEffectiveAPIKey()
+	if err != nil {
+		return fmt.Errorf("failed to get API key: %v", err)
 	}
 
 	logPath := fmt.Sprintf("%s/gbox-adb-expose-%s-%d.log", config.GetGboxHome(), opts.BoxID, localPort)
@@ -71,8 +67,7 @@ func ExecuteAdbExpose(cmd *cobra.Command, opts *AdbExposeOptions, args []string)
 	}
 
 	// Write pid file
-	err := adb_expose.WritePidFile(opts.BoxID, []int{localPort}, []int{remotePort})
-	if err != nil {
+	if err := adb_expose.WritePidFile(opts.BoxID, []int{localPort}, []int{remotePort}); err != nil {
 		return fmt.Errorf("failed to write pid file: %v", err)
 	}
 
@@ -97,7 +92,7 @@ func ExecuteAdbExpose(cmd *cobra.Command, opts *AdbExposeOptions, args []string)
 
 	// Connect to websocket
 	portForwardConfig := adb_expose.Config{
-		APIKey:      current.APIKey,
+		APIKey:      apiKey,
 		BoxID:       opts.BoxID,
 		GboxURL:     effectiveBaseURL,
 		TargetPorts: []int{remotePort},
@@ -110,7 +105,7 @@ func ExecuteAdbExpose(cmd *cobra.Command, opts *AdbExposeOptions, args []string)
 		// Listen on local port
 		listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", localPort))
 		if err != nil {
-			return fmt.Errorf("Failed to listen on port %d: %v", localPort, err)
+			return fmt.Errorf("failed to listen on port %d: %v", localPort, err)
 		}
 		log.Printf("Listening on 127.0.0.1:%d", localPort)
 

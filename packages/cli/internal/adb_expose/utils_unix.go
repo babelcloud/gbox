@@ -5,6 +5,8 @@ package adb_expose
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"syscall"
 )
 
@@ -27,9 +29,14 @@ func DaemonizeIfNeeded(foreground bool, logPath string, boxID string, fromIntera
 		logFile = f
 		defer f.Close()
 	}
+
+	// Prepare environment for child process with GBOX environment variables preserved
+	env := PrepareGBOXEnvironment()
+	env = append(env, "GBOX_ADB_EXPOSE_DAEMON=1")
+
 	attr := &os.ProcAttr{
 		Dir:   "",
-		Env:   append(os.Environ(), "GBOX_ADB_EXPOSE_DAEMON=1"),
+		Env:   env,
 		Files: []*os.File{os.Stdin, logFile, logFile},
 		Sys:   &syscall.SysProcAttr{Setsid: true},
 	}
@@ -50,7 +57,23 @@ func DaemonizeIfNeeded(foreground bool, logPath string, boxID string, fromIntera
 		}
 		newArgs = append(newArgs, args[i])
 	}
-	proc, err := os.StartProcess(args[0], newArgs, attr)
+
+	// Resolve executable path robustly (PATH lookup + recursive symlink resolution)
+	execPath := args[0]
+	if !filepath.IsAbs(execPath) {
+		if lp, err := exec.LookPath(execPath); err == nil {
+			execPath = lp
+		}
+	}
+	if abs, err := filepath.Abs(execPath); err == nil {
+		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+			execPath = resolved
+		} else {
+			execPath = abs
+		}
+	}
+
+	proc, err := os.StartProcess(execPath, newArgs, attr)
 	if err != nil {
 		return true, fmt.Errorf("failed to daemonize: %v", err)
 	}

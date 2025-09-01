@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -216,4 +217,32 @@ func parseMessage(data []byte) (msgType byte, streamID uint32, payload []byte, e
 	payload = data[5:]
 
 	return msgType, streamID, payload, nil
+}
+
+// PrepareGBOXEnvironment prepares environment variables for daemon process
+// ensuring important GBOX environment variables are preserved
+func PrepareGBOXEnvironment() []string {
+	env := os.Environ()
+
+	// Ensure important GBOX environment variables are passed to child process
+	// This ensures the child has the same configuration context as parent
+	for _, envVar := range []string{"GBOX_BASE_URL", "GBOX_API_KEY", "GBOX_HOME"} {
+		if value := os.Getenv(envVar); value != "" {
+			// Check if already in environment, if not add it
+			found := false
+			prefix := envVar + "="
+			for i, existing := range env {
+				if strings.HasPrefix(existing, prefix) {
+					env[i] = envVar + "=" + value
+					found = true
+					break
+				}
+			}
+			if !found {
+				env = append(env, envVar+"="+value)
+			}
+		}
+	}
+
+	return env
 }

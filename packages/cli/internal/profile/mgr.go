@@ -481,25 +481,6 @@ func (pm *ProfileManager) GetDefaultBaseURL() string {
 	return pm.config.Defaults.BaseURL
 }
 
-// GetCurrentBaseURL gets the base URL from the current profile
-func GetCurrentBaseURL() (string, error) {
-	pm := NewProfileManager()
-	if err := pm.Load(); err != nil {
-		return "", fmt.Errorf("failed to load profiles: %v", err)
-	}
-
-	current := pm.GetCurrent()
-	if current == nil {
-		return "", fmt.Errorf("no current profile set. Please run 'gbox profile use' to set a current profile first")
-	}
-
-	if current.BaseURL == "" {
-		return "", fmt.Errorf("current profile has no base URL configured")
-	}
-
-	return current.BaseURL, nil
-}
-
 // GetEffectiveBaseURL gets the effective base URL with priority: GBOX_BASE_URL > profile > config default
 func GetEffectiveBaseURL() string {
 	var baseURL string
@@ -528,6 +509,33 @@ func GetEffectiveBaseURL() string {
 
 	// Trim trailing slash for consistency
 	return strings.TrimSuffix(baseURL, "/")
+}
+
+// GetEffectiveAPIKey gets the effective API key with priority: GBOX_API_KEY > profile
+func GetEffectiveAPIKey() (string, error) {
+	// First priority: GBOX_API_KEY environment variable
+	if envAPIKey := os.Getenv("GBOX_API_KEY"); envAPIKey != "" {
+		// Environment variable is already decoded (plain text)
+		return envAPIKey, nil
+	}
+
+	// Second priority: current profile's API key
+	pm := NewProfileManager()
+	if err := pm.Load(); err != nil {
+		return "", fmt.Errorf("failed to load profiles: %v", err)
+	}
+
+	current := pm.GetCurrent()
+	if current == nil {
+		return "", fmt.Errorf("no current profile set. Please run 'gbox profile use' to set a current profile first")
+	}
+
+	if current.APIKey == "" {
+		return "", fmt.Errorf("current profile has no API key. Please run 'gbox profile add' to configure a profile first")
+	}
+
+	// Decode profile API key (it's base64-encoded at rest)
+	return pm.DecodeAPIKey(current.APIKey)
 }
 
 // normalizeID normalizes an ID string
