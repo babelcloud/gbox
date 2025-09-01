@@ -344,9 +344,10 @@ func TestVersionMatchingPriority(t *testing.T) {
 			t.Fatalf("Failed to create fake binary: %v", err)
 		}
 
-		// Create version cache with a specific version that exists
+		// Create version cache with latest version to simulate existing installation
+		// that matches the latest available version
 		cacheInfo := &VersionInfo{
-			TagName:    "v0.1.7",
+			TagName:    "v0.1.10", // Use a version that exists and is likely to be latest
 			CommitID:   "test-commit",
 			Downloaded: time.Now().Format(time.RFC3339),
 		}

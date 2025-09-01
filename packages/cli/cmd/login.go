@@ -231,7 +231,10 @@ func getLocalToken(githubToken string) (string, error) {
 	}
 
 	// Get base URL with proper priority handling
-	baseURL := profile.GetEffectiveBaseURL()
+	baseURL := os.Getenv("GBOX_BASE_URL")
+	if baseURL == "" {
+		baseURL = "https://gbox.ai"
+	}
 	apiURL := baseURL + "/api/public/v1/auth/github/callback/token"
 	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -67,7 +68,8 @@ func TestFindBabelUmbrellaDir(t *testing.T) {
 
 func TestSetupDeviceProxyEnvironment(t *testing.T) {
 	apiKey := "test-api-key-12345"
-	env := setupDeviceProxyEnvironment(apiKey)
+	baseURL := "https://test.example.com"
+	env := setupDeviceProxyEnvironment(apiKey, baseURL)
 
 	// Check that required environment variables are set
 	found := false
@@ -103,5 +105,110 @@ func TestSetupDeviceProxyEnvironment(t *testing.T) {
 		t.Error("Expected ANDROID_DEVMGR_ENDPOINT to be set in environment")
 	}
 
+	found = false
+	for _, envVar := range env {
+		if contains(envVar, "GBOX_BASE_URL="+baseURL) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected GBOX_BASE_URL to be set in environment")
+	}
+
 	t.Logf("Environment variables set: %d", len(env))
+}
+
+func TestNoProxyWorkaround(t *testing.T) {
+	// Test case 1: Domain not in no_proxy list
+	env := []string{
+		"http_proxy=http://proxy.example.com:8080",
+		"https_proxy=https://proxy.example.com:8080",
+		"no_proxy=localhost,127.0.0.1",
+		"PATH=/usr/bin",
+	}
+
+	// Set environment variable for testing
+	os.Setenv("no_proxy", "localhost,127.0.0.1")
+	defer os.Unsetenv("no_proxy")
+
+	result := handleNoProxyWorkaround(env, "https://gbox.ai")
+
+	// Should keep proxy variables since gbox.ai is not in no_proxy
+	proxyFound := false
+	for _, envVar := range result {
+		if strings.HasPrefix(envVar, "http_proxy=") {
+			proxyFound = true
+			break
+		}
+	}
+	if !proxyFound {
+		t.Error("Expected http_proxy to be kept when domain not in no_proxy")
+	}
+
+	// Test case 2: Domain in no_proxy list (localhost)
+	result = handleNoProxyWorkaround(env, "https://localhost:8080")
+
+	// Should remove proxy variables since localhost is in no_proxy
+	proxyFound = false
+	for _, envVar := range result {
+		if strings.HasPrefix(envVar, "http_proxy=") {
+			proxyFound = true
+			break
+		}
+	}
+	if proxyFound {
+		t.Error("Expected http_proxy to be removed when domain in no_proxy")
+	}
+
+	// Test case 3: Wildcard pattern
+	os.Setenv("no_proxy", "*.example.com,localhost")
+	env = []string{
+		"http_proxy=http://proxy.example.com:8080",
+		"PATH=/usr/bin",
+	}
+
+	result = handleNoProxyWorkaround(env, "https://api.example.com")
+
+	// Should remove proxy variables since api.example.com matches *.example.com
+	proxyFound = false
+	for _, envVar := range result {
+		if strings.HasPrefix(envVar, "http_proxy=") {
+			proxyFound = true
+			break
+		}
+	}
+	if proxyFound {
+		t.Error("Expected http_proxy to be removed when domain matches wildcard pattern")
+	}
+
+	// Test case 4: Check that only http_proxy and https_proxy are removed
+	os.Setenv("no_proxy", "localhost")
+	env = []string{
+		"http_proxy=http://proxy.example.com:8080",
+		"https_proxy=https://proxy.example.com:8080",
+		"ftp_proxy=ftp://proxy.example.com:8080",
+		"all_proxy=socks5://proxy.example.com:8080",
+		"PATH=/usr/bin",
+	}
+
+	result = handleNoProxyWorkaround(env, "https://localhost:8080")
+
+	// Should only remove http_proxy and https_proxy, keep ftp_proxy and all_proxy
+	ftpProxyFound := false
+	allProxyFound := false
+	for _, envVar := range result {
+		if strings.HasPrefix(envVar, "ftp_proxy=") {
+			ftpProxyFound = true
+		}
+		if strings.HasPrefix(envVar, "all_proxy=") {
+			allProxyFound = true
+		}
+	}
+	if !ftpProxyFound {
+		t.Error("Expected ftp_proxy to be kept")
+	}
+	if !allProxyFound {
+		t.Error("Expected all_proxy to be kept")
+	}
 }

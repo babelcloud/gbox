@@ -2,6 +2,7 @@ package device_connect
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
-	"github.com/babelcloud/gbox/packages/cli/internal/profile"
 )
 
 // isExecutableFile checks if the given path is an executable file (not a directory)
@@ -201,15 +201,122 @@ func FindBabelUmbrellaDir(startDir string) string {
 }
 
 // setupDeviceProxyEnvironment sets up environment variables for device proxy service
-func setupDeviceProxyEnvironment(apiKey string) []string {
+func setupDeviceProxyEnvironment(apiKey, baseURL string) []string {
 	env := os.Environ()
 	env = append(env, "GBOX_PROVIDER_TYPE=org")
 	env = append(env, fmt.Sprintf("GBOX_API_KEY=%s", apiKey))
-
-	// Add ANDROID_DEVMGR_ENDPOINT environment variable with effective base URL
-	cloudEndpoint := profile.GetEffectiveBaseURL()
-	androidDevmgrEndpoint := fmt.Sprintf("%s/devmgr", cloudEndpoint)
+	// Add ANDROID_DEVMGR_ENDPOINT environment variable
+	androidDevmgrEndpoint := fmt.Sprintf("%s/devmgr", baseURL)
 	env = append(env, fmt.Sprintf("ANDROID_DEVMGR_ENDPOINT=%s", androidDevmgrEndpoint))
 
+	// Also add GBOX_BASE_URL for consistency
+	env = append(env, fmt.Sprintf("GBOX_BASE_URL=%s", baseURL))
+
+	// Work around for frp not supporting no_proxy
+	env = handleNoProxyWorkaround(env, baseURL)
+	
 	return env
+}
+
+// handleNoProxyWorkaround handles the case where frp doesn't support no_proxy
+// If the target domain is in no_proxy list, remove proxy environment variables
+func handleNoProxyWorkaround(env []string, baseURL string) []string {
+	// Parse baseURL to get domain
+	parsedURL, err := url.Parse(baseURL)
+	if err != nil {
+		// If we can't parse the URL, return original env unchanged
+		return env
+	}
+
+	domain := parsedURL.Hostname()
+	if domain == "" {
+		return env
+	}
+
+	// Check if domain is in no_proxy list
+	noProxyList := getNoProxyList()
+	if !isDomainInNoProxyList(domain, noProxyList) {
+		return env
+	}
+
+	// Domain is in no_proxy list, remove proxy environment variables
+	return removeProxyEnvironmentVariables(env)
+}
+
+// getNoProxyList gets the no_proxy list from environment variables
+func getNoProxyList() []string {
+	noProxy := os.Getenv("no_proxy")
+	if noProxy == "" {
+		noProxy = os.Getenv("NO_PROXY")
+	}
+
+	if noProxy == "" {
+		return nil
+	}
+
+	// Split by comma and trim spaces
+	domains := strings.Split(noProxy, ",")
+	var result []string
+	for _, domain := range domains {
+		trimmed := strings.TrimSpace(domain)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+
+	return result
+}
+
+// isDomainInNoProxyList checks if a domain matches any pattern in no_proxy list
+func isDomainInNoProxyList(domain string, noProxyList []string) bool {
+	for _, pattern := range noProxyList {
+		if matchesNoProxyPattern(domain, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesNoProxyPattern checks if a domain matches a no_proxy pattern
+// Supports exact match and wildcard (*.example.com)
+func matchesNoProxyPattern(domain, pattern string) bool {
+	// Exact match
+	if domain == pattern {
+		return true
+	}
+
+	// Wildcard pattern (*.example.com)
+	if strings.HasPrefix(pattern, "*.") {
+		suffix := pattern[2:] // Remove "*."
+		if strings.HasSuffix(domain, suffix) {
+			return true
+		}
+	}
+
+	// Localhost and local domains
+	if pattern == "localhost" || pattern == "127.0.0.1" || pattern == "::1" {
+		if domain == "localhost" || domain == "127.0.0.1" || domain == "::1" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// removeProxyEnvironmentVariables removes proxy-related environment variables
+func removeProxyEnvironmentVariables(env []string) []string {
+	var result []string
+
+	for _, envVar := range env {
+		// Only remove http_proxy and https_proxy (both lowercase and uppercase)
+		if strings.HasPrefix(envVar, "http_proxy=") ||
+			strings.HasPrefix(envVar, "HTTP_PROXY=") ||
+			strings.HasPrefix(envVar, "https_proxy=") ||
+			strings.HasPrefix(envVar, "HTTPS_PROXY=") {
+			continue // Skip this environment variable
+		}
+		result = append(result, envVar)
+	}
+
+	return result
 }
