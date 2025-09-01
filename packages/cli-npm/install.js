@@ -2,10 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const tar = require('tar');
-const unzipper = require('unzipper');
 
 const packageJson = require('./package.json');
-const releaseVersion = '0.1.7';
+const releaseVersion = '0.1.91';
 
 async function install() {
   const repo = packageJson.repository.url.match(/github\.com\/(.*)\.git/)[1];
@@ -15,8 +14,7 @@ async function install() {
 
   const platformMap = {
     'darwin': 'darwin',
-    'linux': 'linux',
-    'win32': 'windows'
+    'linux': 'linux'
   };
 
   const archMap = {
@@ -31,9 +29,8 @@ async function install() {
 
   const goPlatform = platformMap[platform];
   const goArch = archMap[arch];
-  const isWindows = goPlatform === 'windows';
-  const extension = isWindows ? 'zip' : 'tar.gz';
-  const binaryName = isWindows ? 'gbox.exe' : 'gbox';
+  const extension = 'tar.gz';
+  const binaryName = 'gbox';
   const finalBinaryDir = path.join(__dirname, 'bin');
 
   const url = `https://github.com/${repo}/releases/download/v${releaseVersion}/gbox-${goPlatform}-${goArch}-${releaseVersion}.${extension}`;
@@ -52,27 +49,17 @@ async function install() {
     
     const tempDir = fs.mkdtempSync(path.join(__dirname, 'temp-'));
 
-    if (isWindows) {
-      await new Promise((resolve, reject) => {
-        response.data.pipe(unzipper.Extract({ path: tempDir }))
+    await new Promise((resolve, reject) => {
+        response.data.pipe(tar.x({ C: tempDir }))
           .on('finish', resolve)
           .on('error', reject);
-      });
-    } else {
-        await new Promise((resolve, reject) => {
-            response.data.pipe(tar.x({ C: tempDir }))
-              .on('finish', resolve)
-              .on('error', reject);
-        });
-    }
+    });
     
     const tempBinPath = path.join(tempDir, 'packages', 'cli', 'gbox');
     const finalBinPath = path.join(finalBinaryDir, binaryName);
 
     fs.renameSync(tempBinPath, finalBinPath);
-    if (!isWindows) {
-      fs.chmodSync(finalBinPath, 0o755);
-    }
+    fs.chmodSync(finalBinPath, 0o755);
     
     fs.rmSync(tempDir, { recursive: true, force: true });
     
