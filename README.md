@@ -2,6 +2,8 @@
 
 **GBOX** provides environments for AI Agents to operate computer and mobile devices.
 
+![GBOX Introduction](https://github.com/user-attachments/assets/eded50bd-4498-4bca-85f8-fb3ec272e032)
+
 *Mobile Scenario:*
 Your agents can use GBOX to develop/test android apps, or run apps on the Android to complete various tasks(mobile automation).
 

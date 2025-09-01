@@ -19,9 +19,8 @@ var (
 
 	rootCmd = &cobra.Command{
 		Use:   "gbox",
-		Short: "Gru CLI Tool",
-		Long: `Gru CLI is a command-line tool for managing and operating box and mcp resources.
-	It provides a set of commands to create, manage, and operate these resources.`,
+		Short: "GBOX CLI Tool",
+		Long: `GBOX CLI is a command-line tool for managing and operating box and mcp resources. It provides a set of commands to create, manage, and operate these resources.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flag("version").Changed {
 				info := version.ClientInfo()

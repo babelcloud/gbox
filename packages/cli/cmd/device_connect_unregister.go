@@ -37,6 +37,16 @@ func NewDeviceConnectUnregisterCommand() *cobra.Command {
 }
 
 func ExecuteDeviceConnectUnregister(cmd *cobra.Command, opts *DeviceConnectUnregisterOptions, args []string) error {
+	if !checkAdbInstalled() {
+		printAdbInstallationHint()
+		return fmt.Errorf("ADB is not installed or not in your PATH. Please install ADB and try again.")
+	}
+
+	if !checkFrpcInstalled() {
+		printFrpcInstallationHint()
+		return fmt.Errorf("frpc is not installed or not in your PATH. Please install frpc and try again.")
+	}
+
 	if opts.All {
 		return unregisterAllDevices()
 	}
