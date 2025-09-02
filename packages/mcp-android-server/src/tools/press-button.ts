@@ -1,9 +1,8 @@
 import { z } from "zod";
-import { attachBox } from "../gboxsdk/index.js";
+import { attachBox } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { ActionPressButton } from "gbox-sdk";
-import { getImageDataFromUri } from "../gboxsdk/utils.js";
-import { ActionPressButtonResponse } from "gbox-sdk/resources/v1/boxes/actions.js";
+import { extractImageInfo, maybeResizeAndCompressImage } from "../sdk/utils.js";
 
 export const PRESS_BUTTON_TOOL = "press_button";
 
@@ -48,18 +47,15 @@ export function handlePressButton(logger: MCPLogger) {
       });
 
       const box = await attachBox(boxId);
-
-      // Map to SDK ActionPressButton type
-      const actionParams: ActionPressButton = {
-        buttons: buttons as ActionPressButton["buttons"],
-        includeScreenshot: true,
-        outputFormat: "base64",
-        screenshotDelay: "500ms",
-      };
-
-      const result = (await box.action.pressButton(
-        actionParams
-      )) as ActionPressButtonResponse.ActionIncludeScreenshotResult;
+      const result = await box.action.pressButton({
+        buttons: buttons,
+        options: {
+          screenshot: {
+            outputFormat: "base64",
+            delay: "500ms",
+          },
+        },
+      });
 
       // Prepare image contents for screenshots
       const images: Array<{ type: "image"; data: string; mimeType: string }> =
@@ -77,11 +73,16 @@ export function handlePressButton(logger: MCPLogger) {
       // }
 
       if (result?.screenshot?.after?.uri) {
-        const { base64Data, mimeType } = await getImageDataFromUri(
-          result.screenshot.after.uri,
-          box
+        const imageInfo = extractImageInfo(result.screenshot.after.uri);
+        const processedData = await maybeResizeAndCompressImage(
+          imageInfo,
+          (await box.display()).resolution
         );
-        images.push({ type: "image", data: base64Data, mimeType });
+        images.push({
+          type: "image",
+          data: processedData.base64Data,
+          mimeType: processedData.mimeType,
+        });
       }
 
       await logger.info("Buttons pressed successfully", {

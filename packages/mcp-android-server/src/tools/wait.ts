@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { attachBox } from "../gboxsdk/index.js";
+import { attachBox } from "../sdk/index.js";
 import { MCPLogger } from "../mcp-logger.js";
 import type { ActionScreenshot } from "gbox-sdk";
-import { getImageDataFromUri } from "../gboxsdk/utils.js";
+import { extractImageInfo, maybeResizeAndCompressImage } from "../sdk/utils.js";
 
 export const WAIT_TOOL = "wait";
 export const WAIT_TOOL_DESCRIPTION =
@@ -30,11 +30,10 @@ export function handleWait(logger: MCPLogger) {
     try {
       const box = await attachBox(boxId);
       const screenshotParams: ActionScreenshot = { outputFormat: "base64" };
-      const screenshotResult = await box.action.screenshot(screenshotParams);
-
-      const { base64Data, mimeType } = await getImageDataFromUri(
-        screenshotResult.uri,
-        box
+      const { uri } = await box.action.screenshot(screenshotParams);
+      const processedData = await maybeResizeAndCompressImage(
+        extractImageInfo(uri),
+        (await box.display()).resolution
       );
 
       const message = `Finished waiting for ${duration}ms.`;
@@ -48,8 +47,8 @@ export function handleWait(logger: MCPLogger) {
           },
           {
             type: "image" as const,
-            data: base64Data,
-            mimeType,
+            data: processedData.base64Data,
+            mimeType: processedData.mimeType,
           },
         ],
       };

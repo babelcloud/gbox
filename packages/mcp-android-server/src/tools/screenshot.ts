@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { attachBox } from "../gboxsdk/index.js";
+import { attachBox } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { ActionScreenshot } from "gbox-sdk";
-import { getImageDataFromUri } from "../gboxsdk/utils.js";
+import { extractImageInfo, maybeResizeAndCompressImage } from "../sdk/utils.js";
 
 export const SCREENSHOT_TOOL = "screenshot";
 export const SCREENSHOT_DESCRIPTION =
@@ -36,9 +36,10 @@ export function handleScreenshot(logger: MCPLogger) {
       const result = await box.action.screenshot(actionParams);
 
       await logger.info("Screenshot taken successfully", { boxId });
-      const { base64Data, mimeType } = await getImageDataFromUri(
-        result.uri,
-        box
+      const imageInfo = extractImageInfo(result.uri);
+      const processedData = await maybeResizeAndCompressImage(
+        imageInfo,
+        (await box.display()).resolution
       );
 
       // Return image content for MCP
@@ -46,8 +47,8 @@ export function handleScreenshot(logger: MCPLogger) {
         content: [
           {
             type: "image" as const,
-            data: base64Data,
-            mimeType,
+            data: processedData.base64Data,
+            mimeType: processedData.mimeType,
           },
         ],
       };

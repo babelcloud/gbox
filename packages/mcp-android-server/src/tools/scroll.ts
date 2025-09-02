@@ -1,9 +1,7 @@
 import { z } from "zod";
 import type { MCPLogger } from "../mcp-logger.js";
-import { attachBox } from "../gboxsdk/index.js";
-import type { ActionSwipe } from "gbox-sdk";
-import { getImageDataFromUri } from "../gboxsdk/utils.js";
-import { ActionSwipeResponse } from "gbox-sdk/resources/v1/boxes.mjs";
+import { attachBox } from "../sdk/index.js";
+import { extractImageInfo, maybeResizeAndCompressImage } from "../sdk/utils.js";
 
 export const SCROLL_TOOL = "scroll";
 
@@ -33,17 +31,17 @@ export function handleScroll(logger: MCPLogger) {
       const invertedDirection = direction === "up" ? "down" : "up";
 
       const { height } = (await box.display()).resolution;
-      const actionParams: ActionSwipe = {
-        direction: invertedDirection as any,
-        includeScreenshot: true,
-        outputFormat: "base64",
-        screenshotDelay: "500ms",
-        distance: Math.round(height / 2),
-      };
 
-      const result = (await box.action.swipe(
-        actionParams
-      )) as ActionSwipeResponse.ActionIncludeScreenshotResult;
+      const result = await box.action.swipe({
+        direction: invertedDirection,
+        options: {
+          screenshot: {
+            outputFormat: "base64",
+            delay: "500ms",
+          },
+        },
+        distance: Math.round(height / 2),
+      });
 
       // Build content: brief text + after screenshot if available
       const content: Array<
@@ -57,11 +55,15 @@ export function handleScroll(logger: MCPLogger) {
       });
 
       if (result?.screenshot?.after?.uri) {
-        const { base64Data, mimeType } = await getImageDataFromUri(
-          result.screenshot.after.uri,
-          box
+        const processedData = await maybeResizeAndCompressImage(
+          extractImageInfo(result.screenshot.after.uri),
+          (await box.display()).resolution
         );
-        content.push({ type: "image", data: base64Data, mimeType });
+        content.push({
+          type: "image",
+          data: processedData.base64Data,
+          mimeType: processedData.mimeType,
+        });
       }
 
       return { content };

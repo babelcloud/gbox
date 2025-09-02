@@ -4,17 +4,80 @@ import { MCPLogger } from "./mcp-logger.js";
 import type { LogFn } from "./types.js";
 import type { LoggingMessageNotification } from "@modelcontextprotocol/sdk/types.js";
 import { gboxManualTpl } from "./prompts/gbox-manual.js";
-import { handleScreenshot, SCREENSHOT_DESCRIPTION, SCREENSHOT_TOOL, screenshotParamsSchema } from "./tools/screenshot.js";
-import { DRAG_DESCRIPTION, DRAG_TOOL, dragParamsSchema, handleDrag } from "./tools/drag.js";
-import { handleScroll, SCROLL_DESCRIPTION, SCROLL_TOOL, scrollParamsSchema } from "./tools/scroll.js";
-import { handleTap, TAP_DESCRIPTION, TAP_TOOL, tapParamsSchema } from "./tools/tap.js";
-import { handleType, TYPE_DESCRIPTION, TYPE_TOOL, typeParamsSchema } from "./tools/type.js";
-import { handleSwipe, SWIPE_DESCRIPTION, SWIPE_TOOL, swipeParamsSchema } from "./tools/swipe.js";
-import { CREATE_ANDROID_BOX_DESCRIPTION, CREATE_ANDROID_BOX_TOOL, createAndroidBoxParamsSchema, handleCreateAndroidBox } from "./tools/create-android-box.js";
-import { handleWait, WAIT_TOOL, WAIT_TOOL_DESCRIPTION, waitParamsSchema } from "./tools/wait.js";
-import { CLOSE_APP_DESCRIPTION, CLOSE_APP_TOOL, closeAppParamsSchema, handleCloseApp, handleInstallApk, handleOpenApp, INSTALL_APK_DESCRIPTION, INSTALL_APK_TOOL, installApkParamsSchema, OPEN_APP_DESCRIPTION, OPEN_APP_TOOL, openAppParamsSchema } from "./tools/apk-management.js";
-import { handlePressButton, PRESS_BUTTON_DESCRIPTION, PRESS_BUTTON_TOOL, pressButtonParamsSchema } from "./tools/press-button.js";
-import { handleStartGbox, START_GBOX_DESCRIPTION, START_GBOX_TOOL, startGboxParamsSchema } from "./tools/start-gbox.js";
+import {
+  handleScreenshot,
+  SCREENSHOT_DESCRIPTION,
+  SCREENSHOT_TOOL,
+  screenshotParamsSchema,
+} from "./tools/screenshot.js";
+import {
+  DRAG_DESCRIPTION,
+  DRAG_TOOL,
+  dragParamsSchema,
+  handleDrag,
+} from "./tools/drag.js";
+import {
+  handleScroll,
+  SCROLL_DESCRIPTION,
+  SCROLL_TOOL,
+  scrollParamsSchema,
+} from "./tools/scroll.js";
+import {
+  handleTap,
+  TAP_DESCRIPTION,
+  TAP_TOOL,
+  tapParamsSchema,
+} from "./tools/tap.js";
+import {
+  handleType,
+  TYPE_DESCRIPTION,
+  TYPE_TOOL,
+  typeParamsSchema,
+} from "./tools/type.js";
+import {
+  handleSwipe,
+  SWIPE_DESCRIPTION,
+  SWIPE_TOOL,
+  swipeParamsSchema,
+} from "./tools/swipe.js";
+import {
+  CREATE_ANDROID_BOX_DESCRIPTION,
+  CREATE_ANDROID_BOX_TOOL,
+  createAndroidBoxParamsSchema,
+  handleCreateAndroidBox,
+} from "./tools/create-android-box.js";
+import {
+  handleWait,
+  WAIT_TOOL,
+  WAIT_TOOL_DESCRIPTION,
+  waitParamsSchema,
+} from "./tools/wait.js";
+import {
+  CLOSE_APP_DESCRIPTION,
+  CLOSE_APP_TOOL,
+  closeAppParamsSchema,
+  handleCloseApp,
+  handleInstallApk,
+  handleOpenApp,
+  INSTALL_APK_DESCRIPTION,
+  INSTALL_APK_TOOL,
+  installApkParamsSchema,
+  OPEN_APP_DESCRIPTION,
+  OPEN_APP_TOOL,
+  openAppParamsSchema,
+} from "./tools/apk-management.js";
+import {
+  handlePressButton,
+  PRESS_BUTTON_DESCRIPTION,
+  PRESS_BUTTON_TOOL,
+  pressButtonParamsSchema,
+} from "./tools/press-button.js";
+import {
+  handleStartGbox,
+  START_GBOX_DESCRIPTION,
+  START_GBOX_TOOL,
+  startGboxParamsSchema,
+} from "./tools/start-box.js";
 
 const isSse = config.mode === "sse";
 
@@ -71,23 +134,19 @@ const logger = new MCPLogger(log);
 const GBOX_MANUAL = "gbox-manual";
 const GBOX_MANUAL_DESCRIPTION = "Gbox Usage Guide";
 
-mcpServer.prompt(
-  GBOX_MANUAL,
-  GBOX_MANUAL_DESCRIPTION,
-  () => {
-    return {
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: gboxManualTpl
-          }
-        }
-      ]
-    };
-  }
-);
+mcpServer.prompt(GBOX_MANUAL, GBOX_MANUAL_DESCRIPTION, () => {
+  return {
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: gboxManualTpl,
+        },
+      },
+    ],
+  };
+});
 
 // Register tools with Zod schemas
 mcpServer.tool(
@@ -160,12 +219,7 @@ mcpServer.tool(
   handleSwipe(logger)
 );
 
-mcpServer.tool(
-  TAP_TOOL,
-  TAP_DESCRIPTION,
-  tapParamsSchema,
-  handleTap(logger)
-);
+mcpServer.tool(TAP_TOOL, TAP_DESCRIPTION, tapParamsSchema, handleTap(logger));
 
 mcpServer.tool(
   TYPE_TOOL,

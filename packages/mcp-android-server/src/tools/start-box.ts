@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { CreateAndroid } from "gbox-sdk";
-import { gboxSDK } from "../gboxsdk/index.js";
+import { gboxSDK } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
-import { openUrlInBrowser, startLocalScrcpy } from "../gboxsdk/utils.js";
-import { deviceList } from "../gboxsdk/android.service.js";
+import { openUrlInBrowser, startLocalScrcpy } from "../sdk/utils.js";
+import { deviceList } from "../sdk/android.service.js";
 
 export const START_GBOX_TOOL = "start_gbox";
 export const START_GBOX_DESCRIPTION =
@@ -36,8 +36,8 @@ export function handleStartGbox(logger: MCPLogger) {
         logger.info("Devices", { devices });
         if (devices.length > 0) {
           // Always use the first available device
-          deviceId = devices[0].id.trim();
-          deviceModel = devices[0].model.trim();
+          deviceId = devices[0].deviceId.trim();
+          deviceModel = devices[0].productModel.trim();
         }
         const labels: Record<string, string> = {};
         if (deviceId) {

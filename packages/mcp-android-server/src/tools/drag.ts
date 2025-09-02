@@ -1,11 +1,7 @@
 import { z } from "zod";
 import type { MCPLogger } from "../mcp-logger.js";
-import { attachBox } from "../gboxsdk/index.js";
-import { handleUiAction } from "./ui-action.js";
-import {
-  buildActionReturnValues,
-  getBoxCoordinates,
-} from "../gboxsdk/utils.js";
+import { attachBox } from "../sdk/index.js";
+import { buildActionReturnValues } from "../sdk/utils.js";
 
 export const DRAG_TOOL = "drag";
 
@@ -36,25 +32,16 @@ export function handleDrag(logger: MCPLogger) {
       await logger.info("Drag command invoked", { boxId, target, destination });
 
       const box = await attachBox(boxId);
-      const boxCoordinates = await getBoxCoordinates(
-        box,
-        "Drag " + target + " to " + destination
-      );
-      if (boxCoordinates.length <= 1) {
-        return {
-          content: [
-            { type: "text" as const, text: "Not enough coordinates found" },
-          ],
-        };
-      }
-      const dragAction = {
-        start: boxCoordinates[0],
-        end: boxCoordinates[1],
-        includeScreenshot: true,
-        outputFormat: "base64" as const,
-        screenshotDelay: "500ms" as const,
-      };
-      const result = (await box.action.drag(dragAction)) as any;
+      const result = await box.action.drag({
+        start: target,
+        end: destination,
+        options: {
+          screenshot: {
+            outputFormat: "base64",
+            delay: "500ms",
+          },
+        },
+      });
       return buildActionReturnValues(result, box);
     } catch (error) {
       await logger.error("Failed to run drag action", {
@@ -64,7 +51,7 @@ export function handleDrag(logger: MCPLogger) {
       return {
         content: [
           {
-            type: "text" as const,
+            type: "text",
             text: `Error: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],

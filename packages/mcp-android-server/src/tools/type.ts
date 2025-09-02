@@ -1,12 +1,7 @@
 import { z } from "zod";
-import { attachBox } from "../gboxsdk/index.js";
+import { attachBox } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
-import type { ActionType, ActionPressKey } from "gbox-sdk";
-import { getImageDataFromUri } from "../gboxsdk/utils.js";
-import {
-  ActionPressKeyResponse,
-  ActionTypeResponse,
-} from "gbox-sdk/resources/v1/boxes.mjs";
+import { extractImageInfo, maybeResizeAndCompressImage } from "../sdk/utils.js";
 
 export const TYPE_TOOL = "type";
 
@@ -46,31 +41,17 @@ export function handleType(logger: MCPLogger) {
       const box = await attachBox(boxId);
 
       // First, type the content
-      const typeParams: ActionType = {
+      const typeResult = await box.action.type({
+        pressEnter: pressEnterAfterType,
         text: content,
         mode: replace ? "replace" : "append",
-        includeScreenshot: true,
-        outputFormat: "base64",
-        screenshotDelay: "500ms",
-      };
-
-      const typeResult = (await box.action.type(
-        typeParams
-      )) as ActionTypeResponse.ActionIncludeScreenshotResult;
-
-      // Optionally press Enter afterwards
-      let finalResult: any = typeResult;
-      if (pressEnterAfterType) {
-        const pressParams: ActionPressKey = {
-          keys: ["enter"],
-          includeScreenshot: true,
-          outputFormat: "base64",
-          screenshotDelay: "500ms",
-        };
-        finalResult = (await box.action.pressKey(
-          pressParams
-        )) as ActionPressKeyResponse.ActionIncludeScreenshotResult;
-      }
+        options: {
+          screenshot: {
+            outputFormat: "base64",
+            delay: "500ms",
+          },
+        },
+      });
 
       // Build response content
       const contentItems: Array<
@@ -85,14 +66,16 @@ export function handleType(logger: MCPLogger) {
       });
 
       // Prefer showing the final after screenshot if present
-      const afterUri = finalResult?.screenshot?.after?.uri;
-      if (afterUri) {
-        const { base64Data, mimeType } = await getImageDataFromUri(
-          afterUri,
-          box
-        );
-        contentItems.push({ type: "image", data: base64Data, mimeType });
-      }
+      const imageInfo = extractImageInfo(typeResult.screenshot.after.uri);
+      const processedData = await maybeResizeAndCompressImage(
+        imageInfo,
+        (await box.display()).resolution
+      );
+      contentItems.push({
+        type: "image",
+        data: processedData.base64Data,
+        mimeType: processedData.mimeType,
+      });
 
       return { content: contentItems };
     } catch (error) {

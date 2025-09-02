@@ -1,7 +1,7 @@
 import { exec, execSync, spawn } from "child_process";
 import sharp from "sharp";
 import { logger } from "../mcp-server.js";
-import { getCUACoordinates } from "./cua.service.js";
+
 import { AndroidBoxOperator } from "gbox-sdk";
 
 export const MAX_SCREEN_LENGTH = 1784;
@@ -32,7 +32,7 @@ export async function installScrcpy(): Promise<boolean> {
 
     await logger.info("scrcpy installation successful");
     return true;
-  } catch (installError) {
+  } catch {
     await logger.warning("scrcpy installation failed, please install manually");
 
     const currentOS = process.platform;
@@ -52,7 +52,7 @@ export async function installScrcpy(): Promise<boolean> {
  * Sanitizes result objects by truncating base64 data URIs to improve readability
  * while preserving the full data for actual image display
  */
-export const sanitizeResult = (obj: any): any => {
+export const sanitizeResult = (obj: unknown): unknown => {
   if (typeof obj !== "object" || obj === null) {
     return obj;
   }
@@ -61,7 +61,7 @@ export const sanitizeResult = (obj: any): any => {
     return obj.map(sanitizeResult);
   }
 
-  const sanitized: any = {};
+  const sanitized: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
     if (key === "uri" && typeof value === "string") {
       // Truncate base64 data URIs
@@ -94,14 +94,35 @@ export const openUrlInBrowser = (url: string) => {
         : `xdg-open "${url}"`;
 
   // Execute the command to open the browser
-  exec(command, err => {
+  exec(command, (err: Error | null) => {
     if (err) {
       console.error(`Failed to open browser for URL ${url}:`, err);
     }
   });
 };
 
-export const parseUri = (uri: string) => {
+/**
+ * Extract image data and MIME type from a URI string
+ * @param uri - The URI string to parse
+ * @returns Object containing mimeType and base64Data
+ */
+/**
+ * Type for image data extracted from URI
+ */
+export type ImageInfo = {
+  mimeType: string;
+  base64Data: string;
+};
+
+/**
+ * Type for screen resolution
+ */
+export type Resolution = {
+  width: number;
+  height: number;
+};
+
+export const extractImageInfo = (uri: string): ImageInfo => {
   let mimeType = "image/png";
   let base64Data = uri;
 
@@ -116,25 +137,12 @@ export const parseUri = (uri: string) => {
   return { mimeType, base64Data };
 };
 
-export function calculateResizeRatio(width: number, height: number): number {
+function calculateResizeRatio(width: number, height: number): number {
   const ratio = Math.min(MAX_SCREEN_LENGTH / width, MAX_SCREEN_LENGTH / height);
   if (ratio >= 1) {
     return 1;
   }
   return ratio;
-}
-
-export function restoreCoordinate(
-  x: number,
-  y: number,
-  resizeRatio: number
-): { x: number; y: number } {
-  // round to integer
-  const restored = {
-    x: Math.round(x / resizeRatio),
-    y: Math.round(y / resizeRatio),
-  };
-  return restored;
 }
 
 /**
@@ -146,7 +154,7 @@ export function restoreCoordinate(
  * @param resizeRatio - Scale factor to apply (e.g. 0.5 halves width & height)
  * @returns The resized image buffer (or the original buffer if no resizing was necessary)
  */
-export async function resizeImage(
+async function resizeImage(
   buffer: Buffer,
   resizeRatio: number
 ): Promise<Buffer> {
@@ -170,9 +178,7 @@ export async function resizeImage(
 
     const newWidth = Math.round(width * resizeRatio);
 
-    const resizedBuffer = await image.resize(newWidth).toBuffer();
-
-    return resizedBuffer;
+    return await image.resize(newWidth).toBuffer();
   } catch (err) {
     console.error(`Failed to resize image: ${err}`);
     return buffer;
@@ -185,27 +191,29 @@ export async function resizeImage(
  * It applies format-specific optimisations that balance quality and size.
  */
 export async function maybeResizeAndCompressImage(
-  base64Data: string,
-  mimeType: string,
-  screenSize: { width: number; height: number }
-): Promise<{ base64Data: string; mimeType: string }> {
+  imageInfo: ImageInfo,
+  resolution: Resolution
+): Promise<ImageInfo> {
   try {
     const resizeRatio = calculateResizeRatio(
-      screenSize.width,
-      screenSize.height
+      resolution.width,
+      resolution.height
     );
     const resizedBuffer = await resizeImage(
-      Buffer.from(base64Data, "base64"),
+      Buffer.from(imageInfo.base64Data, "base64"),
       resizeRatio
     );
 
     if (resizedBuffer.length <= SCREENSHOT_SIZE_THRESHOLD) {
-      return { base64Data: resizedBuffer.toString("base64"), mimeType };
+      return {
+        base64Data: resizedBuffer.toString("base64"),
+        mimeType: imageInfo.mimeType,
+      };
     }
 
     let outputBuffer: Buffer<ArrayBufferLike> = resizedBuffer;
 
-    switch (mimeType) {
+    switch (imageInfo.mimeType) {
       case "image/jpeg":
       case "image/jpg": {
         outputBuffer = await sharp(resizedBuffer)
@@ -227,36 +235,40 @@ export async function maybeResizeAndCompressImage(
       }
       default:
         // Unsupported type – leave as is
-        return { base64Data, mimeType };
+        return {
+          base64Data: imageInfo.base64Data,
+          mimeType: imageInfo.mimeType,
+        };
     }
 
     // If compression increased the size (edge-case), keep the original
     if (outputBuffer.length >= resizedBuffer.length) {
-      return { base64Data: resizedBuffer.toString("base64"), mimeType };
+      return {
+        base64Data: resizedBuffer.toString("base64"),
+        mimeType: imageInfo.mimeType,
+      };
     }
 
-    return { base64Data: outputBuffer.toString("base64"), mimeType };
+    return {
+      base64Data: outputBuffer.toString("base64"),
+      mimeType: imageInfo.mimeType,
+    };
   } catch {
     // On any processing error (including invalid base64), fall back to original
-    return { base64Data, mimeType };
+    return { base64Data: imageInfo.base64Data, mimeType: imageInfo.mimeType };
   }
 }
 
-export async function getImageDataFromUri(
-  uri: string,
-  box: AndroidBoxOperator,
-  compress: boolean = true
-): Promise<{ base64Data: string; mimeType: string }> {
-  const { mimeType, base64Data } = parseUri(uri);
-  if (compress) {
-    const screenSize = (await box.display()).resolution;
-    return await maybeResizeAndCompressImage(base64Data, mimeType, screenSize);
-  }
-  return { base64Data, mimeType };
+interface ActionResult {
+  screenshot?: {
+    after?: {
+      uri?: string;
+    };
+  };
 }
 
 export async function buildActionReturnValues(
-  result: any,
+  result: ActionResult,
   box: AndroidBoxOperator
 ): Promise<{
   content: Array<
@@ -267,11 +279,16 @@ export async function buildActionReturnValues(
   // Prepare image contents for before and after screenshots
   const images: Array<{ type: "image"; data: string; mimeType: string }> = [];
   if (result?.screenshot?.after?.uri) {
-    const { base64Data, mimeType } = await getImageDataFromUri(
-      result.screenshot.after.uri,
-      box
+    const imageInfo = extractImageInfo(result.screenshot.after.uri);
+    const processedData = await maybeResizeAndCompressImage(
+      imageInfo,
+      (await box.display()).resolution
     );
-    images.push({ type: "image", data: base64Data, mimeType });
+    images.push({
+      type: "image",
+      data: processedData.base64Data,
+      mimeType: processedData.mimeType,
+    });
   }
   // Build content array with text and images
   const content: Array<
@@ -297,44 +314,22 @@ export async function buildActionReturnValues(
   return { content };
 }
 
-export async function getBoxCoordinates(
-  box: AndroidBoxOperator,
-  instruction: string
-): Promise<{ x: number; y: number }[]> {
-  const screenshotUri = (await box.action.screenshot()).uri;
-  const { base64Data, mimeType } = await getImageDataFromUri(
-    screenshotUri,
-    box
-  );
-  const coordinates = await getCUACoordinates(
-    instruction,
-    "data:" + mimeType + ";base64," + base64Data
-  );
-  if (coordinates.length === 0) {
-    await logger.info("No CUA Coordinates found", { instruction });
-    return [];
-  }
-  await logger.info("CUA Coordinates found", { coordinates });
-  // restore coordinates to original screen size
-  const { width, height } = (await box.display()).resolution;
-  const resizeRatio = calculateResizeRatio(width, height);
-  const restoredCoordinates = coordinates.map(coordinate =>
-    restoreCoordinate(coordinate.x, coordinate.y, resizeRatio)
-  );
-  logger.info("Restored coordinates", { restoredCoordinates });
-  return restoredCoordinates;
-}
-
 /**
  * Start local scrcpy instead of opening browser
  * This function handles the local environment setup and scrcpy launch
  */
+interface Logger {
+  info: (message: string, data?: unknown) => Promise<void>;
+  warning: (message: string, data?: unknown) => Promise<void>;
+  error: (message: string, data?: unknown) => Promise<void>;
+}
+
 export async function startLocalScrcpy(
-  logger: any,
+  logger: Logger,
   deviceId: string
 ): Promise<{ success: boolean; message: string }> {
   // Global process references for unified management
-  let scrcpyProcess: any = null;
+  let scrcpyProcess: ReturnType<typeof spawn> | null = null;
 
   try {
     await logger.info("Checking local environment...");
@@ -362,7 +357,7 @@ export async function startLocalScrcpy(
         throw new Error("Invalid device ID");
       }
       const deviceName = match[1];
-      let scrcpyArgs = [
+      const scrcpyArgs = [
         "--video-codec=h265",
         "--max-size=1920",
         "--max-fps=30",
@@ -376,24 +371,28 @@ export async function startLocalScrcpy(
         scrcpyProcess = spawn("scrcpy", scrcpyArgs, {
           stdio: ["pipe", "pipe", "pipe"],
         });
-        scrcpyProcess.stdout.on("data", (data: any) => {
-          const output = data.toString();
-          logger.info("scrcpy: " + output);
-          if (output.includes("[server] INFO")) {
-            logger.info("scrcpy started");
-          }
-        });
+        if (scrcpyProcess.stdout) {
+          scrcpyProcess.stdout.on("data", (data: Buffer) => {
+            const output = data.toString();
+            logger.info("scrcpy: " + output);
+            if (output.includes("[server] INFO")) {
+              logger.info("scrcpy started");
+            }
+          });
+        }
 
-        scrcpyProcess.stderr.on("data", (data: any) => {
-          const output = data.toString();
-          logger.info("scrcpy stderr: " + output);
-        });
+        if (scrcpyProcess.stderr) {
+          scrcpyProcess.stderr.on("data", (data: Buffer) => {
+            const output = data.toString();
+            logger.info("scrcpy stderr: " + output);
+          });
+        }
 
-        scrcpyProcess.on("error", (error: any) => {
+        scrcpyProcess.on("error", (error: Error) => {
           logger.error("scrcpy process error", error);
         });
 
-        scrcpyProcess.on("exit", (code: any) => {
+        scrcpyProcess.on("exit", (code: number | null) => {
           logger.warning(`scrcpy process exited, exit code: ${code}`);
         });
 
@@ -422,7 +421,10 @@ export async function startLocalScrcpy(
 /**
  * Helper function to clean up processes
  */
-async function cleanupProcesses(scrcpyProcess: any, logger: any) {
+async function cleanupProcesses(
+  scrcpyProcess: ReturnType<typeof spawn> | null,
+  logger: Logger
+) {
   const processes = [{ name: "scrcpy", process: scrcpyProcess }];
 
   for (const { name, process } of processes) {

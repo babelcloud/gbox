@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { attachBox } from "../gboxsdk/index.js";
+import { attachBox } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { ActionPressKey } from "gbox-sdk";
-import { getImageDataFromUri } from "../gboxsdk/utils.js";
+import { extractImageInfo, maybeResizeAndCompressImage } from "../sdk/utils.js";
 
 export const PRESS_KEY_TOOL = "press_key";
 
@@ -168,28 +168,34 @@ export function handlePressKey(logger: MCPLogger) {
 
       const box = await attachBox(boxId);
 
-      // Map to SDK ActionPressKey type
-      const actionParams: ActionPressKey = {
+      const result = await box.action.pressKey({
         keys: keys as ActionPressKey["keys"],
-        includeScreenshot: includeScreenshot ?? false,
-        outputFormat: outputFormat ?? "base64",
-        ...(screenshotDelay && {
-          screenshotDelay: screenshotDelay as ActionPressKey["screenshotDelay"],
-        }),
-      };
-
-      const result = (await box.action.pressKey(actionParams)) as any;
+        options: {
+          screenshot: includeScreenshot
+            ? {
+                outputFormat: outputFormat || "base64",
+                delay: (screenshotDelay ||
+                  "500ms") as ActionPressKey["screenshotDelay"],
+              }
+            : false,
+        },
+      });
 
       // Prepare image contents for screenshots
       const images: Array<{ type: "image"; data: string; mimeType: string }> =
         [];
 
       if (result?.screenshot?.after?.uri) {
-        const { base64Data, mimeType } = await getImageDataFromUri(
-          result.screenshot.after.uri,
-          box
+        const imageInfo = extractImageInfo(result.screenshot.after.uri);
+        const processedData = await maybeResizeAndCompressImage(
+          imageInfo,
+          (await box.display()).resolution
         );
-        images.push({ type: "image", data: base64Data, mimeType });
+        images.push({
+          type: "image",
+          data: processedData.base64Data,
+          mimeType: processedData.mimeType,
+        });
       }
 
       await logger.info("Keys pressed successfully", {

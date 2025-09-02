@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { attachBox } from "../gboxsdk/index.js";
+import { attachBox } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { ActionAI } from "gbox-sdk";
-import { getImageDataFromUri } from "../gboxsdk/utils.js";
+import { extractImageInfo, maybeResizeAndCompressImage } from "../sdk/utils.js";
 
 export const UI_ACTION_TOOL = "ui_action";
 export const UI_ACTION_DESCRIPTION =
@@ -85,14 +85,23 @@ export function handleUiAction(logger: MCPLogger) {
       const actionParams: ActionAI = {
         instruction,
         ...(background && { background }),
-        includeScreenshot: true,
-        // cursor can handle base64 only.
-        outputFormat: "base64",
-        // 500ms meet most ui action cases.
-        screenshotDelay: "500ms",
+        options: {
+          screenshot: {
+            outputFormat: "base64",
+            delay: "500ms",
+          },
+        },
       };
 
-      const result = (await box.action.ai(actionParams)) as any;
+      interface AIActionResult {
+        screenshot?: {
+          after?: {
+            uri?: string;
+          };
+        };
+      }
+
+      const result = (await box.action.ai(actionParams)) as AIActionResult;
 
       // Prepare image contents for before and after screenshots
       const images: Array<{ type: "image"; data: string; mimeType: string }> =
@@ -104,11 +113,15 @@ export function handleUiAction(logger: MCPLogger) {
       // }
 
       if (result?.screenshot?.after?.uri) {
-        const { base64Data, mimeType } = await getImageDataFromUri(
-          result.screenshot.after.uri,
-          box
+        const processedData = await maybeResizeAndCompressImage(
+          extractImageInfo(result.screenshot.after.uri),
+          (await box.display()).resolution
         );
-        images.push({ type: "image", data: base64Data, mimeType });
+        images.push({
+          type: "image",
+          data: processedData.base64Data,
+          mimeType: processedData.mimeType,
+        });
       }
 
       await logger.info("UI action completed", {
