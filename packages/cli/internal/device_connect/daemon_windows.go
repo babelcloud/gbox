@@ -38,13 +38,13 @@ func StartDeviceProxyService() error {
 	pidFile := filepath.Join(deviceProxyHome, "device-proxy.pid")
 
 	// Get API key from current profile
-	apiKey, err := profile.GetEffectiveAPIKey()
+	apiKey, err := profile.Default.GetEffectiveAPIKey()
 	if err != nil {
 		return fmt.Errorf("failed to get API key: %v", err)
 	}
 
 	// Get base URL from profile
-	baseURL := profile.GetEffectiveBaseURL()
+	baseURL := profile.Default.GetEffectiveBaseURL()
 
 	// Set up environment variables
 	env := setupDeviceProxyEnvironment(apiKey, baseURL)

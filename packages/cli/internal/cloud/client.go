@@ -51,7 +51,7 @@ func NewClient(token string) (*Client, error) {
 	}
 
 	// Get base URL with proper priority handling
-	baseURL := profile.GetEffectiveBaseURL()
+	baseURL := profile.Default.GetEffectiveBaseURL()
 
 	return &Client{
 		httpClient: &http.Client{},
