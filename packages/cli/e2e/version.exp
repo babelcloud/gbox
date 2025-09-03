@@ -15,11 +15,17 @@ set BLUE "\033\[0;34m"
 set NC "\033\[0m"
 
 # Get the gbox binary path
-set gbox_binary "gbox"
+# Default to using the built binary in the parent directory
+set gbox_binary "../gbox"
 
 # Check if we're in development mode
 if {[info exists env(CLI_DEV_MODE)]} {
     set gbox_binary "go run ../main.go"
+}
+
+# If the built binary doesn't exist, fall back to system gbox
+if {![file exists $gbox_binary]} {
+    set gbox_binary "gbox"
 }
 
 puts "${BLUE}Testing gbox version command...${NC}"

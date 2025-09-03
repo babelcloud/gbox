@@ -35,11 +35,11 @@ help: ## Show this help message
 
 # Run test for a specific command using pattern matching
 .PHONY: test-%
-test-%: ## Run test for a specific command (e.g. make test-create)
+test-%: binary ## Run test for a specific command (e.g. make test-create, builds binary first)
 	@cd e2e && ./run-test.exp --$*
 
 # Run tests for all commands
-test: ## Run tests for all commands
+test: binary ## Run tests for all commands (builds binary first)
 	@cd e2e && ./run-test.exp
 
 # Clean build directory
