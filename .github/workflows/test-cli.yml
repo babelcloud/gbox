@@ -37,6 +37,11 @@ jobs:
           cd packages/cli
           make test
 
+      - name: Install expect for e2e tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y expect
+
       - name: Run e2e tests
         run: |
           cd packages/cli
