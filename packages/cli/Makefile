@@ -24,7 +24,7 @@ LDFLAGS := -ldflags "-X $(MODULE_PREFIX)/packages/cli/internal/version.Version=$
 # Supported platforms
 PLATFORMS := linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64 windows-arm64
 
-.PHONY: all clean help binary binary-all install e2e-setup e2e e2e-env-check e2e-cleanup e2e-% e2e-ci e2e-ci-% run test
+.PHONY: all clean help binary binary-all run test test-% go-test
 
 # Default target
 all: help ## Show this help message (default target)
