@@ -35,19 +35,19 @@ help: ## Show this help message
 
 # Run test for a specific command using pattern matching
 .PHONY: test-%
-test-%: binary ## Run test for a specific command (e.g. make test-create, builds binary first)
-	@if [ -f ../../.env ]; then \
-		cd e2e && GBOX_API_KEY=$$(grep '^GBOX_API_KEY=' ../../../.env | cut -d'=' -f2) ./run-test.exp --$*; \
+e2e-%: binary ## Run test for a specific command (e.g. make test-create, builds binary first)
+	@if [ -f ../../.env.local ]; then \
+		cd e2e && GBOX_API_KEY=$$(grep '^GBOX_API_KEY=' ../../../.env.local | cut -d'=' -f2) ./run-test.exp --$*; \
 	else \
-		cd e2e && ./run-test.exp --$*; \
+		cd e2e && GBOX_API_KEY=$${GBOX_API_KEY} ./run-test.exp --$*; \
 	fi
 
 # Run tests for all commands
-test: binary ## Run tests for all commands (builds binary first)
-	@if [ -f ../../.env ]; then \
-		cd e2e && GBOX_API_KEY=$$(grep '^GBOX_API_KEY=' ../../../.env | cut -d'=' -f2) ./run-test.exp; \
+e2e: binary ## Run tests for all commands (builds binary first)
+	@if [ -f ../../.env.local ]; then \
+		cd e2e && GBOX_API_KEY=$$(grep '^GBOX_API_KEY=' ../../../.env.local | cut -d'=' -f2) ./run-test.exp; \
 	else \
-		cd e2e && ./run-test.exp; \
+		cd e2e && GBOX_API_KEY=$${GBOX_API_KEY} ./run-test.exp; \
 	fi
 
 # Clean build directory
@@ -70,7 +70,7 @@ run: ## Run the application with PROJECT_ROOT environment variable (Usage: make 
 	CLI_DEV_MODE=true \
 	go run main.go $(filter-out $@,$(MAKECMDGOALS))
 
-go-test: ## Run tests
+test: ## Run tests
 	go test ./... -v
 
 # Build binaries for all supported platforms

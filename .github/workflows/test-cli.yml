@@ -35,12 +35,12 @@ jobs:
       - name: Run unit tests
         run: |
           cd packages/cli
-          make go-test
+          make test
 
       - name: Run e2e tests
         run: |
           cd packages/cli
-          make test
+          make e2e
         env:
           GBOX_API_KEY: ${{ secrets.GBOX_API_KEY }}
 
