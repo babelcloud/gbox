@@ -37,17 +37,17 @@ help: ## Show this help message
 .PHONY: e2e-%
 e2e-%: binary ## Run test for a specific command (e.g. make test-create, builds binary first)
 	@if [ -f ../../.env.local ]; then \
-		cd e2e && GBOX_API_KEY=$$(grep '^GBOX_API_KEY=' ../../../.env.local | cut -d'=' -f2) ./run-test.exp --$*; \
+		cd e2e && GBOX_API_KEY=$$(grep '^GBOX_API_KEY=' ../../../.env.local | cut -d'=' -f2) GBOX_BASE_URL=$$(grep '^GBOX_BASE_URL=' ../../../.env.local | cut -d'=' -f2) ./run-test.exp --$*; \
 	else \
-		cd e2e && GBOX_API_KEY=$${GBOX_API_KEY} ./run-test.exp --$*; \
+		cd e2e && GBOX_API_KEY=$${GBOX_API_KEY} GBOX_BASE_URL=$${GBOX_BASE_URL} ./run-test.exp --$*; \
 	fi
 
 # Run tests for all commands
 e2e: binary ## Run tests for all commands (builds binary first)
 	@if [ -f ../../.env.local ]; then \
-		cd e2e && GBOX_API_KEY=$$(grep '^GBOX_API_KEY=' ../../../.env.local | cut -d'=' -f2) ./run-test.exp; \
+		cd e2e && GBOX_API_KEY=$$(grep '^GBOX_API_KEY=' ../../../.env.local | cut -d'=' -f2) GBOX_BASE_URL=$$(grep '^GBOX_BASE_URL=' ../../../.env.local | cut -d'=' -f2) ./run-test.exp; \
 	else \
-		cd e2e && GBOX_API_KEY=$${GBOX_API_KEY} ./run-test.exp; \
+		cd e2e && GBOX_API_KEY=$${GBOX_API_KEY} GBOX_BASE_URL=$${GBOX_BASE_URL} ./run-test.exp; \
 	fi
 
 # Clean build directory

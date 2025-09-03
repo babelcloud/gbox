@@ -64,12 +64,6 @@ foreach arg $argv {
     }
 }
 
-# Set API URL
-set api_endpoint "https://gbox-staging.babelcloud.dev"
-puts "${BLUE}Running tests with staging endpoint${NC}"
-
-# Set API URL ENV for tests
-set env(GBOX_BASE_URL) $api_endpoint
 
 # Check for API key environment variable
 if {![info exists env(GBOX_API_KEY)]} {

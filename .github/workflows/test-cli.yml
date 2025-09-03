@@ -43,6 +43,7 @@ jobs:
           make e2e
         env:
           GBOX_API_KEY: ${{ secrets.GBOX_API_KEY }}
+          GBOX_BASE_URL: ${{ secrets.GBOX_BASE_URL }}
 
 
 
