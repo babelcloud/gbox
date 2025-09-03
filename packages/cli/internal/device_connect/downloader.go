@@ -133,15 +133,56 @@ func CheckAndDownloadDeviceProxy() (string, error) {
 		}
 	}
 
-	// If no exact match or failed, try latest release
+	// If no exact match or failed, check if cached version is still valid
+	// If we have a cached version that exists as a release, respect it
+	if cachedInfo.TagName != "" {
+		// Verify the cached version exists as a release
+		_, err := getReleaseByTag(deviceProxyPublicRepo, cachedInfo.TagName)
+		if err == nil {
+			// Cached version exists as a release, use it
+			return binaryPath, nil
+		}
+		// If cached version doesn't exist as a release, fall through to download latest
+	}
+
+	// For "dev" version or when no valid cached version, try latest release
+	if currentVersion == "dev" || cachedInfo.TagName == "" {
+		// Try latest release
+		release, err := getLatestRelease(deviceProxyPublicRepo)
+		if err != nil {
+			return "", fmt.Errorf("failed to get latest release: %v", err)
+		}
+
+		// Check if we already have this version
+		if cachedInfo.TagName == release.TagName {
+			return binaryPath, nil
+		}
+
+		// Download latest version
+		assetURL, assetName, err := findDeviceProxyAssetForPlatform(release)
+		if err != nil {
+			return "", fmt.Errorf("failed to find device proxy asset: %v", err)
+		}
+
+		binaryPath, err = downloadAndExtractBinaryWithRetry(assetURL, assetName)
+		if err != nil {
+			return "", fmt.Errorf("failed to download device proxy: %v", err)
+		}
+
+		// Save version info
+		saveVersionInfo(&VersionInfo{
+			TagName:    release.TagName,
+			CommitID:   currentCommit,
+			Downloaded: time.Now().Format(time.RFC3339),
+		})
+
+		return binaryPath, nil
+	}
+
+	// Fallback: try latest release
 	release, err := getLatestRelease(deviceProxyPublicRepo)
 	if err != nil {
 		return "", fmt.Errorf("failed to get latest release: %v", err)
-	}
-
-	// Check if we already have this version
-	if cachedInfo.TagName == release.TagName {
-		return binaryPath, nil
 	}
 
 	// Download latest version

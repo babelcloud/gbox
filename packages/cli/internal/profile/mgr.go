@@ -132,6 +132,11 @@ func (pm *ProfileManager) Load() error {
 		pm.config.Defaults.BaseURL = config.GetBaseURL()
 	}
 
+	// Check if migration is needed and perform it
+	if pm.needsMigration() {
+		pm.performMigration()
+	}
+
 	return nil
 }
 
@@ -141,7 +146,10 @@ func (pm *ProfileManager) Save() error {
 		return fmt.Errorf("failed to create config directory: %v", err)
 	}
 
-	data, err := toml.Marshal(pm.config)
+	// Create a clean config for saving (omit base_url when it matches defaults)
+	cleanConfig := pm.createCleanConfigForSaving()
+
+	data, err := toml.Marshal(cleanConfig)
 	if err != nil {
 		return fmt.Errorf("failed to serialize profile data: %v", err)
 	}
@@ -151,6 +159,35 @@ func (pm *ProfileManager) Save() error {
 	}
 
 	return nil
+}
+
+// createCleanConfigForSaving creates a clean config structure for saving
+// that omits base_url fields when they match the default value
+func (pm *ProfileManager) createCleanConfigForSaving() ProfileConfig {
+	cleanConfig := ProfileConfig{
+		Current:  pm.config.Current,
+		Profiles: make(map[string]Profile),
+		Defaults: pm.config.Defaults,
+	}
+
+	// Copy profiles, omitting base_url when it matches defaults
+	for id, profile := range pm.config.Profiles {
+		cleanProfile := Profile{
+			OrgName: profile.OrgName,
+			Org:     profile.Org,
+			OrgSlug: profile.OrgSlug,
+			APIKey:  profile.APIKey,
+		}
+
+		// Only include base_url if it's different from defaults
+		if profile.BaseURL != "" && profile.BaseURL != pm.config.Defaults.BaseURL {
+			cleanProfile.BaseURL = profile.BaseURL
+		}
+
+		cleanConfig.Profiles[id] = cleanProfile
+	}
+
+	return cleanConfig
 }
 
 // List lists all profiles
@@ -707,8 +744,11 @@ func (pm *ProfileManager) getOrgInfoFromAPI(apiKey, baseURL string) (*OrgInfo, e
 	// Make HTTP request to get organization info
 	client := &http.Client{}
 	// Ensure baseURL doesn't end with slash to avoid double slashes
-	cleanBaseURL := strings.TrimSuffix(baseURL, "/")
-	req, err := http.NewRequest("GET", cleanBaseURL+"/api/v1/org", nil)
+	baseEndpoint := strings.TrimSuffix(baseURL, "/")
+	// Remove /api/v1 suffix if present, as we'll add the correct path
+	baseEndpoint = strings.TrimSuffix(baseEndpoint, "/api/v1")
+
+	req, err := http.NewRequest("GET", baseEndpoint+"/api/v1/org", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
@@ -800,14 +840,97 @@ func (pm *ProfileManager) buildDevicesURL(profile *Profile) string {
 	}
 
 	// Ensure baseURL doesn't end with slash
-	baseURL = strings.TrimSuffix(baseURL, "/")
+	baseEndpoint := strings.TrimSuffix(baseURL, "/")
+	baseEndpoint = strings.TrimSuffix(baseEndpoint, "/api/v1")
 
 	// If org_slug is available, use it to build the devices URL
 	if profile.OrgSlug != "" {
-		return fmt.Sprintf("%s/%s/devices", baseURL, profile.OrgSlug)
+		return fmt.Sprintf("%s/%s/devices", baseEndpoint, profile.OrgSlug)
 	}
 
 	// If no org_slug (old profile), return empty string
 	// This indicates that the profile needs to be updated with org_slug
 	return ""
+}
+
+// needsMigration checks if any base URLs need to be migrated to the new format
+func (pm *ProfileManager) needsMigration() bool {
+	// Check defaults.base_url
+	if pm.needsURLMigration(pm.config.Defaults.BaseURL) {
+		return true
+	}
+
+	// Check all profile base URLs
+	for _, profile := range pm.config.Profiles {
+		if pm.needsURLMigration(profile.BaseURL) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// needsURLMigration checks if a specific URL needs migration
+func (pm *ProfileManager) needsURLMigration(url string) bool {
+	if url == "" {
+		return false
+	}
+
+	// Remove trailing slash for comparison
+	cleanURL := strings.TrimSuffix(url, "/")
+
+	// Check if URL needs migration (doesn't end with /api/v1)
+	return !strings.HasSuffix(cleanURL, "/api/v1")
+}
+
+// performMigration migrates all base URLs from old format to new format
+func (pm *ProfileManager) performMigration() {
+	migrated := false
+
+	// Migrate defaults.base_url
+	if pm.needsURLMigration(pm.config.Defaults.BaseURL) {
+		pm.config.Defaults.BaseURL = pm.migrateURL(pm.config.Defaults.BaseURL)
+		migrated = true
+	}
+
+	// Migrate all profile base URLs
+	for id, profile := range pm.config.Profiles {
+		if pm.needsURLMigration(profile.BaseURL) {
+			profile.BaseURL = pm.migrateURL(profile.BaseURL)
+			pm.config.Profiles[id] = profile
+			migrated = true
+		}
+	}
+
+	// Save the migrated configuration
+	if migrated {
+		if err := pm.Save(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to save migrated configuration: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "Info: migrated base URLs to new format\n")
+		}
+	}
+}
+
+// migrateURL migrates a single URL to the new format
+func (pm *ProfileManager) migrateURL(url string) string {
+	if url == "" {
+		return config.GetBaseURL()
+	}
+
+	// Remove trailing slash
+	cleanURL := strings.TrimSuffix(url, "/")
+
+	// If it's the main gbox.ai domain, use the default
+	if cleanURL == "https://gbox.ai" {
+		return config.GetBaseURL()
+	}
+
+	// If URL already ends with /api/v1, return as is
+	if strings.HasSuffix(cleanURL, "/api/v1") {
+		return cleanURL
+	}
+
+	// For other domains, append /api/v1
+	return cleanURL + "/api/v1"
 }

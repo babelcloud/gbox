@@ -205,12 +205,15 @@ func setupDeviceProxyEnvironment(apiKey, baseURL string) []string {
 	env := os.Environ()
 	env = append(env, "GBOX_PROVIDER_TYPE=org")
 	env = append(env, fmt.Sprintf("GBOX_API_KEY=%s", apiKey))
+
+	baseEndpoint := strings.TrimSuffix(baseURL, "/")
+	baseEndpoint = strings.TrimSuffix(baseEndpoint, "/api/v1")
+
 	// Add ANDROID_DEVMGR_ENDPOINT environment variable
-	androidDevmgrEndpoint := fmt.Sprintf("%s/devmgr", baseURL)
-	env = append(env, fmt.Sprintf("ANDROID_DEVMGR_ENDPOINT=%s", androidDevmgrEndpoint))
+	env = append(env, fmt.Sprintf("ANDROID_DEVMGR_ENDPOINT=%s/devmgr", baseEndpoint))
 
 	// Also add GBOX_BASE_URL for consistency
-	env = append(env, fmt.Sprintf("GBOX_BASE_URL=%s", baseURL))
+	env = append(env, fmt.Sprintf("GBOX_BASE_URL=%s", baseEndpoint))
 
 	// Work around for frp not supporting no_proxy
 	env = handleNoProxyWorkaround(env, baseURL)

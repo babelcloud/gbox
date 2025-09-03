@@ -115,7 +115,7 @@ func runExecWebSocket(opts *BoxExecOptions, resolvedBoxID string) error {
 		wsBase = "ws://" + strings.TrimPrefix(apiBase, "http://")
 	}
 
-	wsURL := fmt.Sprintf("%s/api/v1/boxes/%s/exec", wsBase, resolvedBoxID)
+	wsURL := fmt.Sprintf("%s/boxes/%s/exec", wsBase, resolvedBoxID)
 
 	// parse URL to ensure validity
 	parsedURL, err := url.Parse(wsURL)
