@@ -16,6 +16,15 @@ set NC "\033\[0m"
 # Get script directory
 set script_dir [file dirname [file normalize [info script]]]
 
+# Get the gbox binary path
+# Default to using the built binary in the parent directory
+set gbox_binary "../gbox"
+
+# If the built binary doesn't exist, fall back to system gbox
+if {![file exists $gbox_binary]} {
+    set gbox_binary "gbox"
+}
+
 # Track executed tests
 set executed_tests {}
 
@@ -56,11 +65,44 @@ foreach arg $argv {
 }
 
 # Set API URL
-set api_endpoint "https://gbox-staging.babelcloud.dev/api/v1"
+set api_endpoint "https://gbox-staging.babelcloud.dev"
 puts "${BLUE}Running tests with staging endpoint${NC}"
 
 # Set API URL ENV for tests
 set env(GBOX_BASE_URL) $api_endpoint
+
+# Check for API key environment variable
+if {![info exists env(GBOX_API_KEY)]} {
+    puts "${RED}Error: GBOX_API_KEY environment variable is required for testing${NC}"
+    puts "${YELLOW}Please set GBOX_API_KEY environment variable before running tests${NC}"
+    exit 4
+}
+
+# Login with API key before running tests
+puts "${BLUE}Logging in with API key...${NC}"
+if {[catch {
+    spawn $gbox_binary profile add --key $env(GBOX_API_KEY)
+    expect {
+        -re "Profile added successfully" {
+            puts "${GREEN}✓ Successfully logged in with API key${NC}"
+        }
+        -re "Profile already exists" {
+            puts "${GREEN}✓ Profile already exists, continuing with tests${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout during login${NC}"
+            exit 3
+        }
+        eof {
+            puts "${RED}✗ Login command exited unexpectedly${NC}"
+            exit 3
+        }
+    }
+    catch {close}
+} result]} {
+    puts "${RED}✗ Login failed: $result${NC}"
+    exit 3
+}
 
 # Run tests
 set total_tests 0

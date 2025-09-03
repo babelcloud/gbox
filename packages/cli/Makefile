@@ -36,11 +36,19 @@ help: ## Show this help message
 # Run test for a specific command using pattern matching
 .PHONY: test-%
 test-%: binary ## Run test for a specific command (e.g. make test-create, builds binary first)
-	@cd e2e && ./run-test.exp --$*
+	@if [ -f ../../.env ]; then \
+		cd e2e && GBOX_API_KEY=$$(grep '^GBOX_API_KEY=' ../../../.env | cut -d'=' -f2) ./run-test.exp --$*; \
+	else \
+		cd e2e && ./run-test.exp --$*; \
+	fi
 
 # Run tests for all commands
 test: binary ## Run tests for all commands (builds binary first)
-	@cd e2e && ./run-test.exp
+	@if [ -f ../../.env ]; then \
+		cd e2e && GBOX_API_KEY=$$(grep '^GBOX_API_KEY=' ../../../.env | cut -d'=' -f2) ./run-test.exp; \
+	else \
+		cd e2e && ./run-test.exp; \
+	fi
 
 # Clean build directory
 clean: ## Clean the build directory
