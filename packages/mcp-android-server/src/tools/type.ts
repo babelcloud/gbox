@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { attachBox } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
-import { extractImageInfo, maybeResizeAndCompressImage } from "../sdk/utils.js";
+import { extractImageInfo } from "../sdk/utils.js";
 
 export const TYPE_TOOL = "type";
 
@@ -28,9 +28,13 @@ export const typeParamsSchema = {
 type TypeParams = z.infer<z.ZodObject<typeof typeParamsSchema>>;
 
 export function handleType(logger: MCPLogger) {
-  return async (args: TypeParams) => {
+  return async ({
+    boxId,
+    content,
+    pressEnterAfterType,
+    replace,
+  }: TypeParams) => {
     try {
-      const { boxId, content, pressEnterAfterType, replace } = args;
       await logger.info("Typing content", {
         boxId,
         length: content.length,
@@ -66,21 +70,15 @@ export function handleType(logger: MCPLogger) {
       });
 
       // Prefer showing the final after screenshot if present
-      const imageInfo = extractImageInfo(typeResult.screenshot.after.uri);
-      const processedData = await maybeResizeAndCompressImage(
-        imageInfo,
-        (await box.display()).resolution
-      );
       contentItems.push({
         type: "image",
-        data: processedData.base64Data,
-        mimeType: processedData.mimeType,
+        ...extractImageInfo(typeResult.screenshot.after.uri),
       });
 
       return { content: contentItems };
     } catch (error) {
       await logger.error("Failed to type content", {
-        boxId: args?.boxId,
+        boxId,
         error,
       });
       return {

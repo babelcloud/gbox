@@ -2,7 +2,7 @@ import { z } from "zod";
 import { attachBox } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { ActionPressKey } from "gbox-sdk";
-import { extractImageInfo, maybeResizeAndCompressImage } from "../sdk/utils.js";
+import { extractImageInfo } from "../sdk/utils.js";
 
 export const PRESS_KEY_TOOL = "press_key";
 
@@ -181,51 +181,30 @@ export function handlePressKey(logger: MCPLogger) {
         },
       });
 
-      // Prepare image contents for screenshots
-      const images: Array<{ type: "image"; data: string; mimeType: string }> =
-        [];
-
-      if (result?.screenshot?.after?.uri) {
-        const imageInfo = extractImageInfo(result.screenshot.after.uri);
-        const processedData = await maybeResizeAndCompressImage(
-          imageInfo,
-          (await box.display()).resolution
-        );
-        images.push({
-          type: "image",
-          data: processedData.base64Data,
-          mimeType: processedData.mimeType,
-        });
-      }
-
       await logger.info("Keys pressed successfully", {
         boxId,
         keys: keys.join(" + "),
-        imageCount: images.length,
+        imageCount: result?.screenshot?.after?.uri ? 1 : 0,
       });
 
-      // Build content array with text and images
-      const content: Array<
-        | { type: "text"; text: string }
-        | { type: "image"; data: string; mimeType: string }
-      > = [];
-
-      // Add text result with sanitized data
-      content.push({
-        type: "text" as const,
-        text: "Keys pressed successfully",
-      });
-
-      // Add all images
-      images.forEach(img => {
-        content.push({
-          type: "image" as const,
-          data: img.data,
-          mimeType: img.mimeType,
-        });
-      });
-
-      return { content };
+      return {
+        content: {
+          content: [
+            {
+              type: "text" as const,
+              text: "Keys pressed successfully",
+            },
+            ...(result?.screenshot?.after?.uri
+              ? [
+                  {
+                    type: "image" as const,
+                    ...extractImageInfo(result.screenshot.after.uri),
+                  },
+                ]
+              : []),
+          ],
+        },
+      };
     } catch (error) {
       await logger.error("Failed to press keys", { boxId: args?.boxId, error });
       return {

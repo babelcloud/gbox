@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { MCPLogger } from "../mcp-logger.js";
 import { attachBox } from "../sdk/index.js";
-import { extractImageInfo, maybeResizeAndCompressImage } from "../sdk/utils.js";
+import { extractImageInfo } from "../sdk/utils.js";
 
 export const SCROLL_TOOL = "scroll";
 
@@ -20,9 +20,8 @@ export const scrollParamsSchema = {
 type ScrollParams = z.infer<z.ZodObject<typeof scrollParamsSchema>>;
 
 export function handleScroll(logger: MCPLogger) {
-  return async (args: ScrollParams) => {
+  return async ({ boxId, direction }: ScrollParams) => {
     try {
-      const { boxId, direction } = args;
       await logger.info("Scroll command invoked", { boxId, direction });
 
       const box = await attachBox(boxId);
@@ -43,33 +42,21 @@ export function handleScroll(logger: MCPLogger) {
         distance: Math.round(height / 2),
       });
 
-      // Build content: brief text + after screenshot if available
-      const content: Array<
-        | { type: "text"; text: string }
-        | { type: "image"; data: string; mimeType: string }
-      > = [];
-
-      content.push({
-        type: "text",
-        text: `Scrolled ${direction}`,
-      });
-
-      if (result?.screenshot?.after?.uri) {
-        const processedData = await maybeResizeAndCompressImage(
-          extractImageInfo(result.screenshot.after.uri),
-          (await box.display()).resolution
-        );
-        content.push({
-          type: "image",
-          data: processedData.base64Data,
-          mimeType: processedData.mimeType,
-        });
-      }
-
-      return { content };
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Scrolled ${direction}`,
+          },
+          {
+            type: "image" as const,
+            ...extractImageInfo(result.screenshot.after.uri),
+          },
+        ],
+      };
     } catch (error) {
       await logger.error("Failed to run scroll action", {
-        boxId: args?.boxId,
+        boxId,
         error,
       });
       return {

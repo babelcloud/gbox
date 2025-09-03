@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { MCPLogger } from "../mcp-logger.js";
 import { attachBox } from "../sdk/index.js";
-import { buildActionReturnValues } from "../sdk/utils.js";
+import { extractImageInfo } from "../sdk/utils.js";
 
 export const SWIPE_TOOL = "swipe";
 
@@ -30,9 +30,8 @@ export const swipeParamsSchema = {
 type SwipeParams = z.infer<z.ZodObject<typeof swipeParamsSchema>>;
 
 export function handleSwipe(logger: MCPLogger) {
-  return async (args: SwipeParams) => {
+  return async ({ boxId, direction, distance, location }: SwipeParams) => {
     try {
-      const { boxId, direction, distance, location } = args;
       await logger.info("Swipe command invoked", {
         boxId,
         direction,
@@ -55,10 +54,21 @@ export function handleSwipe(logger: MCPLogger) {
         },
       });
 
-      return buildActionReturnValues(actionResult, box);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Swipe action completed successfully",
+          },
+          {
+            type: "image" as const,
+            ...extractImageInfo(actionResult.screenshot.after.uri),
+          },
+        ],
+      };
     } catch (error) {
       await logger.error("Failed to run swipe action", {
-        boxId: args?.boxId,
+        boxId,
         error,
       });
       return {

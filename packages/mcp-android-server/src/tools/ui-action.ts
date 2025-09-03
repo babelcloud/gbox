@@ -2,7 +2,8 @@ import { z } from "zod";
 import { attachBox } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { ActionAI } from "gbox-sdk";
-import { extractImageInfo, maybeResizeAndCompressImage } from "../sdk/utils.js";
+import { extractImageInfo } from "../sdk/utils.js";
+import type { ActionAIResponse } from "gbox-sdk/resources/v1/boxes.js";
 
 export const UI_ACTION_TOOL = "ui_action";
 export const UI_ACTION_DESCRIPTION =
@@ -67,16 +68,8 @@ export const uiActionParamsSchema = {
 type UiActionParams = z.infer<z.ZodObject<typeof uiActionParamsSchema>>;
 
 export function handleUiAction(logger: MCPLogger) {
-  return async (args: UiActionParams) => {
+  return async ({ boxId, instruction, background }: UiActionParams) => {
     try {
-      const {
-        boxId,
-        instruction,
-        background,
-        // includeScreenshot,
-        // outputFormat,
-        // settings,
-      } = args;
       await logger.info("Performing UI action", { boxId, instruction });
 
       const box = await attachBox(boxId);
@@ -93,67 +86,34 @@ export function handleUiAction(logger: MCPLogger) {
         },
       };
 
-      interface AIActionResult {
-        screenshot?: {
-          after?: {
-            uri?: string;
-          };
-        };
-      }
-
-      const result = (await box.action.ai(actionParams)) as AIActionResult;
-
-      // Prepare image contents for before and after screenshots
-      const images: Array<{ type: "image"; data: string; mimeType: string }> =
-        [];
-
-      // if (result?.screenshot?.before?.uri) {
-      //   const { mimeType, base64Data } = parseUri(result.screenshot.before.uri);
-      //   images.push({ type: "image", data: base64Data, mimeType });
-      // }
-
-      if (result?.screenshot?.after?.uri) {
-        const processedData = await maybeResizeAndCompressImage(
-          extractImageInfo(result.screenshot.after.uri),
-          (await box.display()).resolution
-        );
-        images.push({
-          type: "image",
-          data: processedData.base64Data,
-          mimeType: processedData.mimeType,
-        });
-      }
+      const result = (await box.action.ai(
+        actionParams
+      )) as ActionAIResponse.AIActionScreenshotResult;
 
       await logger.info("UI action completed", {
         boxId,
-        imageCount: images.length,
+        imageCount: result?.screenshot?.after?.uri ? 1 : 0,
       });
 
-      // Build content array with text and images
-      const content: Array<
-        | { type: "text"; text: string }
-        | { type: "image"; data: string; mimeType: string }
-      > = [];
-
-      // Add text result with sanitized data
-      content.push({
-        type: "text" as const,
-        text: "Action completed successfully",
-      });
-
-      // Add all images
-      images.forEach(img => {
-        content.push({
-          type: "image" as const,
-          data: img.data,
-          mimeType: img.mimeType,
-        });
-      });
-
-      return { content };
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Action completed successfully",
+          },
+          ...(result?.screenshot?.after?.uri
+            ? [
+                {
+                  type: "image" as const,
+                  ...extractImageInfo(result.screenshot.after.uri),
+                },
+              ]
+            : []),
+        ],
+      };
     } catch (error) {
       await logger.error("Failed to perform AI action", {
-        boxId: args?.boxId,
+        boxId,
         error,
       });
       return {

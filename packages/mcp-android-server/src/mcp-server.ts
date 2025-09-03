@@ -41,12 +41,6 @@ import {
   swipeParamsSchema,
 } from "./tools/swipe.js";
 import {
-  CREATE_ANDROID_BOX_DESCRIPTION,
-  CREATE_ANDROID_BOX_TOOL,
-  createAndroidBoxParamsSchema,
-  handleCreateAndroidBox,
-} from "./tools/create-android-box.js";
-import {
   handleWait,
   WAIT_TOOL,
   WAIT_TOOL_DESCRIPTION,
@@ -73,10 +67,10 @@ import {
   pressButtonParamsSchema,
 } from "./tools/press-button.js";
 import {
-  handleStartGbox,
-  START_GBOX_DESCRIPTION,
-  START_GBOX_TOOL,
-  startGboxParamsSchema,
+  handleStartBox,
+  START_BOX_DESCRIPTION,
+  START_BOX_TOOL,
+  startBoxParamsSchema,
 } from "./tools/start-box.js";
 
 const isSse = config.mode === "sse";
@@ -150,10 +144,10 @@ mcpServer.prompt(GBOX_MANUAL, GBOX_MANUAL_DESCRIPTION, () => {
 
 // Register tools with Zod schemas
 mcpServer.tool(
-  START_GBOX_TOOL,
-  START_GBOX_DESCRIPTION,
-  startGboxParamsSchema,
-  handleStartGbox(logger)
+  START_BOX_TOOL,
+  START_BOX_DESCRIPTION,
+  startBoxParamsSchema,
+  handleStartBox(logger)
 );
 
 mcpServer.tool(

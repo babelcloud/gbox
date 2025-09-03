@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { MCPLogger } from "../mcp-logger.js";
 import { attachBox } from "../sdk/index.js";
-import { buildActionReturnValues } from "../sdk/utils.js";
+import { extractImageInfo } from "../sdk/utils.js";
 
 export const TAP_TOOL = "tap";
 
@@ -20,9 +20,8 @@ export const tapParamsSchema = {
 type TapParams = z.infer<z.ZodObject<typeof tapParamsSchema>>;
 
 export function handleTap(logger: MCPLogger) {
-  return async (args: TapParams) => {
+  return async ({ boxId, target }: TapParams) => {
     try {
-      const { boxId, target } = args;
       await logger.info("Tap command invoked", { boxId, target });
 
       const box = await attachBox(boxId);
@@ -37,10 +36,21 @@ export function handleTap(logger: MCPLogger) {
         },
       });
 
-      return buildActionReturnValues(result, box);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Tap action completed successfully",
+          },
+          {
+            type: "image" as const,
+            ...extractImageInfo(result.screenshot.after.uri),
+          },
+        ],
+      };
     } catch (error) {
       await logger.error("Failed to run tap action", {
-        boxId: args?.boxId,
+        boxId,
         error,
       });
       return {

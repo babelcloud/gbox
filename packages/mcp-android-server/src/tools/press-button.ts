@@ -2,7 +2,7 @@ import { z } from "zod";
 import { attachBox } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { ActionPressButton } from "gbox-sdk";
-import { extractImageInfo, maybeResizeAndCompressImage } from "../sdk/utils.js";
+import { extractImageInfo } from "../sdk/utils.js";
 
 export const PRESS_BUTTON_TOOL = "press_button";
 
@@ -38,9 +38,8 @@ export const pressButtonParamsSchema = {
 type PressButtonParams = z.infer<z.ZodObject<typeof pressButtonParamsSchema>>;
 
 export function handlePressButton(logger: MCPLogger) {
-  return async (args: PressButtonParams) => {
+  return async ({ boxId, buttons }: PressButtonParams) => {
     try {
-      const { boxId, buttons } = args;
       await logger.info("Pressing buttons", {
         boxId,
         buttons: buttons.join(" + "),
@@ -57,65 +56,21 @@ export function handlePressButton(logger: MCPLogger) {
         },
       });
 
-      // Prepare image contents for screenshots
-      const images: Array<{ type: "image"; data: string; mimeType: string }> =
-        [];
-
-      // Add screenshots if available
-      // if (result?.screenshot?.trace?.uri) {
-      //   const { mimeType, base64Data } = parseUri(result.screenshot.trace.uri);
-      //   images.push({ type: "image", data: base64Data, mimeType });
-      // }
-
-      // if (result?.screenshot?.before?.uri) {
-      //   const { mimeType, base64Data } = parseUri(result.screenshot.before.uri);
-      //   images.push({ type: "image", data: base64Data, mimeType });
-      // }
-
-      if (result?.screenshot?.after?.uri) {
-        const imageInfo = extractImageInfo(result.screenshot.after.uri);
-        const processedData = await maybeResizeAndCompressImage(
-          imageInfo,
-          (await box.display()).resolution
-        );
-        images.push({
-          type: "image",
-          data: processedData.base64Data,
-          mimeType: processedData.mimeType,
-        });
-      }
-
-      await logger.info("Buttons pressed successfully", {
-        boxId,
-        buttons: buttons.join(" + "),
-        imageCount: images.length,
-      });
-
-      // Build content array with text and images
-      const content: Array<
-        | { type: "text"; text: string }
-        | { type: "image"; data: string; mimeType: string }
-      > = [];
-
-      // Add text result with sanitized data
-      content.push({
-        type: "text" as const,
-        text: "Button pressed successfully",
-      });
-
-      // Add all images
-      images.forEach(img => {
-        content.push({
-          type: "image" as const,
-          data: img.data,
-          mimeType: img.mimeType,
-        });
-      });
-
-      return { content };
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Button pressed successfully",
+          },
+          {
+            type: "image" as const,
+            ...extractImageInfo(result.screenshot.after.uri),
+          },
+        ],
+      };
     } catch (error) {
       await logger.error("Failed to press buttons", {
-        boxId: args?.boxId,
+        boxId,
         error,
       });
       return {

@@ -95,8 +95,6 @@ export function handleInstallApk(logger: MCPLogger) {
       const screenshotParams: ActionScreenshot = { outputFormat: "base64" };
       const screenshotResult = await box.action.screenshot(screenshotParams);
 
-      const { base64Data, mimeType } = extractImageInfo(screenshotResult.uri);
-
       await logger.info("APK installed successfully", { boxId, apk: apkPath });
 
       return {
@@ -107,8 +105,7 @@ export function handleInstallApk(logger: MCPLogger) {
           },
           {
             type: "image" as const,
-            data: base64Data,
-            mimeType,
+            ...extractImageInfo(screenshotResult.uri),
           },
         ],
       };
@@ -188,7 +185,6 @@ export function handleOpenApp(logger: MCPLogger) {
       const screenshotParams: ActionScreenshot = { outputFormat: "base64" };
       const screenshotResult = await box.action.screenshot(screenshotParams);
 
-      const { base64Data, mimeType } = extractImageInfo(screenshotResult.uri);
       return {
         content: [
           {
@@ -197,8 +193,7 @@ export function handleOpenApp(logger: MCPLogger) {
           },
           {
             type: "image" as const,
-            data: base64Data,
-            mimeType,
+            ...extractImageInfo(screenshotResult.uri),
           },
         ],
       };

@@ -1,12 +1,8 @@
 import GboxSDK, { AndroidBoxOperator } from "gbox-sdk";
-import { config } from "../config.js";
 import type { DeviceInfo } from "gbox-sdk/resources/v1.js";
 
 // Initialize Gbox SDK
-const gboxSDK = new GboxSDK({
-  apiKey: config.gboxApiKey,
-  baseURL: config.gboxBaseURL,
-});
+const gboxSDK = new GboxSDK();
 
 export async function attachBox(boxId: string): Promise<AndroidBoxOperator> {
   try {

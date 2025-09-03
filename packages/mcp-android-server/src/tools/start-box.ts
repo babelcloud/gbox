@@ -4,12 +4,13 @@ import { gboxSDK } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import { openUrlInBrowser, startLocalScrcpy } from "../sdk/utils.js";
 import { deviceList } from "../sdk/android.service.js";
+import { calculateResizeRatio } from "../sdk/utils.js";
 
-export const START_GBOX_TOOL = "start_gbox";
-export const START_GBOX_DESCRIPTION =
+export const START_BOX_TOOL = "start_box";
+export const START_BOX_DESCRIPTION =
   "Start a GBOX(Android) by the given ID. If the GBOX ID is not provided, a new GBOX will be created. MUST call this tool first when starting a task.";
 
-export const startGboxParamsSchema = {
+export const startBoxParamsSchema = {
   gboxId: z
     .string()
     .optional()
@@ -18,12 +19,12 @@ export const startGboxParamsSchema = {
     ),
 };
 
-type StartGboxParams = z.infer<z.ZodObject<typeof startGboxParamsSchema>>;
+type StartBoxParams = z.infer<z.ZodObject<typeof startBoxParamsSchema>>;
 
-export function handleStartGbox(logger: MCPLogger) {
-  return async (args: StartGboxParams) => {
+export function handleStartBox(logger: MCPLogger) {
+  return async (args: StartBoxParams) => {
     try {
-      await logger.info("Starting GBOX", args);
+      await logger.info("Starting Box", args);
 
       let { gboxId } = args;
 
@@ -56,6 +57,15 @@ export function handleStartGbox(logger: MCPLogger) {
         } as CreateAndroid);
         gboxId = box.data?.id;
         await logger.info("GBOX created successfully", {
+          boxId: gboxId,
+        });
+
+        const { resolution } = await box.display();
+        box.action.updateSettings({
+          scale: calculateResizeRatio(resolution),
+        });
+
+        await logger.info("Box action settings scaled to 0.5 successfully", {
           boxId: gboxId,
         });
       } else {

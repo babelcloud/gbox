@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { MCPLogger } from "../mcp-logger.js";
 import { attachBox } from "../sdk/index.js";
-import { buildActionReturnValues } from "../sdk/utils.js";
+import { extractImageInfo } from "../sdk/utils.js";
 
 export const DRAG_TOOL = "drag";
 
@@ -26,9 +26,8 @@ export const dragParamsSchema = {
 type DragParams = z.infer<z.ZodObject<typeof dragParamsSchema>>;
 
 export function handleDrag(logger: MCPLogger) {
-  return async (args: DragParams) => {
+  return async ({ boxId, target, destination }: DragParams) => {
     try {
-      const { boxId, target, destination } = args;
       await logger.info("Drag command invoked", { boxId, target, destination });
 
       const box = await attachBox(boxId);
@@ -42,16 +41,27 @@ export function handleDrag(logger: MCPLogger) {
           },
         },
       });
-      return buildActionReturnValues(result, box);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Drag action completed successfully",
+          },
+          {
+            type: "image" as const,
+            ...extractImageInfo(result.screenshot.after.uri),
+          },
+        ],
+      };
     } catch (error) {
       await logger.error("Failed to run drag action", {
-        boxId: args?.boxId,
+        boxId,
         error,
       });
       return {
         content: [
           {
-            type: "text",
+            type: "text" as const,
             text: `Error: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],

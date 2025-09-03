@@ -1,8 +1,5 @@
 import { exec, execSync, spawn } from "child_process";
-import sharp from "sharp";
 import { logger } from "../mcp-server.js";
-
-import { AndroidBoxOperator } from "gbox-sdk";
 
 export const MAX_SCREEN_LENGTH = 1784;
 export const SCREENSHOT_SIZE_THRESHOLD = Math.floor(0.7 * 1024 * 1024); // 700 KB
@@ -111,7 +108,7 @@ export const openUrlInBrowser = (url: string) => {
  */
 export type ImageInfo = {
   mimeType: string;
-  base64Data: string;
+  data: string;
 };
 
 /**
@@ -124,194 +121,31 @@ export type Resolution = {
 
 export const extractImageInfo = (uri: string): ImageInfo => {
   let mimeType = "image/png";
-  let base64Data = uri;
+  let data = uri;
 
   if (uri.startsWith("data:")) {
     const match = uri.match(/^data:(.+);base64,(.*)$/);
     if (match) {
       mimeType = match[1];
-      base64Data = match[2];
+      data = match[2];
     }
   }
 
-  return { mimeType, base64Data };
+  return { mimeType, data };
 };
 
-function calculateResizeRatio(width: number, height: number): number {
+export function calculateResizeRatio({
+  width,
+  height,
+}: {
+  width: number;
+  height: number;
+}): number {
   const ratio = Math.min(MAX_SCREEN_LENGTH / width, MAX_SCREEN_LENGTH / height);
   if (ratio >= 1) {
     return 1;
   }
   return ratio;
-}
-
-/**
- * Resize the image according to the provided ratio.
- * If `resizeRatio` is >= 1 (meaning no down-scaling is necessary) or we cannot
- * determine the image dimensions, the original buffer is returned.
- *
- * @param buffer - The original image buffer
- * @param resizeRatio - Scale factor to apply (e.g. 0.5 halves width & height)
- * @returns The resized image buffer (or the original buffer if no resizing was necessary)
- */
-async function resizeImage(
-  buffer: Buffer,
-  resizeRatio: number
-): Promise<Buffer> {
-  // If ratio indicates no resize, return as-is
-  if (resizeRatio >= 1) {
-    return buffer;
-  }
-
-  try {
-    // Handle static and animated images. `failOnError: false` lets Sharp fall back gracefully.
-    const image = sharp(buffer, { animated: true, failOnError: false });
-    const metadata = await image.metadata();
-
-    const width = metadata.width ?? 0;
-    const height = metadata.height ?? 0;
-
-    // If we are unable to determine size, skip resizing.
-    if (!width || !height) {
-      return buffer;
-    }
-
-    const newWidth = Math.round(width * resizeRatio);
-
-    return await image.resize(newWidth).toBuffer();
-  } catch (err) {
-    console.error(`Failed to resize image: ${err}`);
-    return buffer;
-  }
-}
-
-/**
- * Resize and compress the image if it exceeds the size threshold.
- * Accepts and returns base64 (without data URI prefix) for easier transport.
- * It applies format-specific optimisations that balance quality and size.
- */
-export async function maybeResizeAndCompressImage(
-  imageInfo: ImageInfo,
-  resolution: Resolution
-): Promise<ImageInfo> {
-  try {
-    const resizeRatio = calculateResizeRatio(
-      resolution.width,
-      resolution.height
-    );
-    const resizedBuffer = await resizeImage(
-      Buffer.from(imageInfo.base64Data, "base64"),
-      resizeRatio
-    );
-
-    if (resizedBuffer.length <= SCREENSHOT_SIZE_THRESHOLD) {
-      return {
-        base64Data: resizedBuffer.toString("base64"),
-        mimeType: imageInfo.mimeType,
-      };
-    }
-
-    let outputBuffer: Buffer<ArrayBufferLike> = resizedBuffer;
-
-    switch (imageInfo.mimeType) {
-      case "image/jpeg":
-      case "image/jpg": {
-        outputBuffer = await sharp(resizedBuffer)
-          .jpeg({ quality: 80, mozjpeg: true })
-          .toBuffer();
-        break;
-      }
-      case "image/png": {
-        outputBuffer = await sharp(resizedBuffer)
-          .png({ quality: 80, compressionLevel: 9, palette: true })
-          .toBuffer();
-        break;
-      }
-      case "image/gif": {
-        outputBuffer = await sharp(resizedBuffer, { animated: true })
-          .gif({ colours: 128 })
-          .toBuffer();
-        break;
-      }
-      default:
-        // Unsupported type – leave as is
-        return {
-          base64Data: imageInfo.base64Data,
-          mimeType: imageInfo.mimeType,
-        };
-    }
-
-    // If compression increased the size (edge-case), keep the original
-    if (outputBuffer.length >= resizedBuffer.length) {
-      return {
-        base64Data: resizedBuffer.toString("base64"),
-        mimeType: imageInfo.mimeType,
-      };
-    }
-
-    return {
-      base64Data: outputBuffer.toString("base64"),
-      mimeType: imageInfo.mimeType,
-    };
-  } catch {
-    // On any processing error (including invalid base64), fall back to original
-    return { base64Data: imageInfo.base64Data, mimeType: imageInfo.mimeType };
-  }
-}
-
-interface ActionResult {
-  screenshot?: {
-    after?: {
-      uri?: string;
-    };
-  };
-}
-
-export async function buildActionReturnValues(
-  result: ActionResult,
-  box: AndroidBoxOperator
-): Promise<{
-  content: Array<
-    | { type: "text"; text: string }
-    | { type: "image"; data: string; mimeType: string }
-  >;
-}> {
-  // Prepare image contents for before and after screenshots
-  const images: Array<{ type: "image"; data: string; mimeType: string }> = [];
-  if (result?.screenshot?.after?.uri) {
-    const imageInfo = extractImageInfo(result.screenshot.after.uri);
-    const processedData = await maybeResizeAndCompressImage(
-      imageInfo,
-      (await box.display()).resolution
-    );
-    images.push({
-      type: "image",
-      data: processedData.base64Data,
-      mimeType: processedData.mimeType,
-    });
-  }
-  // Build content array with text and images
-  const content: Array<
-    | { type: "text"; text: string }
-    | { type: "image"; data: string; mimeType: string }
-  > = [];
-
-  // Add text result with sanitized data
-  content.push({
-    type: "text" as const,
-    text: "Action completed successfully",
-  });
-
-  // Add all images
-  images.forEach(img => {
-    content.push({
-      type: "image" as const,
-      data: img.data,
-      mimeType: img.mimeType,
-    });
-  });
-
-  return { content };
 }
 
 /**
