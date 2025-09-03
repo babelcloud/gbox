@@ -34,7 +34,7 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 # Run test for a specific command using pattern matching
-.PHONY: test-%
+.PHONY: e2e-%
 e2e-%: binary ## Run test for a specific command (e.g. make test-create, builds binary first)
 	@if [ -f ../../.env.local ]; then \
 		cd e2e && GBOX_API_KEY=$$(grep '^GBOX_API_KEY=' ../../../.env.local | cut -d'=' -f2) ./run-test.exp --$*; \
