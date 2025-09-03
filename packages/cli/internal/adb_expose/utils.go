@@ -135,7 +135,7 @@ func FindPidFile(boxId string, localPort int) (string, error) {
 }
 
 func getPortForwardURL(config Config) (string, error) {
-	url := fmt.Sprintf("%s/api/v1/boxes/%s/port-forward-url", config.GboxURL, config.BoxID)
+	url := fmt.Sprintf("%s/boxes/%s/port-forward-url", config.GboxURL, config.BoxID)
 
 	reqBody := PortForwardRequest{
 		Ports: config.TargetPorts,

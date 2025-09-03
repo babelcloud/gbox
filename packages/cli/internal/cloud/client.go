@@ -6,14 +6,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/babelcloud/gbox/packages/cli/internal/profile"
 )
 
 type Client struct {
-	httpClient *http.Client
-	token      string
-	baseURL    string
+	httpClient   *http.Client
+	token        string
+	baseEndpoint string
 }
 
 type Organization struct {
@@ -52,16 +53,17 @@ func NewClient(token string) (*Client, error) {
 
 	// Get base URL with proper priority handling
 	baseURL := profile.Default.GetEffectiveBaseURL()
+	baseEndpoint := strings.TrimSuffix(baseURL, "/api/v1")
 
 	return &Client{
-		httpClient: &http.Client{},
-		token:      token,
-		baseURL:    baseURL,
+		httpClient:   &http.Client{},
+		token:        token,
+		baseEndpoint: baseEndpoint,
 	}, nil
 }
 
 func (c *Client) GetMyOrganizationList() ([]Organization, error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/dashboard/v1/organization/get_my_organization_list", c.baseURL), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/dashboard/v1/organization/get_my_organization_list", c.baseEndpoint), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +104,7 @@ func (c *Client) CreateAPIKey(keyName, orgID string) (*CreateAPIKeyResponse, err
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/dashboard/v1/api_key/create_an_api_key", c.baseURL), bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/dashboard/v1/api_key/create_an_api_key", c.baseEndpoint), bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +140,7 @@ func (c *Client) CreateOrganization(reqBody CreateOrganizationRequest) (*Organiz
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/dashboard/v1/organization/create_an_organization", c.baseURL), bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/dashboard/v1/organization/create_an_organization", c.baseEndpoint), bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +177,7 @@ type UserInfo struct {
 }
 
 func (c *Client) GetCurrentUserInfo() (*UserInfo, error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/dashboard/v1/user/get_current_user_info", c.baseURL), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/dashboard/v1/user/get_current_user_info", c.baseEndpoint), nil)
 	if err != nil {
 		return nil, err
 	}

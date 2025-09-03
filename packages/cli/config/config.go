@@ -16,7 +16,7 @@ var (
 )
 
 const (
-	DefaultBaseURL = "https://gbox.ai"
+	DefaultBaseURL = "https://gbox.ai/api/v1"
 )
 
 func init() {
