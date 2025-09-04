@@ -48,6 +48,7 @@ export function handleSwipe(logger: MCPLogger) {
         duration: "200ms",
         options: {
           screenshot: {
+            phases: ["after"],
             outputFormat: "base64",
             delay: "500ms",
           },

@@ -21,8 +21,8 @@ importers:
         specifier: ^5.1.0
         version: 5.1.0
       gbox-sdk:
-        specifier: https://pkg.stainless.com/s/gbox-sdk-typescript/f31e010e4d0cd77f0f57ddb49f3fbc4cacb0f539/dist.tar.gz
-        version: https://pkg.stainless.com/s/gbox-sdk-typescript/f31e010e4d0cd77f0f57ddb49f3fbc4cacb0f539/dist.tar.gz(typescript@5.8.3)
+        specifier: https://pkg.stainless.com/s/gbox-sdk-typescript/e1171749e07e27fd3fb7e30955d73d339ed54ba4/dist.tar.gz
+        version: https://pkg.stainless.com/s/gbox-sdk-typescript/e1171749e07e27fd3fb7e30955d73d339ed54ba4/dist.tar.gz(typescript@5.8.3)
       sharp:
         specifier: ^0.34.3
         version: 0.34.3
@@ -1086,8 +1086,8 @@ packages:
   function-bind@1.1.2:
     resolution: {integrity: sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==}
 
-  gbox-sdk@https://pkg.stainless.com/s/gbox-sdk-typescript/f31e010e4d0cd77f0f57ddb49f3fbc4cacb0f539/dist.tar.gz:
-    resolution: {tarball: https://pkg.stainless.com/s/gbox-sdk-typescript/f31e010e4d0cd77f0f57ddb49f3fbc4cacb0f539/dist.tar.gz}
+  gbox-sdk@https://pkg.stainless.com/s/gbox-sdk-typescript/e1171749e07e27fd3fb7e30955d73d339ed54ba4/dist.tar.gz:
+    resolution: {tarball: https://pkg.stainless.com/s/gbox-sdk-typescript/e1171749e07e27fd3fb7e30955d73d339ed54ba4/dist.tar.gz}
     version: 0.30.0
     engines: {node: '>=16.0.0', npm: please-use-yarn, yarn: '>=1.22.0'}
 
@@ -2805,7 +2805,7 @@ snapshots:
 
   function-bind@1.1.2: {}
 
-  gbox-sdk@https://pkg.stainless.com/s/gbox-sdk-typescript/f31e010e4d0cd77f0f57ddb49f3fbc4cacb0f539/dist.tar.gz(typescript@5.8.3):
+  gbox-sdk@https://pkg.stainless.com/s/gbox-sdk-typescript/e1171749e07e27fd3fb7e30955d73d339ed54ba4/dist.tar.gz(typescript@5.8.3):
     dependencies:
       smol-toml: 1.4.2
       typedoc: 0.28.7(typescript@5.8.3)

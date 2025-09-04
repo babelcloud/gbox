@@ -80,6 +80,7 @@ export function handleUiAction(logger: MCPLogger) {
         ...(background && { background }),
         options: {
           screenshot: {
+            phases: ["after"],
             outputFormat: "base64",
             delay: "500ms",
           },

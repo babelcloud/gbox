@@ -36,6 +36,7 @@ export function handleDrag(logger: MCPLogger) {
         end: destination,
         options: {
           screenshot: {
+            phases: ["after"],
             outputFormat: "base64",
             delay: "500ms",
           },

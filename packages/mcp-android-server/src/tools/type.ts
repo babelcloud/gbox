@@ -51,6 +51,7 @@ export function handleType(logger: MCPLogger) {
         mode: replace ? "replace" : "append",
         options: {
           screenshot: {
+            phases: ["after"],
             outputFormat: "base64",
             delay: "500ms",
           },

@@ -173,6 +173,7 @@ export function handlePressKey(logger: MCPLogger) {
         options: {
           screenshot: includeScreenshot
             ? {
+                phases: ["after"],
                 outputFormat: outputFormat || "base64",
                 delay: (screenshotDelay ||
                   "500ms") as ActionPressKey["screenshotDelay"],

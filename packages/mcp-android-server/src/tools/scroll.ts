@@ -35,6 +35,7 @@ export function handleScroll(logger: MCPLogger) {
         direction: invertedDirection,
         options: {
           screenshot: {
+            phases: ["after"],
             outputFormat: "base64",
             delay: "500ms",
           },

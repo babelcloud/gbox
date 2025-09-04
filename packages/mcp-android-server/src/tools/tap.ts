@@ -30,6 +30,7 @@ export function handleTap(logger: MCPLogger) {
         target,
         options: {
           screenshot: {
+            phases: ["after"],
             outputFormat: "base64",
             delay: "500ms",
           },

@@ -37,7 +37,7 @@
     "axios": "^1.11.0",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
-    "gbox-sdk": "https://pkg.stainless.com/s/gbox-sdk-typescript/f31e010e4d0cd77f0f57ddb49f3fbc4cacb0f539/dist.tar.gz",
+    "gbox-sdk": "https://pkg.stainless.com/s/gbox-sdk-typescript/e1171749e07e27fd3fb7e30955d73d339ed54ba4/dist.tar.gz",
     "sharp": "^0.34.3",
     "zod": "^3.25.67"
   },

@@ -50,6 +50,7 @@ export function handlePressButton(logger: MCPLogger) {
         buttons: buttons,
         options: {
           screenshot: {
+            phases: ["after"],
             outputFormat: "base64",
             delay: "500ms",
           },
