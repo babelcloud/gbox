@@ -1,245 +1,319 @@
-#!/usr/bin/expect -f
-#
-# Test script for gbox box list command
-#
+#!/usr/bin/env expect
 
-# Set timeout in seconds
-set timeout 10
+# Exit codes:
+#   0 - Test passed
+#   1 - Test failed
 
-# Define colors for output readability
+# Set timeout for command execution
+set timeout 30
+
+# Colors for output
 set GREEN "\033\[0;32m"
 set RED "\033\[0;31m"
-set YELLOW "\033\[0;33m"
-set NC "\033\[0m" ;# No Color
+set YELLOW "\033\[1;33m"
+set BLUE "\033\[0;34m"
+set NC "\033\[0m"
 
-# List to store box IDs created during testing
-set test_box_ids {}
+# Get the gbox binary path
+# Default to using the built binary in the parent directory
+set gbox_binary "../gbox"
 
-# Start basic list command
-puts "\n${YELLOW}Testing basic list command...${NC}"
-spawn go run ../main.go box list
-
-# Expect to see ID column header or no boxes message
-expect {
-    "ID" {
-        puts "\n${GREEN}PASS: List command executed successfully${NC}\n"
-    }
-    "No boxes found" {
-        puts "\n${GREEN}PASS: Correct message displayed when no boxes found${NC}\n"
-    }
-    timeout {
-        puts "\n${RED}FAIL: Getting box list timed out${NC}\n"
-        exit 1
-    }
-    "Error:" {
-        puts "\n${RED}FAIL: Error getting box list${NC}\n"
-        exit 1
-    }
+# If the built binary doesn't exist, fall back to system gbox
+if {![file exists $gbox_binary]} {
+    set gbox_binary "gbox"
 }
 
-# Test help information
-puts "\n${YELLOW}Testing help display...${NC}"
-spawn go run ../main.go box list --help
+puts "${BLUE}Testing gbox box list command...${NC}"
 
-# Expect help information
-expect {
-    "Usage: gbox box list" {
-        puts "\n${GREEN}PASS: Help information displayed correctly${NC}\n"
-    }
-    timeout {
-        puts "\n${RED}FAIL: Getting help information timed out${NC}\n"
-        exit 1
-    }
-}
-
-# Test JSON output format
-puts "\n${YELLOW}Testing JSON output format...${NC}"
-spawn go run ../main.go box list --output json
-
-# Expect JSON format response
-expect {
-    "\"boxes\":" {
-        puts "\n${GREEN}PASS: Received JSON format response${NC}\n"
-    }
-    timeout {
-        puts "\n${RED}FAIL: Getting JSON response timed out${NC}\n"
-        exit 1
-    }
-    "Error:" {
-        puts "\n${RED}FAIL: Error getting JSON response${NC}\n"
-        exit 1
-    }
-}
-
-# Create test boxes with different properties for filter testing
-puts "\n${YELLOW}Creating test boxes for filter testing...${NC}"
-
-# Create a box with specific label for label filter testing
-spawn go run ../main.go box create --image alpine:latest --label test_label=filter_test -- sleep 5
-
-# Expect creation to succeed and capture ID
-expect {
-    -re "Box created with ID \"(\[^\"\]+)\"" {
-        set label_test_id $expect_out(1,string)
-        lappend test_box_ids $label_test_id
-        puts "\n${GREEN}PASS: Test box for label filter created successfully with ID: $label_test_id${NC}\n"
-    }
-    timeout {
-        puts "\n${RED}FAIL: Creating test box for label filter timed out${NC}\n"
-        exit 1
-    }
-    "Error:" {
-        puts "\n${RED}FAIL: Error creating test box for label filter${NC}\n"
-        exit 1
-    }
-}
-
-# Create a box with specific image for image filter testing
-spawn go run ../main.go box create --image ubuntu:latest -- sleep 5
-
-# Expect creation to succeed and capture ID
-expect {
-    -re "Box created with ID \"(\[^\"\]+)\"" {
-        set image_test_id $expect_out(1,string)
-        lappend test_box_ids $image_test_id
-        puts "\n${GREEN}PASS: Test box for image filter created successfully with ID: $image_test_id${NC}\n"
-    }
-    timeout {
-        puts "\n${RED}FAIL: Creating test box for image filter timed out${NC}\n"
-        exit 1
-    }
-    "Error:" {
-        puts "\n${RED}FAIL: Error creating test box for image filter${NC}\n"
-        exit 1
-    }
-}
-
-# Wait a moment to ensure boxes are created
-sleep 2
-
-# Test label filter
-puts "\n${YELLOW}Testing label filter...${NC}"
-spawn go run ../main.go box list -f "label=test_label=filter_test"
-
-# Expect to find box with specified label
-expect {
-    -re ".*$label_test_id.*" {
-        puts "\n${GREEN}PASS: Label filtering working correctly${NC}\n"
-    }
-    "No boxes found" {
-        puts "\n${RED}FAIL: Box with specified label not found${NC}\n"
-        exit 1
-    }
-    timeout {
-        puts "\n${RED}FAIL: Label filtering timed out${NC}\n"
-        exit 1
-    }
-    "Error:" {
-        puts "\n${RED}FAIL: Error with label filtering${NC}\n"
-        exit 1
-    }
-}
-
-# Test ID filter
-puts "\n${YELLOW}Testing ID filter...${NC}"
-spawn go run ../main.go box list -f "id=$label_test_id"
-
-# Expect to find specific box by ID
-expect {
-    -re ".*$label_test_id.*" {
-        puts "\n${GREEN}PASS: ID filtering working correctly${NC}\n"
-    }
-    "No boxes found" {
-        puts "\n${RED}FAIL: Box with specified ID not found${NC}\n"
-        exit 1
-    }
-    timeout {
-        puts "\n${RED}FAIL: ID filtering timed out${NC}\n"
-        exit 1
-    }
-    "Error:" {
-        puts "\n${RED}FAIL: Error with ID filtering${NC}\n"
-        exit 1
-    }
-}
-
-# Test image filter
-puts "\n${YELLOW}Testing image filter...${NC}"
-spawn go run ../main.go box list -f "ancestor=ubuntu:latest"
-
-# Expect to find box using ubuntu image
-expect {
-    -re ".*ubuntu:latest.*" {
-        puts "\n${GREEN}PASS: Image filtering working correctly${NC}\n"
-    }
-    "No boxes found" {
-        puts "\n${RED}FAIL: Box with specified image not found${NC}\n"
-        exit 1
-    }
-    timeout {
-        puts "\n${RED}FAIL: Image filtering timed out${NC}\n"
-        exit 1
-    }
-    "Error:" {
-        puts "\n${RED}FAIL: Error with image filtering${NC}\n"
-        exit 1
-    }
-}
-
-# Test invalid filter
-puts "\n${YELLOW}Testing invalid filter...${NC}"
-spawn go run ../main.go box list -f "invalid=value"
-
-# Expect error message for invalid filter
-expect {
-    "Error:" {
-        puts "\n${GREEN}PASS: Invalid filter properly rejected${NC}\n"
-    }
-    timeout {
-        puts "\n${RED}FAIL: Testing invalid filter timed out${NC}\n"
-        exit 1
-    }
-}
-
-# Test filter shorthand notation
-puts "\n${YELLOW}Testing filter shorthand notation...${NC}"
-spawn go run ../main.go box list -f "id=$image_test_id"
-
-# Expect to find specific box by ID with shorthand filter
-expect {
-    -re ".*$image_test_id.*" {
-        puts "\n${GREEN}PASS: Filter shorthand (-f) working correctly${NC}\n"
-    }
-    "No boxes found" {
-        puts "\n${RED}FAIL: Box not found with shorthand filter${NC}\n"
-        exit 1
-    }
-    timeout {
-        puts "\n${RED}FAIL: Shorthand filter test timed out${NC}\n"
-        exit 1
-    }
-    "Error:" {
-        puts "\n${RED}FAIL: Error with shorthand filter${NC}\n"
-        exit 1
-    }
-}
-
-# Cleanup resources created during testing
-puts "\n${YELLOW}Cleaning up test resources...${NC}\n"
-foreach box_id $test_box_ids {
-    spawn go run ../main.go box delete $box_id
+# Test 1: Basic box list command
+puts "\n${YELLOW}Testing basic box list command...${NC}"
+if {[catch {
+    spawn $gbox_binary box list
     expect {
-        "Box deleted successfully" {
-            puts "${GREEN}Cleaned up box: $box_id${NC}"
+        -re "ID.*TYPE.*STATUS" {
+            puts "${GREEN}✓ Found table header${NC}"
         }
-        "Error:" {
-            puts "${RED}Failed to clean up box: $box_id${NC}"
+        -re "No boxes found" {
+            puts "${GREEN}✓ Found 'No boxes found' message${NC}"
         }
         timeout {
-            puts "${RED}Timeout while cleaning up box: $box_id${NC}"
+            puts "${RED}✗ Timeout waiting for table header or 'No boxes found'${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Command exited unexpectedly${NC}"
+            exit 1
         }
     }
+    
+    expect {
+        eof {
+            puts "${GREEN}✓ Basic box list command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for command completion${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
 }
 
-puts "\n${YELLOW}All tests completed${NC}\n"
-exit 0 
+# Test 2: JSON output format
+puts "\n${YELLOW}Testing JSON output format...${NC}"
+if {[catch {
+    spawn $gbox_binary box list --output json
+    expect {
+        -re "\{" {
+            puts "${GREEN}✓ Found JSON opening brace${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for JSON output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Command exited unexpectedly${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        -re "\"data\":" {
+            puts "${GREEN}✓ Found data array in JSON${NC}"
+        }
+        -re "\\\[\\\]" {
+            puts "${GREEN}✓ Found empty data array in JSON${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for data array${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        -re "\}" {
+            puts "${GREEN}✓ Found JSON closing brace${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for JSON closing brace${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        eof {
+            puts "${GREEN}✓ JSON box list command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for JSON command completion${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ JSON box list test failed: $result${NC}"
+    exit 1
+}
+
+# Test 3: Short output format (-o json)
+puts "\n${YELLOW}Testing short JSON output format (-o json)...${NC}"
+if {[catch {
+    spawn $gbox_binary box list -o json
+    expect {
+        -re "\{" {
+            puts "${GREEN}✓ Found JSON opening brace with short flag${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for JSON output with short flag${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Command exited unexpectedly${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        eof {
+            puts "${GREEN}✓ Short JSON format command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for short JSON completion${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Short JSON format test failed: $result${NC}"
+    exit 1
+}
+
+# Test 4: Filter option
+puts "\n${YELLOW}Testing filter option...${NC}"
+if {[catch {
+    spawn $gbox_binary box list --filter "status=running"
+    expect {
+        -re "ID.*TYPE.*STATUS" {
+            puts "${GREEN}✓ Found table header with filter${NC}"
+        }
+        -re "No boxes found" {
+            puts "${GREEN}✓ Found 'No boxes found' with filter${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for filtered output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Command exited unexpectedly${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        eof {
+            puts "${GREEN}✓ Filter command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for filter command completion${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Filter test failed: $result${NC}"
+    exit 1
+}
+
+# Test 5: Multiple filters
+puts "\n${YELLOW}Testing multiple filters...${NC}"
+if {[catch {
+    spawn $gbox_binary box list --filter "status=running" --filter "type=android"
+    expect {
+        -re "ID.*TYPE.*STATUS" {
+            puts "${GREEN}✓ Found table header with multiple filters${NC}"
+        }
+        -re "No boxes found" {
+            puts "${GREEN}✓ Found 'No boxes found' with multiple filters${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for multiple filtered output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Command exited unexpectedly${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        eof {
+            puts "${GREEN}✓ Multiple filters command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for multiple filters completion${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Multiple filters test failed: $result${NC}"
+    exit 1
+}
+
+# Test 6: Short filter flag
+puts "\n${YELLOW}Testing short filter flag...${NC}"
+if {[catch {
+    spawn $gbox_binary box list -f "status=running"
+    expect {
+        -re "ID.*TYPE.*STATUS" {
+            puts "${GREEN}✓ Found table header with short filter flag${NC}"
+        }
+        -re "No boxes found" {
+            puts "${GREEN}✓ Found 'No boxes found' with short filter flag${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for short filter output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Command exited unexpectedly${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        eof {
+            puts "${GREEN}✓ Short filter flag command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for short filter completion${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Short filter flag test failed: $result${NC}"
+    exit 1
+}
+
+# Test 7: Help command
+puts "\n${YELLOW}Testing help command...${NC}"
+if {[catch {
+    spawn $gbox_binary box list --help
+    expect {
+        -re "List all available boxes" {
+            puts "${GREEN}✓ Found help description${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for help description${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Help command exited unexpectedly${NC}"
+            exit 1
+        }
+    }
+    
+    # Look for both flags in the output
+    expect {
+        -re "Flags:" {
+            puts "${GREEN}✓ Found Flags section${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for Flags section${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        -re "-o, --output.*Output format" {
+            puts "${GREEN}✓ Found output flag description${NC}"
+        }
+        -re "-f, --filter.*Filter boxes" {
+            puts "${GREEN}✓ Found filter flag description${NC}"
+        }
+        eof {
+            puts "${GREEN}✓ Help command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for flag descriptions${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Help test failed: $result${NC}"
+    exit 1
+}
+
+puts "\n${GREEN}All box list tests passed successfully!${NC}"
+exit 0

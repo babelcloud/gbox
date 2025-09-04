@@ -1,5 +1,11 @@
 #!/usr/bin/env expect
 
+# Exit codes:
+#   0 - All tests passed
+#   1 - Test failure
+#   3 - API server not accessible
+#   4 - Invalid arguments
+
 # Colors for output
 set GREEN "\033\[0;32m"
 set RED "\033\[0;31m"
@@ -9,6 +15,15 @@ set NC "\033\[0m"
 
 # Get script directory
 set script_dir [file dirname [file normalize [info script]]]
+
+# Get the gbox binary path
+# Default to using the built binary in the parent directory
+set gbox_binary "../gbox"
+
+# If the built binary doesn't exist, fall back to system gbox
+if {![file exists $gbox_binary]} {
+    set gbox_binary "gbox"
+}
 
 # Track executed tests
 set executed_tests {}
@@ -42,21 +57,45 @@ foreach arg $argv {
         }
         default {
             puts "Unknown argument: $arg"
-            exit 1
+            puts "Usage: $argv0 [--test_name]"
+            puts "  --test_name: Run specific test (e.g., --box-create)"
+            exit 4
         }
     }
 }
 
-# Set API URL for tests
-set env(API_ENDPOINT) "http://localhost:28081"
 
-# Check if test API server is running
-puts "\n${BLUE}Checking test API server...${NC}"
-if {[catch {exec curl -s -f http://localhost:28081/api/v1/boxes} result]} {
-    puts "\n${RED}Error: Test API server is not running. Please run 'make test-setup' first.${NC}"
-    exit 1
-} else {
-    puts "${GREEN}✓ Test API server is running${NC}"
+# Check for API key environment variable
+if {![info exists env(GBOX_API_KEY)]} {
+    puts "${RED}Error: GBOX_API_KEY environment variable is required for testing${NC}"
+    puts "${YELLOW}Please set GBOX_API_KEY environment variable before running tests${NC}"
+    exit 4
+}
+
+# Login with API key before running tests
+puts "${BLUE}Logging in with API key...${NC}"
+if {[catch {
+    spawn $gbox_binary profile add --key $env(GBOX_API_KEY)
+    expect {
+        -re "Profile added successfully" {
+            puts "${GREEN}✓ Successfully logged in with API key${NC}"
+        }
+        -re "Profile already exists" {
+            puts "${GREEN}✓ Profile already exists, continuing with tests${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout during login${NC}"
+            exit 3
+        }
+        eof {
+            puts "${RED}✗ Login command exited unexpectedly${NC}"
+            exit 3
+        }
+    }
+    catch {close}
+} result]} {
+    puts "${RED}✗ Login failed: $result${NC}"
+    exit 3
 }
 
 # Run tests
@@ -66,6 +105,10 @@ set case_count 0
 
 if {$selected_test != ""} {
     # Run specific test
+    # Add .exp extension if not present
+    if {![string match "*.exp" $selected_test]} {
+        set selected_test "$selected_test.exp"
+    }
     if {[file exists $script_dir/$selected_test]} {
         if {[lsearch $executed_tests $selected_test] >= 0} {
             puts "\n${BLUE}Skipping already executed test: $selected_test${NC}"
@@ -91,14 +134,14 @@ if {$selected_test != ""} {
             puts "${BLUE}Test output:${NC}\n$result"
             puts "\n${RED}Test failed: $selected_test${NC}"
             puts "${YELLOW}========================================${NC}"
-            exit 1
+            exit 1  ;# Exit code for test failure
         }
         puts "${YELLOW}========================================${NC}"
         incr passed_tests
         lappend executed_tests $selected_test
     } else {
         puts "\n${RED}Test script not found: $selected_test${NC}"
-        exit 1
+        exit 4
     }
 } else {
     # Run all tests
@@ -128,7 +171,7 @@ if {$selected_test != ""} {
                 puts "${BLUE}Test output:${NC}\n$result"
                 puts "\n${RED}Test failed: $test${NC}"
                 puts "${YELLOW}========================================${NC}"
-                exit 1
+                exit 1  ;# Exit code for test failure
             }
             puts "${YELLOW}========================================${NC}"
             incr passed_tests
@@ -151,7 +194,9 @@ if {$passed_tests != $total_tests} {
 puts "${YELLOW}========================================${NC}"
 
 if {$passed_tests == $total_tests} {
+    puts "\n${GREEN}All tests passed successfully!${NC}"
     exit 0
 } else {
-    exit 1
+    puts "\n${RED}Some tests failed.${NC}"
+    exit 1  ;# Exit code for test failure
 } 

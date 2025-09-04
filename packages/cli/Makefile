@@ -24,7 +24,7 @@ LDFLAGS := -ldflags "-X $(MODULE_PREFIX)/packages/cli/internal/version.Version=$
 # Supported platforms
 PLATFORMS := linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64 windows-arm64
 
-.PHONY: all clean help binary binary-all install e2e-setup e2e e2e-env-check e2e-cleanup e2e-% run test
+.PHONY: all clean help binary binary-all run test test-% go-test
 
 # Default target
 all: help ## Show this help message (default target)
@@ -33,39 +33,22 @@ all: help ## Show this help message (default target)
 help: ## Show this help message
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
-# Check if test API server is running
-e2e-env-check: ## Check if test API server is running
-	@if ! curl -s https://gbox.ai/api/v1/boxes > /dev/null; then \
-		echo "Error: Test API server is not running. Please run 'make e2e-setup' first."; \
-		exit 1; \
-	fi
-
-# Setup test environment
-e2e-setup: ## Setup e2e test environment (build and start test API server)
-	@echo "Setting up e2e test environment..."
-	@echo "Starting e2e test API server..."
-	@SERVICE_PORT=28081 \
-	 PREFIX=test \
-	 docker compose -f ../../manifests/docker/docker-compose.yml up -d --build api-server
-	@echo "Waiting for e2e test API server to be ready..."
-	@for i in $$(seq 1 30); do \
-		if curl -s https://gbox.ai/api/v1/boxes > /dev/null; then \
-			echo "E2E test API server is ready!"; \
-			exit 0; \
-		fi; \
-		sleep 1; \
-	done; \
-	echo "Error: E2E test API server failed to start within 30 seconds."; \
-	exit 1
-
 # Run test for a specific command using pattern matching
 .PHONY: e2e-%
-e2e-%: e2e-env-check ## Run test for a specific command (e.g. make e2e-create)
-	@cd e2e && ./run-test.exp --$*.exp
+e2e-%: binary ## Run test for a specific command (e.g. make test-create, builds binary first)
+	@if [ -f ../../.env.local ]; then \
+		cd e2e && GBOX_API_KEY=$$(grep '^GBOX_API_KEY=' ../../../.env.local | cut -d'=' -f2) GBOX_BASE_URL=$$(grep '^GBOX_BASE_URL=' ../../../.env.local | cut -d'=' -f2) ./run-test.exp --$*; \
+	else \
+		cd e2e && GBOX_API_KEY=$${GBOX_API_KEY} GBOX_BASE_URL=$${GBOX_BASE_URL} ./run-test.exp --$*; \
+	fi
 
 # Run tests for all commands
-e2e: e2e-env-check ## Run tests for all commands
-	@cd e2e && ./run-test.exp
+e2e: binary ## Run tests for all commands (builds binary first)
+	@if [ -f ../../.env.local ]; then \
+		cd e2e && GBOX_API_KEY=$$(grep '^GBOX_API_KEY=' ../../../.env.local | cut -d'=' -f2) GBOX_BASE_URL=$$(grep '^GBOX_BASE_URL=' ../../../.env.local | cut -d'=' -f2) ./run-test.exp; \
+	else \
+		cd e2e && GBOX_API_KEY=$${GBOX_API_KEY} GBOX_BASE_URL=$${GBOX_BASE_URL} ./run-test.exp; \
+	fi
 
 # Clean build directory
 clean: ## Clean the build directory
@@ -102,13 +85,6 @@ binary-all: ## Build binaries for all supported platforms
 	done
 	@echo "All platform binaries have been built"
 
-# Clean up test environment
-e2e-cleanup: ## Clean up e2e test environment and stop test API server
-	@echo "Cleaning up e2e test environment..."
-	@PREFIX=test \
-	 SERVICE_PORT=28081 \
-	 docker compose -f ../../manifests/docker/docker-compose.yml down api-server
-	@echo "E2E test environment cleaned up"
 
 # Add this to prevent make from trying to build the arguments
 %:

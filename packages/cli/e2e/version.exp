@@ -1,125 +1,256 @@
-#!/usr/bin/expect -f
-#
-# Test script for gbox version command
-#
+#!/usr/bin/env expect
 
-# Set timeout in seconds
-set timeout 10
+# Exit codes:
+#   0 - Test passed
+#   1 - Test failed
 
-# Define colors for output readability
+# Set timeout for command execution
+set timeout 30
+
+# Colors for output
 set GREEN "\033\[0;32m"
 set RED "\033\[0;31m"
-set YELLOW "\033\[0;33m"
-set NC "\033\[0m" ;# No Color
+set YELLOW "\033\[1;33m"
+set BLUE "\033\[0;34m"
+set NC "\033\[0m"
+
+# Get the gbox binary path
+# Default to using the built binary in the parent directory
+set gbox_binary "../gbox"
+
+# If the built binary doesn't exist, fall back to system gbox
+if {![file exists $gbox_binary]} {
+    set gbox_binary "gbox"
+}
+
+puts "${BLUE}Testing gbox version command...${NC}"
 
 # Test 1: Basic version command
 puts "\n${YELLOW}Testing basic version command...${NC}"
-spawn go run ../main.go version
-
-# Expect to see version information (client info must exist, server info is optional)
-expect {
-    -re "Client:.*Version:.*API version:.*Go version:.*Git commit:.*Built:.*OS/Arch:.*" {
-        puts "\n${GREEN}PASS: Version command executed successfully${NC}\n"
+if {[catch {
+    spawn $gbox_binary version
+    expect {
+        -re "Client:" {
+            puts "${GREEN}✓ Found 'Client:' header${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for 'Client:' header${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Command exited unexpectedly${NC}"
+            exit 1
+        }
     }
-    -re "Version:.*API version:.*Go version:" {
-        puts "\n${GREEN}PASS: Version command executed successfully (partial info)${NC}\n"
+    
+    # Check for version information fields
+    expect {
+        -re "Version:" {
+            puts "${GREEN}✓ Found Version field${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for Version field${NC}"
+            exit 1
+        }
     }
-    "Error:" {
-        puts "\n${RED}FAIL: Version command error: $_${NC}\n"
-        exit 1
+    
+    expect {
+        -re "API version:" {
+            puts "${GREEN}✓ Found API version field${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for API version field${NC}"
+            exit 1
+        }
     }
-    timeout {
-        puts "\n${RED}FAIL: Version command timed out${NC}\n"
-        exit 1
+    
+    expect {
+        -re "Go version:" {
+            puts "${GREEN}✓ Found Go version field${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for Go version field${NC}"
+            exit 1
+        }
     }
+    
+    expect {
+        -re "Git commit:" {
+            puts "${GREEN}✓ Found Git commit field${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for Git commit field${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        -re "Built:" {
+            puts "${GREEN}✓ Found Built field${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for Built field${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        -re "OS/Arch:" {
+            puts "${GREEN}✓ Found OS/Arch field${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for OS/Arch field${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        eof {
+            puts "${GREEN}✓ Command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for command completion${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
 }
 
-# Test 2: Short version flag
-puts "\n${YELLOW}Testing --version flag...${NC}"
-spawn go run ../main.go --version
-
-# Expect to see short version information
-expect {
-    -re "GBOX version .*, build .*" {
-        puts "\n${GREEN}PASS: Short version flag working correctly${NC}\n"
+# Test 2: Short version format (-v flag)
+puts "\n${YELLOW}Testing short version format (-v flag)...${NC}"
+if {[catch {
+    spawn $gbox_binary version -v
+    expect {
+        -re "GBOX version .*, build .*" {
+            puts "${GREEN}✓ Found short version format${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for short version format${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Command exited unexpectedly${NC}"
+            exit 1
+        }
     }
-    -re "version.*build" {
-        puts "\n${GREEN}PASS: Short version flag working correctly (partial match)${NC}\n"
+    
+    expect {
+        eof {
+            puts "${GREEN}✓ Short version command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for short version completion${NC}"
+            exit 1
+        }
     }
-    "Error:" {
-        puts "\n${RED}FAIL: Short version flag error: $_${NC}\n"
-        exit 1
-    }
-    timeout {
-        puts "\n${RED}FAIL: Short version flag timed out${NC}\n"
-        exit 1
-    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Short version test failed: $result${NC}"
+    exit 1
 }
 
 # Test 3: JSON output format
-puts "\n${YELLOW}Testing version command with JSON output...${NC}"
-spawn go run ../main.go version --output json
-
-# Expect JSON format response (client info must exist, server info is optional)
-expect {
-    -re "\\{.*\"Client\":\\{.*\"Version\":.*\"APIVersion\":.*\"GoVersion\":.*\"GitCommit\":.*\"Built\":.*\"OS\":.*\"Arch\":.*\\}.*\\}" {
-        puts "\n${GREEN}PASS: JSON output format working correctly${NC}\n"
+puts "\n${YELLOW}Testing JSON output format...${NC}"
+if {[catch {
+    spawn $gbox_binary version -o json
+    expect {
+        -re "\{" {
+            puts "${GREEN}✓ Found JSON opening brace${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for JSON output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Command exited unexpectedly${NC}"
+            exit 1
+        }
     }
-    -re "\\{.*\"Client\":\\{.*\\}\\}" {
-        puts "\n${GREEN}PASS: JSON output format working correctly (minimal response)${NC}\n"
+    
+    expect {
+        -re "\"Client\":" {
+            puts "${GREEN}✓ Found Client object in JSON${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for Client object${NC}"
+            exit 1
+        }
     }
-    "Error:" {
-        puts "\n${RED}FAIL: JSON output format error: $_${NC}\n"
-        exit 1
+    
+    expect {
+        -re "\"Version\":" {
+            puts "${GREEN}✓ Found Version field in JSON${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for Version field in JSON${NC}"
+            exit 1
+        }
     }
-    timeout {
-        puts "\n${RED}FAIL: JSON output format timed out${NC}\n"
-        exit 1
+    
+    expect {
+        -re "\}" {
+            puts "${GREEN}✓ Found JSON closing brace${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for JSON closing brace${NC}"
+            exit 1
+        }
     }
+    
+    expect {
+        eof {
+            puts "${GREEN}✓ JSON version command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for JSON version completion${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ JSON version test failed: $result${NC}"
+    exit 1
 }
 
-# Test 4: Help information
-puts "\n${YELLOW}Testing version command help...${NC}"
-spawn go run ../main.go version --help
-
-# Expect help information
-expect {
-    -re "Print the client and server version information" {
-        puts "\n${GREEN}PASS: Help information displayed correctly${NC}\n"
+# Test 4: Root command version flag
+puts "\n${YELLOW}Testing root command version flag...${NC}"
+if {[catch {
+    spawn $gbox_binary -v
+    expect {
+        -re "GBOX version .*, build .*" {
+            puts "${GREEN}✓ Found root command version output${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for root command version${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Root command exited unexpectedly${NC}"
+            exit 1
+        }
     }
-    -re "Usage:.*version" {
-        puts "\n${GREEN}PASS: Help information displayed (basic format)${NC}\n"
+    
+    expect {
+        eof {
+            puts "${GREEN}✓ Root command version completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for root command completion${NC}"
+            exit 1
+        }
     }
-    "Error:" {
-        puts "\n${RED}FAIL: Help information error: $_${NC}\n"
-        exit 1
-    }
-    timeout {
-        puts "\n${RED}FAIL: Help information timed out${NC}\n"
-        exit 1
-    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Root command version test failed: $result${NC}"
+    exit 1
 }
 
-# Test 5: gbox-version symlink test (using direct command)
-puts "\n${YELLOW}Testing gbox-version functionality...${NC}"
-spawn go run ../main.go version
-
-expect {
-    -re "Client:.*Version:.*API version:.*Go version:.*Git commit:.*Built:.*OS/Arch:.*" {
-        puts "\n${GREEN}PASS: Version functionality working correctly${NC}\n"
-    }
-    -re "Version:.*API version:.*Go version:" {
-        puts "\n${GREEN}PASS: Version functionality working correctly (partial info)${NC}\n"
-    }
-    "Error:" {
-        puts "\n${RED}FAIL: Version functionality error: $_${NC}\n"
-        exit 1
-    }
-    timeout {
-        puts "\n${RED}FAIL: Version command execution timed out${NC}\n"
-        exit 1
-    }
-}
-
-puts "\n${GREEN}✓ All version tests completed successfully${NC}\n"
-exit 0 
+puts "\n${GREEN}All version tests passed successfully!${NC}"
+exit 0

@@ -32,10 +32,23 @@ jobs:
           cd packages/cli
           go mod tidy
 
-      - name: Run tests
+      - name: Run unit tests
         run: |
           cd packages/cli
-          go test -v ./cmd/...
+          make test
+
+      - name: Install expect for e2e tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y expect
+
+      - name: Run e2e tests
+        run: |
+          cd packages/cli
+          make e2e
+        env:
+          GBOX_API_KEY: ${{ secrets.GBOX_API_KEY }}
+          GBOX_BASE_URL: ${{ secrets.GBOX_BASE_URL }}
 
 
 
