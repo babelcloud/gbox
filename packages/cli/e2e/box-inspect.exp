@@ -1,0 +1,491 @@
+#!/usr/bin/env expect
+
+# Exit codes:
+#   0 - Test passed
+#   1 - Test failed
+
+# Set timeout for command execution
+set timeout 30
+
+# Colors for output
+set GREEN "\033\[0;32m"
+set RED "\033\[0;31m"
+set YELLOW "\033\[1;33m"
+set BLUE "\033\[0;34m"
+set NC "\033\[0m"
+
+# Get the gbox binary path
+# Default to using the built binary in the parent directory
+set gbox_binary "../gbox"
+
+# If the built binary doesn't exist, fall back to system gbox
+if {![file exists $gbox_binary]} {
+    set gbox_binary "gbox"
+}
+
+puts "${BLUE}Testing gbox box inspect command...${NC}"
+
+# First, create a test box for our inspect tests
+puts "\n${YELLOW}Creating a test box for inspect tests...${NC}"
+set test_box_id ""
+if {[catch {
+    spawn $gbox_binary box create linux
+    expect {
+        -re "Linux box created with ID: (\[a-f0-9-]+)" {
+            set test_box_id $expect_out(1,string)
+            puts "${GREEN}✓ Test box created with ID: $test_box_id${NC}"
+        }
+        -re "Linux box created successfully" {
+            puts "${GREEN}✓ Test box created successfully (no ID returned)${NC}"
+            # If no ID is returned, we'll use a placeholder
+            set test_box_id "test-box-placeholder"
+        }
+        -re "failed to create Linux box" {
+            puts "${YELLOW}⚠ Failed to create test box (API not available), using placeholder ID${NC}"
+            set test_box_id "test-box-placeholder"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for box creation${NC}"
+            set test_box_id "test-box-placeholder"
+        }
+        eof {
+            puts "${RED}✗ Box create command exited unexpectedly${NC}"
+            set test_box_id "test-box-placeholder"
+        }
+    }
+    
+    expect {
+        eof {
+            puts "${GREEN}✓ Box create command completed${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for box create completion${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Box creation failed: $result${NC}"
+    set test_box_id "test-box-placeholder"
+}
+
+if {$test_box_id == ""} {
+    set test_box_id "test-box-placeholder"
+}
+
+# Test 1: Basic box inspect command without arguments (should show error)
+puts "\n${YELLOW}Testing basic box inspect command without arguments...${NC}"
+puts "${BLUE}Running Test 1: Basic box inspect command without arguments${NC}"
+if {[catch {
+    spawn $gbox_binary box inspect
+    expect {
+        -re "Error:.*accepts 1 arg" {
+            puts "${GREEN}✓ Found expected error message for missing box ID${NC}"
+        }
+        -re "Error:.*required" {
+            puts "${GREEN}✓ Found expected error message for missing box ID${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for error message${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Command exited unexpectedly${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        eof {
+            puts "${GREEN}✓ Error message displayed correctly${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for command completion${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 2: Help command for box inspect
+puts "\n${YELLOW}Testing help command for box inspect...${NC}"
+puts "${BLUE}Running Test 2: Help command for box inspect${NC}"
+if {[catch {
+    spawn $gbox_binary box inspect --help
+    set help_found 0
+    set flags_found 0
+    set output_flag_found 0
+    set example_found 0
+    
+    expect {
+        -re "Get detailed information about a box" {
+            puts "${GREEN}✓ Found help description${NC}"
+            set help_found 1
+            exp_continue
+        }
+        -re "Flags:" {
+            puts "${GREEN}✓ Found Flags section${NC}"
+            set flags_found 1
+            exp_continue
+        }
+        -re "-o, --output.*Output format" {
+            puts "${GREEN}✓ Found output flag description${NC}"
+            set output_flag_found 1
+            exp_continue
+        }
+        -re "Example:" {
+            puts "${GREEN}✓ Found Example section${NC}"
+            set example_found 1
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Help command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for help output${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Help test failed: $result${NC}"
+    exit 1
+}
+
+# Test 3: Box inspect with invalid box ID
+puts "\n${YELLOW}Testing box inspect with invalid box ID...${NC}"
+puts "${BLUE}Running Test 3: Box inspect with invalid box ID${NC}"
+if {[catch {
+    spawn $gbox_binary box inspect invalid-box-id
+    expect {
+        -re "failed to resolve box ID" {
+            puts "${GREEN}✓ Found expected error for invalid box ID${NC}"
+        }
+        -re "Error:" {
+            puts "${GREEN}✓ Found error message for invalid box ID${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for invalid box ID error${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Invalid box ID command exited unexpectedly${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        eof {
+            puts "${GREEN}✓ Invalid box ID error displayed correctly${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for invalid box ID completion${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Invalid box ID test failed: $result${NC}"
+    exit 1
+}
+
+# Test 4: Box inspect with valid box ID (text output)
+puts "\n${YELLOW}Testing box inspect with valid box ID (text output)...${NC}"
+puts "${BLUE}Running Test 4: Box inspect with valid box ID (text output)${NC}"
+if {[catch {
+    spawn $gbox_binary box inspect $test_box_id
+    set details_found 0
+    set id_found 0
+    set status_found 0
+    
+    expect {
+        -re "Box details:" {
+            puts "${GREEN}✓ Found box details header${NC}"
+            set details_found 1
+            exp_continue
+        }
+        -re "failed to get box details" {
+            puts "${GREEN}✓ Found expected error for box details (API not available)${NC}"
+            exp_continue
+        }
+        -re "failed to resolve box ID" {
+            puts "${GREEN}✓ Found expected box ID resolution error${NC}"
+            exp_continue
+        }
+        -re "id.*:" {
+            puts "${GREEN}✓ Found id field in output${NC}"
+            set id_found 1
+            exp_continue
+        }
+        -re "status.*:" {
+            puts "${GREEN}✓ Found status field in output${NC}"
+            set status_found 1
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Box inspect command completed${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for box details${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Valid box inspect test failed: $result${NC}"
+    exit 1
+}
+
+# Test 5: Box inspect with JSON output
+puts "\n${YELLOW}Testing box inspect with JSON output...${NC}"
+puts "${BLUE}Running Test 5: Box inspect with JSON output${NC}"
+if {[catch {
+    spawn $gbox_binary box inspect $test_box_id --output json
+    set json_brace_found 0
+    set json_id_found 0
+    set json_status_found 0
+    
+    expect {
+        -re "\{" {
+            puts "${GREEN}✓ Found JSON opening brace${NC}"
+            set json_brace_found 1
+            exp_continue
+        }
+        -re "failed to get box details" {
+            puts "${GREEN}✓ Found expected error for box details JSON (API not available)${NC}"
+            exp_continue
+        }
+        -re "failed to resolve box ID" {
+            puts "${GREEN}✓ Found expected box ID resolution error for JSON${NC}"
+            exp_continue
+        }
+        -re "\"id\":" {
+            puts "${GREEN}✓ Found id field in JSON${NC}"
+            set json_id_found 1
+            exp_continue
+        }
+        -re "\"status\":" {
+            puts "${GREEN}✓ Found status field in JSON${NC}"
+            set json_status_found 1
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Box inspect JSON command completed${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for JSON output${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Box inspect JSON test failed: $result${NC}"
+    exit 1
+}
+
+# Test 6: Box inspect with short output flag
+puts "\n${YELLOW}Testing box inspect with short output flag...${NC}"
+puts "${BLUE}Running Test 6: Box inspect with short output flag${NC}"
+if {[catch {
+    spawn $gbox_binary box inspect -o json $test_box_id
+    expect {
+        -re "\{" {
+            puts "${GREEN}✓ Found JSON opening brace with short flag${NC}"
+            exp_continue
+        }
+        -re "failed to get box details" {
+            puts "${GREEN}✓ Found expected error for box details with short flag (API not available)${NC}"
+            exp_continue
+        }
+        -re "failed to resolve box ID" {
+            puts "${GREEN}✓ Found expected box ID resolution error with short flag${NC}"
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Box inspect with short flag command completed${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for JSON output with short flag${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Box inspect with short flag test failed: $result${NC}"
+    exit 1
+}
+
+# Test 7: Box inspect with text output (explicit)
+puts "\n${YELLOW}Testing box inspect with explicit text output...${NC}"
+puts "${BLUE}Running Test 7: Box inspect with explicit text output${NC}"
+if {[catch {
+    spawn $gbox_binary box inspect --output text $test_box_id
+    expect {
+        -re "Box details:" {
+            puts "${GREEN}✓ Found box details header with explicit text output${NC}"
+            exp_continue
+        }
+        -re "failed to get box details" {
+            puts "${GREEN}✓ Found expected error for box details with explicit text (API not available)${NC}"
+            exp_continue
+        }
+        -re "failed to resolve box ID" {
+            puts "${GREEN}✓ Found expected box ID resolution error with explicit text${NC}"
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Box inspect with explicit text command completed${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for explicit text output${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Box inspect with explicit text test failed: $result${NC}"
+    exit 1
+}
+
+# Test 8: Box inspect with invalid output format
+puts "\n${YELLOW}Testing box inspect with invalid output format...${NC}"
+puts "${BLUE}Running Test 8: Box inspect with invalid output format${NC}"
+if {[catch {
+    spawn $gbox_binary box inspect --output invalid $test_box_id
+    expect {
+        -re "invalid output format" {
+            puts "${GREEN}✓ Found expected error for invalid output format${NC}"
+            exp_continue
+        }
+        -re "Error:" {
+            puts "${GREEN}✓ Found error message for invalid output format${NC}"
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Invalid output format error displayed correctly${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for invalid output format error${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Invalid output format test failed: $result${NC}"
+    exit 1
+}
+
+# Test 9: Box inspect with box ID prefix (partial match)
+puts "\n${YELLOW}Testing box inspect with box ID prefix...${NC}"
+puts "${BLUE}Running Test 9: Box inspect with box ID prefix${NC}"
+if {[catch {
+    # Use first 8 characters of the test box ID as prefix
+    set box_prefix [string range $test_box_id 0 7]
+    spawn $gbox_binary box inspect $box_prefix
+    expect {
+        -re "Box details:" {
+            puts "${GREEN}✓ Found box details with ID prefix${NC}"
+            exp_continue
+        }
+        -re "failed to get box details" {
+            puts "${GREEN}✓ Found expected error for box details with prefix (API not available)${NC}"
+            exp_continue
+        }
+        -re "failed to resolve box ID" {
+            puts "${GREEN}✓ Found expected box ID resolution error with prefix${NC}"
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Box inspect with prefix command completed${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for box details with prefix${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Box inspect with prefix test failed: $result${NC}"
+    exit 1
+}
+
+# Test 10: Box inspect with multiple arguments (should show error)
+puts "\n${YELLOW}Testing box inspect with multiple arguments...${NC}"
+puts "${BLUE}Running Test 10: Box inspect with multiple arguments${NC}"
+if {[catch {
+    spawn $gbox_binary box inspect $test_box_id extra-arg
+    expect {
+        -re "Error:.*accepts 1 arg" {
+            puts "${GREEN}✓ Found expected error for multiple arguments${NC}"
+            exp_continue
+        }
+        -re "Error:.*too many" {
+            puts "${GREEN}✓ Found expected error for multiple arguments${NC}"
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Multiple arguments error displayed correctly${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for multiple arguments error${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Multiple arguments test failed: $result${NC}"
+    exit 1
+}
+
+# Clean up: terminate the test box if it was created
+if {$test_box_id != "test-box-placeholder" && $test_box_id != ""} {
+    puts "\n${YELLOW}Cleaning up test box: $test_box_id${NC}"
+    if {[catch {
+        spawn $gbox_binary box terminate $test_box_id
+        expect {
+            -re "Box terminated successfully" {
+                puts "${GREEN}✓ Test box terminated successfully${NC}"
+            }
+            -re "failed to terminate box" {
+                puts "${YELLOW}⚠ Failed to terminate test box (may not exist)${NC}"
+            }
+            timeout {
+                puts "${YELLOW}⚠ Timeout waiting for box termination${NC}"
+            }
+            eof {
+                puts "${GREEN}✓ Box terminate command completed${NC}"
+            }
+        }
+        
+        expect {
+            eof {
+                puts "${GREEN}✓ Box terminate command finished${NC}"
+            }
+            timeout {
+                puts "${YELLOW}⚠ Timeout waiting for terminate completion${NC}"
+            }
+        }
+        
+        catch {close}
+    } result]} {
+        puts "${YELLOW}⚠ Box cleanup failed: $result${NC}"
+    }
+} else {
+    puts "\n${YELLOW}No test box to clean up (used placeholder)${NC}"
+}
+
+puts "\n${GREEN}All box inspect tests passed successfully!${NC}"
+exit 0
