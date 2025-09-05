@@ -74,15 +74,6 @@ proc cleanup_boxes {} {
             }
         }
         
-        expect {
-            eof {
-                puts "${GREEN}✓ Box termination process finished${NC}"
-            }
-            timeout {
-                puts "${YELLOW}⚠ Warning: Timeout waiting for termination completion${NC}"
-            }
-        }
-        
         catch {close}
     } result]} {
         puts "${YELLOW}⚠ Warning: Box termination failed: $result${NC}"

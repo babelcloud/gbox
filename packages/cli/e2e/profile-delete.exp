@@ -1,0 +1,480 @@
+#!/usr/bin/env expect
+
+# Exit codes:
+#   0 - Test passed
+#   1 - Test failed
+
+# Set timeout for command execution
+set timeout 30
+
+# Colors for output
+set GREEN "\033\[0;32m"
+set RED "\033\[0;31m"
+set YELLOW "\033\[1;33m"
+set BLUE "\033\[0;34m"
+set NC "\033\[0m"
+
+# Get the gbox binary path
+# Default to using the built binary in the parent directory
+set gbox_binary "../gbox"
+
+# If the built binary doesn't exist, fall back to system gbox
+if {![file exists $gbox_binary]} {
+    set gbox_binary "gbox"
+}
+
+puts "${BLUE}Testing gbox profile delete command...${NC}"
+
+# Test 1: Help command
+puts "\n${YELLOW}Testing help command...${NC}"
+if {[catch {
+    spawn $gbox_binary profile delete --help
+    set description_found 0
+    set usage_found 0
+    set args_found 0
+    
+    expect {
+        -re "Delete specified profile" {
+            puts "${GREEN}✓ Found delete command description${NC}"
+            set description_found 1
+            exp_continue
+        }
+        -re "Usage:" {
+            puts "${GREEN}✓ Found Usage section${NC}"
+            set usage_found 1
+            exp_continue
+        }
+        -re "Arguments:" {
+            puts "${GREEN}✓ Found Arguments section${NC}"
+            set args_found 1
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Help command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for help output${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Help test failed: $result${NC}"
+    exit 1
+}
+
+# Test 2: Short help flag
+puts "\n${YELLOW}Testing short help flag...${NC}"
+if {[catch {
+    spawn $gbox_binary profile delete -h
+    expect {
+        -re "Delete specified profile" {
+            puts "${GREEN}✓ Found delete command description with short flag${NC}"
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Short help command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for short help completion${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Short help test failed: $result${NC}"
+    exit 1
+}
+
+# Test 3: No arguments (should show error)
+puts "\n${YELLOW}Testing no arguments...${NC}"
+if {[catch {
+    spawn $gbox_binary profile delete
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for no arguments${NC}"
+        }
+        -re "required" {
+            puts "${GREEN}✓ Found required argument error${NC}"
+        }
+        -re "accepts 1 arg" {
+            puts "${GREEN}✓ Found accepts 1 arg error${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for no arguments error${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ No arguments error displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ No arguments test failed: $result${NC}"
+    exit 1
+}
+
+# Test 4: Too many arguments (should show error)
+puts "\n${YELLOW}Testing too many arguments...${NC}"
+if {[catch {
+    spawn $gbox_binary profile delete profile1 profile2
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for too many arguments${NC}"
+        }
+        -re "unknown command" {
+            puts "${GREEN}✓ Found expected unknown command error${NC}"
+        }
+        -re "too many arguments" {
+            puts "${GREEN}✓ Found expected too many arguments error${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for too many arguments error${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Too many arguments error displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Too many arguments test failed: $result${NC}"
+    exit 1
+}
+
+# Test 5: Delete non-existent profile
+puts "\n${YELLOW}Testing delete non-existent profile...${NC}"
+if {[catch {
+    spawn $gbox_binary profile delete "non-existent-profile-id"
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for non-existent profile${NC}"
+        }
+        -re "not found" {
+            puts "${GREEN}✓ Found 'not found' error for non-existent profile${NC}"
+        }
+        -re "failed to" {
+            puts "${GREEN}✓ Found expected failure message${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for non-existent profile error${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Non-existent profile error displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Non-existent profile test failed: $result${NC}"
+    exit 1
+}
+
+# Test 6: Delete with empty profile ID
+puts "\n${YELLOW}Testing delete with empty profile ID...${NC}"
+if {[catch {
+    spawn $gbox_binary profile delete ""
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for empty profile ID${NC}"
+        }
+        -re "not found" {
+            puts "${GREEN}✓ Found 'not found' error for empty profile ID${NC}"
+        }
+        -re "failed to" {
+            puts "${GREEN}✓ Found expected failure message${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for empty profile ID error${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Empty profile ID error displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Empty profile ID test failed: $result${NC}"
+    exit 1
+}
+
+# Test 7: Delete with special characters in profile ID
+puts "\n${YELLOW}Testing delete with special characters in profile ID...${NC}"
+if {[catch {
+    spawn $gbox_binary profile delete "profile-with-special-chars!@#$%^&*()_+-=[]{}|;':\",./<>?"
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for special characters${NC}"
+        }
+        -re "not found" {
+            puts "${GREEN}✓ Found 'not found' error for special characters${NC}"
+        }
+        -re "failed to" {
+            puts "${GREEN}✓ Found expected failure message${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for special characters error${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Special characters error displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Special characters test failed: $result${NC}"
+    exit 1
+}
+
+# Test 8: Delete with very long profile ID
+puts "\n${YELLOW}Testing delete with very long profile ID...${NC}"
+if {[catch {
+    set long_id "very-long-profile-id-that-exceeds-normal-length-and-should-still-work-properly-1234567890abcdefghijklmnopqrstuvwxyz"
+    spawn $gbox_binary profile delete $long_id
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for long profile ID${NC}"
+        }
+        -re "not found" {
+            puts "${GREEN}✓ Found 'not found' error for long profile ID${NC}"
+        }
+        -re "failed to" {
+            puts "${GREEN}✓ Found expected failure message${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for long profile ID error${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Long profile ID error displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Long profile ID test failed: $result${NC}"
+    exit 1
+}
+
+# Test 9: Delete with spaces in profile ID
+puts "\n${YELLOW}Testing delete with spaces in profile ID...${NC}"
+if {[catch {
+    spawn $gbox_binary profile delete "profile with spaces"
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for spaces in profile ID${NC}"
+        }
+        -re "not found" {
+            puts "${GREEN}✓ Found 'not found' error for spaces in profile ID${NC}"
+        }
+        -re "failed to" {
+            puts "${GREEN}✓ Found expected failure message${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for spaces in profile ID error${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Spaces in profile ID error displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Spaces in profile ID test failed: $result${NC}"
+    exit 1
+}
+
+# Test 10: Delete with numeric profile ID
+puts "\n${YELLOW}Testing delete with numeric profile ID...${NC}"
+if {[catch {
+    spawn $gbox_binary profile delete "12345"
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for numeric profile ID${NC}"
+        }
+        -re "not found" {
+            puts "${GREEN}✓ Found 'not found' error for numeric profile ID${NC}"
+        }
+        -re "failed to" {
+            puts "${GREEN}✓ Found expected failure message${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for numeric profile ID error${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Numeric profile ID error displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Numeric profile ID test failed: $result${NC}"
+    exit 1
+}
+
+# Test 11: Delete with UUID-like profile ID
+puts "\n${YELLOW}Testing delete with UUID-like profile ID...${NC}"
+if {[catch {
+    spawn $gbox_binary profile delete "123e4567-e89b-12d3-a456-426614174000"
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for UUID-like profile ID${NC}"
+        }
+        -re "not found" {
+            puts "${GREEN}✓ Found 'not found' error for UUID-like profile ID${NC}"
+        }
+        -re "failed to" {
+            puts "${GREEN}✓ Found expected failure message${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for UUID-like profile ID error${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ UUID-like profile ID error displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ UUID-like profile ID test failed: $result${NC}"
+    exit 1
+}
+
+# Test 12: Profile command help (parent command)
+puts "\n${YELLOW}Testing profile command help...${NC}"
+if {[catch {
+    spawn $gbox_binary profile --help
+    set description_found 0
+    set commands_found 0
+    set delete_found 0
+    
+    expect {
+        -re "Manage configuration information" {
+            puts "${GREEN}✓ Found profile command description${NC}"
+            set description_found 1
+            exp_continue
+        }
+        -re "Available Commands:" {
+            puts "${GREEN}✓ Found Available Commands section${NC}"
+            set commands_found 1
+            exp_continue
+        }
+        -re "delete.*Delete specified profile" {
+            puts "${GREEN}✓ Found delete command in help output${NC}"
+            set delete_found 1
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Profile help command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for profile help output${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Profile help test failed: $result${NC}"
+    exit 1
+}
+
+# Test 13: Test with profile ID containing only special characters
+puts "\n${YELLOW}Testing delete with profile ID containing only special characters...${NC}"
+if {[catch {
+    spawn $gbox_binary profile delete "!@#$%^&*()"
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for special characters only${NC}"
+        }
+        -re "not found" {
+            puts "${GREEN}✓ Found 'not found' error for special characters only${NC}"
+        }
+        -re "failed to" {
+            puts "${GREEN}✓ Found expected failure message${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for special characters only error${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Special characters only error displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Special characters only test failed: $result${NC}"
+    exit 1
+}
+
+# Test 14: Test with profile ID containing newlines
+puts "\n${YELLOW}Testing delete with profile ID containing newlines...${NC}"
+if {[catch {
+    spawn $gbox_binary profile delete "profile\nwith\nnewlines"
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for newlines in profile ID${NC}"
+        }
+        -re "not found" {
+            puts "${GREEN}✓ Found 'not found' error for newlines in profile ID${NC}"
+        }
+        -re "failed to" {
+            puts "${GREEN}✓ Found expected failure message${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for newlines in profile ID error${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Newlines in profile ID error displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Newlines in profile ID test failed: $result${NC}"
+    exit 1
+}
+
+# Test 15: Test with profile ID containing tabs
+puts "\n${YELLOW}Testing delete with profile ID containing tabs...${NC}"
+if {[catch {
+    spawn $gbox_binary profile delete "profile\twith\ttabs"
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for tabs in profile ID${NC}"
+        }
+        -re "not found" {
+            puts "${GREEN}✓ Found 'not found' error for tabs in profile ID${NC}"
+        }
+        -re "failed to" {
+            puts "${GREEN}✓ Found expected failure message${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for tabs in profile ID error${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Tabs in profile ID error displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Tabs in profile ID test failed: $result${NC}"
+    exit 1
+}
+
+puts "\n${GREEN}All profile delete tests passed successfully!${NC}"
+exit 0
