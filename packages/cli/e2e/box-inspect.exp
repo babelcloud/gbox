@@ -34,32 +34,26 @@ if {[catch {
         -re "Linux box created with ID: (\[a-f0-9-]+)" {
             set test_box_id $expect_out(1,string)
             puts "${GREEN}✓ Test box created with ID: $test_box_id${NC}"
+            exp_continue
         }
         -re "Linux box created successfully" {
             puts "${GREEN}✓ Test box created successfully (no ID returned)${NC}"
             # If no ID is returned, we'll use a placeholder
             set test_box_id "test-box-placeholder"
+            exp_continue
         }
         -re "failed to create Linux box" {
             puts "${YELLOW}⚠ Failed to create test box (API not available), using placeholder ID${NC}"
             set test_box_id "test-box-placeholder"
+            exp_continue
         }
         timeout {
             puts "${RED}✗ Timeout waiting for box creation${NC}"
             set test_box_id "test-box-placeholder"
+            exp_continue
         }
-        eof {
-            puts "${RED}✗ Box create command exited unexpectedly${NC}"
-            set test_box_id "test-box-placeholder"
-        }
-    }
-    
-    expect {
         eof {
             puts "${GREEN}✓ Box create command completed${NC}"
-        }
-        timeout {
-            puts "${RED}✗ Timeout waiting for box create completion${NC}"
         }
     }
     

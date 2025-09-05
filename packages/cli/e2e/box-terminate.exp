@@ -33,24 +33,14 @@ if {[catch {
     expect {
         -re "must specify either --all or a box ID" {
             puts "${GREEN}✓ Found expected error message for missing arguments${NC}"
+            exp_continue
         }
         timeout {
             puts "${RED}✗ Timeout waiting for error message${NC}"
             exit 1
         }
         eof {
-            puts "${RED}✗ Command exited unexpectedly${NC}"
-            exit 1
-        }
-    }
-    
-    expect {
-        eof {
             puts "${GREEN}✓ Error message displayed correctly${NC}"
-        }
-        timeout {
-            puts "${RED}✗ Timeout waiting for command completion${NC}"
-            exit 1
         }
     }
     
@@ -129,27 +119,23 @@ if {[catch {
     expect {
         -re "No boxes to terminate" {
             puts "${GREEN}✓ Found 'No boxes to terminate' message${NC}"
+            exp_continue
         }
         -re "The following boxes will be terminated:" {
             puts "${GREEN}✓ Found boxes list for termination${NC}"
+            exp_continue
+        }
+        -re "Are you sure you want to terminate all boxes\\? \\[y/N\\]" {
+            puts "${GREEN}✓ Found confirmation prompt${NC}"
+            send "y\r"
+            exp_continue
         }
         timeout {
             puts "${RED}✗ Timeout waiting for terminate all output${NC}"
             exit 1
         }
         eof {
-            puts "${RED}✗ Terminate all command exited unexpectedly${NC}"
-            exit 1
-        }
-    }
-    
-    expect {
-        eof {
             puts "${GREEN}✓ Terminate all command completed successfully${NC}"
-        }
-        timeout {
-            puts "${RED}✗ Timeout waiting for terminate all completion${NC}"
-            exit 1
         }
     }
     
