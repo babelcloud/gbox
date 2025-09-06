@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { attachBox } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
-import type { ActionPressKey } from "gbox-sdk";
+import type { ActionPressKey, TimeString } from "gbox-sdk";
 import { extractImageInfo } from "../sdk/utils.js";
 
 export const PRESS_KEY_TOOL = "press_key";
@@ -175,8 +175,7 @@ export function handlePressKey(logger: MCPLogger) {
             ? {
                 phases: ["after"],
                 outputFormat: outputFormat || "base64",
-                delay: (screenshotDelay ||
-                  "500ms") as ActionPressKey["screenshotDelay"],
+                delay: (screenshotDelay || "500ms") as TimeString,
               }
             : false,
         },
