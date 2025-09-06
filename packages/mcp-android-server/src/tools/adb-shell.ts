@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { attachBox } from "../gboxsdk/index.js";
+import { attachBox } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { BoxExecuteCommands } from "gbox-sdk";
 

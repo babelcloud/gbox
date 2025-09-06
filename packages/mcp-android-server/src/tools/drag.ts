@@ -1,11 +1,7 @@
 import { z } from "zod";
 import type { MCPLogger } from "../mcp-logger.js";
-import { attachBox } from "../gboxsdk/index.js";
-import { handleUiAction } from "./ui-action.js";
-import {
-  buildActionReturnValues,
-  getBoxCoordinates,
-} from "../gboxsdk/utils.js";
+import { attachBox } from "../sdk/index.js";
+import { extractImageInfo } from "../sdk/utils.js";
 
 export const DRAG_TOOL = "drag";
 
@@ -30,35 +26,37 @@ export const dragParamsSchema = {
 type DragParams = z.infer<z.ZodObject<typeof dragParamsSchema>>;
 
 export function handleDrag(logger: MCPLogger) {
-  return async (args: DragParams) => {
+  return async ({ boxId, target, destination }: DragParams) => {
     try {
-      const { boxId, target, destination } = args;
       await logger.info("Drag command invoked", { boxId, target, destination });
 
       const box = await attachBox(boxId);
-      const boxCoordinates = await getBoxCoordinates(
-        box,
-        "Drag " + target + " to " + destination
-      );
-      if (boxCoordinates.length <= 1) {
-        return {
-          content: [
-            { type: "text" as const, text: "Not enough coordinates found" },
-          ],
-        };
-      }
-      const dragAction = {
-        start: boxCoordinates[0],
-        end: boxCoordinates[1],
-        includeScreenshot: true,
-        outputFormat: "base64" as const,
-        screenshotDelay: "500ms" as const,
+      const result = await box.action.drag({
+        start: target,
+        end: destination,
+        options: {
+          screenshot: {
+            phases: ["after"],
+            outputFormat: "base64",
+            delay: "500ms",
+          },
+        },
+      });
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Drag action completed successfully",
+          },
+          {
+            type: "image" as const,
+            ...extractImageInfo(result.screenshot.after.uri),
+          },
+        ],
       };
-      const result = (await box.action.drag(dragAction)) as any;
-      return buildActionReturnValues(result, box);
     } catch (error) {
       await logger.error("Failed to run drag action", {
-        boxId: args?.boxId,
+        boxId,
         error,
       });
       return {

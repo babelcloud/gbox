@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { gboxSDK } from "../gboxsdk/index.js";
+import { gboxSDK } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 
 export const LIST_BOXES_TOOL = "list_boxes";

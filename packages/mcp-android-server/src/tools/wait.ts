@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { attachBox } from "../gboxsdk/index.js";
+import { attachBox } from "../sdk/index.js";
 import { MCPLogger } from "../mcp-logger.js";
 import type { ActionScreenshot } from "gbox-sdk";
-import { getImageDataFromUri } from "../gboxsdk/utils.js";
+import { extractImageInfo } from "../sdk/utils.js";
 
 export const WAIT_TOOL = "wait";
 export const WAIT_TOOL_DESCRIPTION =
@@ -20,9 +20,7 @@ export const waitParamsSchema = z.object({
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export function handleWait(logger: MCPLogger) {
-  return async (params: z.infer<typeof waitParamsSchema>) => {
-    const { boxId, duration } = params;
-
+  return async ({ boxId, duration }: z.infer<typeof waitParamsSchema>) => {
     // Wait the specified duration
     await sleep(duration);
 
@@ -30,12 +28,7 @@ export function handleWait(logger: MCPLogger) {
     try {
       const box = await attachBox(boxId);
       const screenshotParams: ActionScreenshot = { outputFormat: "base64" };
-      const screenshotResult = await box.action.screenshot(screenshotParams);
-
-      const { base64Data, mimeType } = await getImageDataFromUri(
-        screenshotResult.uri,
-        box
-      );
+      const { uri } = await box.action.screenshot(screenshotParams);
 
       const message = `Finished waiting for ${duration}ms.`;
       await logger.info(message);
@@ -48,8 +41,7 @@ export function handleWait(logger: MCPLogger) {
           },
           {
             type: "image" as const,
-            data: base64Data,
-            mimeType,
+            ...extractImageInfo(uri),
           },
         ],
       };
