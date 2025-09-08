@@ -315,7 +315,7 @@ if {[catch {
 puts "\n${YELLOW}Testing adb-expose list command...${NC}"
 puts "${BLUE}Running Test 9: adb-expose list command${NC}"
 if {[catch {
-    spawn $gbox_binary adb-expose list
+     $gbox_binary adb-expose list
     expect {
         -re "No ADB port exposures found" {
             puts "${GREEN}✓ Found expected message for no exposures${NC}"
