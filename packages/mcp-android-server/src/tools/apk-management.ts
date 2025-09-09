@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { attachBox } from "../gboxsdk/index.js";
+import { attachBox } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { AndroidInstall, ActionScreenshot } from "gbox-sdk";
-import { getImageDataFromUri } from "../gboxsdk/utils.js";
+import { extractImageInfo } from "../sdk/utils.js";
 
 export const INSTALL_APK_TOOL = "install_apk";
 export const INSTALL_APK_DESCRIPTION =
@@ -95,11 +95,6 @@ export function handleInstallApk(logger: MCPLogger) {
       const screenshotParams: ActionScreenshot = { outputFormat: "base64" };
       const screenshotResult = await box.action.screenshot(screenshotParams);
 
-      const { base64Data, mimeType } = await getImageDataFromUri(
-        screenshotResult.uri,
-        box
-      );
-
       await logger.info("APK installed successfully", { boxId, apk: apkPath });
 
       return {
@@ -110,8 +105,7 @@ export function handleInstallApk(logger: MCPLogger) {
           },
           {
             type: "image" as const,
-            data: base64Data,
-            mimeType,
+            ...extractImageInfo(screenshotResult.uri),
           },
         ],
       };
@@ -191,10 +185,6 @@ export function handleOpenApp(logger: MCPLogger) {
       const screenshotParams: ActionScreenshot = { outputFormat: "base64" };
       const screenshotResult = await box.action.screenshot(screenshotParams);
 
-      const { base64Data, mimeType } = await getImageDataFromUri(
-        screenshotResult.uri,
-        box
-      );
       return {
         content: [
           {
@@ -203,8 +193,7 @@ export function handleOpenApp(logger: MCPLogger) {
           },
           {
             type: "image" as const,
-            data: base64Data,
-            mimeType,
+            ...extractImageInfo(screenshotResult.uri),
           },
         ],
       };

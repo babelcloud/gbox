@@ -1,9 +1,7 @@
 import { z } from "zod";
 import type { MCPLogger } from "../mcp-logger.js";
-import { attachBox } from "../gboxsdk/index.js";
-import type { ActionSwipe } from "gbox-sdk";
-import { getImageDataFromUri } from "../gboxsdk/utils.js";
-import { ActionSwipeResponse } from "gbox-sdk/resources/v1/boxes.mjs";
+import { attachBox } from "../sdk/index.js";
+import { extractImageInfo } from "../sdk/utils.js";
 
 export const SCROLL_TOOL = "scroll";
 
@@ -22,9 +20,8 @@ export const scrollParamsSchema = {
 type ScrollParams = z.infer<z.ZodObject<typeof scrollParamsSchema>>;
 
 export function handleScroll(logger: MCPLogger) {
-  return async (args: ScrollParams) => {
+  return async ({ boxId, direction }: ScrollParams) => {
     try {
-      const { boxId, direction } = args;
       await logger.info("Scroll command invoked", { boxId, direction });
 
       const box = await attachBox(boxId);
@@ -33,41 +30,34 @@ export function handleScroll(logger: MCPLogger) {
       const invertedDirection = direction === "up" ? "down" : "up";
 
       const { height } = (await box.display()).resolution;
-      const actionParams: ActionSwipe = {
-        direction: invertedDirection as any,
-        includeScreenshot: true,
-        outputFormat: "base64",
-        screenshotDelay: "500ms",
+
+      const result = await box.action.swipe({
+        direction: invertedDirection,
+        options: {
+          screenshot: {
+            phases: ["after"],
+            outputFormat: "base64",
+            delay: "500ms",
+          },
+        },
         distance: Math.round(height / 2),
-      };
-
-      const result = (await box.action.swipe(
-        actionParams
-      )) as ActionSwipeResponse.ActionIncludeScreenshotResult;
-
-      // Build content: brief text + after screenshot if available
-      const content: Array<
-        | { type: "text"; text: string }
-        | { type: "image"; data: string; mimeType: string }
-      > = [];
-
-      content.push({
-        type: "text",
-        text: `Scrolled ${direction}`,
       });
 
-      if (result?.screenshot?.after?.uri) {
-        const { base64Data, mimeType } = await getImageDataFromUri(
-          result.screenshot.after.uri,
-          box
-        );
-        content.push({ type: "image", data: base64Data, mimeType });
-      }
-
-      return { content };
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Scrolled ${direction}`,
+          },
+          {
+            type: "image" as const,
+            ...extractImageInfo(result.screenshot.after.uri),
+          },
+        ],
+      };
     } catch (error) {
       await logger.error("Failed to run scroll action", {
-        boxId: args?.boxId,
+        boxId,
         error,
       });
       return {

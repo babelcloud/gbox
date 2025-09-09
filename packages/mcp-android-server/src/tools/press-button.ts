@@ -1,9 +1,8 @@
 import { z } from "zod";
-import { attachBox } from "../gboxsdk/index.js";
+import { attachBox } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
 import type { ActionPressButton } from "gbox-sdk";
-import { getImageDataFromUri } from "../gboxsdk/utils.js";
-import { ActionPressButtonResponse } from "gbox-sdk/resources/v1/boxes/actions.js";
+import { extractImageInfo } from "../sdk/utils.js";
 
 export const PRESS_BUTTON_TOOL = "press_button";
 
@@ -39,82 +38,40 @@ export const pressButtonParamsSchema = {
 type PressButtonParams = z.infer<z.ZodObject<typeof pressButtonParamsSchema>>;
 
 export function handlePressButton(logger: MCPLogger) {
-  return async (args: PressButtonParams) => {
+  return async ({ boxId, buttons }: PressButtonParams) => {
     try {
-      const { boxId, buttons } = args;
       await logger.info("Pressing buttons", {
         boxId,
         buttons: buttons.join(" + "),
       });
 
       const box = await attachBox(boxId);
+      const result = await box.action.pressButton({
+        buttons: buttons,
+        options: {
+          screenshot: {
+            phases: ["after"],
+            outputFormat: "base64",
+            delay: "500ms",
+          },
+        },
+      });
 
-      // Map to SDK ActionPressButton type
-      const actionParams: ActionPressButton = {
-        buttons: buttons as ActionPressButton["buttons"],
-        includeScreenshot: true,
-        outputFormat: "base64",
-        screenshotDelay: "500ms",
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Button pressed successfully",
+          },
+          {
+            type: "image" as const,
+            ...extractImageInfo(result.screenshot.after.uri),
+          },
+        ],
       };
-
-      const result = (await box.action.pressButton(
-        actionParams
-      )) as ActionPressButtonResponse.ActionIncludeScreenshotResult;
-
-      // Prepare image contents for screenshots
-      const images: Array<{ type: "image"; data: string; mimeType: string }> =
-        [];
-
-      // Add screenshots if available
-      // if (result?.screenshot?.trace?.uri) {
-      //   const { mimeType, base64Data } = parseUri(result.screenshot.trace.uri);
-      //   images.push({ type: "image", data: base64Data, mimeType });
-      // }
-
-      // if (result?.screenshot?.before?.uri) {
-      //   const { mimeType, base64Data } = parseUri(result.screenshot.before.uri);
-      //   images.push({ type: "image", data: base64Data, mimeType });
-      // }
-
-      if (result?.screenshot?.after?.uri) {
-        const { base64Data, mimeType } = await getImageDataFromUri(
-          result.screenshot.after.uri,
-          box
-        );
-        images.push({ type: "image", data: base64Data, mimeType });
-      }
-
-      await logger.info("Buttons pressed successfully", {
-        boxId,
-        buttons: buttons.join(" + "),
-        imageCount: images.length,
-      });
-
-      // Build content array with text and images
-      const content: Array<
-        | { type: "text"; text: string }
-        | { type: "image"; data: string; mimeType: string }
-      > = [];
-
-      // Add text result with sanitized data
-      content.push({
-        type: "text" as const,
-        text: "Button pressed successfully",
-      });
-
-      // Add all images
-      images.forEach(img => {
-        content.push({
-          type: "image" as const,
-          data: img.data,
-          mimeType: img.mimeType,
-        });
-      });
-
-      return { content };
     } catch (error) {
       await logger.error("Failed to press buttons", {
-        boxId: args?.boxId,
+        boxId,
         error,
       });
       return {

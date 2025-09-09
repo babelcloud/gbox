@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { attachBox } from "../gboxsdk/index.js";
+import { attachBox } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
-import type { ActionPressKey } from "gbox-sdk";
-import { getImageDataFromUri } from "../gboxsdk/utils.js";
+import type { ActionPressKey, TimeString } from "gbox-sdk";
+import { extractImageInfo } from "../sdk/utils.js";
 
 export const PRESS_KEY_TOOL = "press_key";
 
@@ -168,58 +168,43 @@ export function handlePressKey(logger: MCPLogger) {
 
       const box = await attachBox(boxId);
 
-      // Map to SDK ActionPressKey type
-      const actionParams: ActionPressKey = {
+      const result = await box.action.pressKey({
         keys: keys as ActionPressKey["keys"],
-        includeScreenshot: includeScreenshot ?? false,
-        outputFormat: outputFormat ?? "base64",
-        ...(screenshotDelay && {
-          screenshotDelay: screenshotDelay as ActionPressKey["screenshotDelay"],
-        }),
-      };
-
-      const result = (await box.action.pressKey(actionParams)) as any;
-
-      // Prepare image contents for screenshots
-      const images: Array<{ type: "image"; data: string; mimeType: string }> =
-        [];
-
-      if (result?.screenshot?.after?.uri) {
-        const { base64Data, mimeType } = await getImageDataFromUri(
-          result.screenshot.after.uri,
-          box
-        );
-        images.push({ type: "image", data: base64Data, mimeType });
-      }
+        options: {
+          screenshot: includeScreenshot
+            ? {
+                phases: ["after"],
+                outputFormat: outputFormat || "base64",
+                delay: (screenshotDelay || "500ms") as TimeString,
+              }
+            : false,
+        },
+      });
 
       await logger.info("Keys pressed successfully", {
         boxId,
         keys: keys.join(" + "),
-        imageCount: images.length,
+        imageCount: result?.screenshot?.after?.uri ? 1 : 0,
       });
 
-      // Build content array with text and images
-      const content: Array<
-        | { type: "text"; text: string }
-        | { type: "image"; data: string; mimeType: string }
-      > = [];
-
-      // Add text result with sanitized data
-      content.push({
-        type: "text" as const,
-        text: "Keys pressed successfully",
-      });
-
-      // Add all images
-      images.forEach(img => {
-        content.push({
-          type: "image" as const,
-          data: img.data,
-          mimeType: img.mimeType,
-        });
-      });
-
-      return { content };
+      return {
+        content: {
+          content: [
+            {
+              type: "text" as const,
+              text: "Keys pressed successfully",
+            },
+            ...(result?.screenshot?.after?.uri
+              ? [
+                  {
+                    type: "image" as const,
+                    ...extractImageInfo(result.screenshot.after.uri),
+                  },
+                ]
+              : []),
+          ],
+        },
+      };
     } catch (error) {
       await logger.error("Failed to press keys", { boxId: args?.boxId, error });
       return {

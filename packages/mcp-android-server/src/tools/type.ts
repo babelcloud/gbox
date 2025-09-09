@@ -1,12 +1,7 @@
 import { z } from "zod";
-import { attachBox } from "../gboxsdk/index.js";
+import { attachBox } from "../sdk/index.js";
 import type { MCPLogger } from "../mcp-logger.js";
-import type { ActionType, ActionPressKey } from "gbox-sdk";
-import { getImageDataFromUri } from "../gboxsdk/utils.js";
-import {
-  ActionPressKeyResponse,
-  ActionTypeResponse,
-} from "gbox-sdk/resources/v1/boxes.mjs";
+import { extractImageInfo } from "../sdk/utils.js";
 
 export const TYPE_TOOL = "type";
 
@@ -33,9 +28,13 @@ export const typeParamsSchema = {
 type TypeParams = z.infer<z.ZodObject<typeof typeParamsSchema>>;
 
 export function handleType(logger: MCPLogger) {
-  return async (args: TypeParams) => {
+  return async ({
+    boxId,
+    content,
+    pressEnterAfterType,
+    replace,
+  }: TypeParams) => {
     try {
-      const { boxId, content, pressEnterAfterType, replace } = args;
       await logger.info("Typing content", {
         boxId,
         length: content.length,
@@ -46,31 +45,18 @@ export function handleType(logger: MCPLogger) {
       const box = await attachBox(boxId);
 
       // First, type the content
-      const typeParams: ActionType = {
+      const typeResult = await box.action.type({
+        pressEnter: pressEnterAfterType,
         text: content,
         mode: replace ? "replace" : "append",
-        includeScreenshot: true,
-        outputFormat: "base64",
-        screenshotDelay: "500ms",
-      };
-
-      const typeResult = (await box.action.type(
-        typeParams
-      )) as ActionTypeResponse.ActionIncludeScreenshotResult;
-
-      // Optionally press Enter afterwards
-      let finalResult: any = typeResult;
-      if (pressEnterAfterType) {
-        const pressParams: ActionPressKey = {
-          keys: ["enter"],
-          includeScreenshot: true,
-          outputFormat: "base64",
-          screenshotDelay: "500ms",
-        };
-        finalResult = (await box.action.pressKey(
-          pressParams
-        )) as ActionPressKeyResponse.ActionIncludeScreenshotResult;
-      }
+        options: {
+          screenshot: {
+            phases: ["after"],
+            outputFormat: "base64",
+            delay: "500ms",
+          },
+        },
+      });
 
       // Build response content
       const contentItems: Array<
@@ -85,19 +71,15 @@ export function handleType(logger: MCPLogger) {
       });
 
       // Prefer showing the final after screenshot if present
-      const afterUri = finalResult?.screenshot?.after?.uri;
-      if (afterUri) {
-        const { base64Data, mimeType } = await getImageDataFromUri(
-          afterUri,
-          box
-        );
-        contentItems.push({ type: "image", data: base64Data, mimeType });
-      }
+      contentItems.push({
+        type: "image",
+        ...extractImageInfo(typeResult.screenshot.after.uri),
+      });
 
       return { content: contentItems };
     } catch (error) {
       await logger.error("Failed to type content", {
-        boxId: args?.boxId,
+        boxId,
         error,
       });
       return {
