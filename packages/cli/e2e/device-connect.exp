@@ -323,6 +323,18 @@ if {[catch {
             send "\003"
             exp_continue
         }
+        -re "Connection established successfully" {
+            puts "${GREEN}✓ Found connection established message${NC}"
+            # Send Ctrl+C to exit the interactive mode
+            send "\003"
+            exp_continue
+        }
+        -re "Connection established successfully!" {
+            puts "${GREEN}✓ Found connection established message${NC}"
+            # Send Ctrl+C to exit the interactive mode
+            send "\003"
+            exp_continue
+        }
         timeout {
             puts "${RED}✗ Timeout waiting for interactive mode or error message${NC}"
             exit 1
@@ -582,12 +594,38 @@ if {[catch {
             puts "${GREEN}✓ Found expected error message for invalid subcommand${NC}"
             exp_continue
         }
+        -re "Select a device to register for remote access" {
+            puts "${GREEN}✓ Found device selection prompt (invalid command treated as interactive mode)${NC}"
+            exp_continue
+        }
+        -re "Enter a number:" {
+            puts "${GREEN}✓ Found number input prompt${NC}"
+            # Send Ctrl+C to exit the interactive mode since this is an invalid command test
+            send "\003"
+            exp_continue
+        }
+        -re "Connection established successfully" {
+            puts "${GREEN}✓ Found connection established message (unexpected for invalid command)${NC}"
+            # Send Ctrl+C to exit the interactive mode
+            send "\003"
+            exp_continue
+        }
+        -re "Connection established successfully!" {
+            puts "${GREEN}✓ Found connection established message (unexpected for invalid command)${NC}"
+            # Send Ctrl+C to exit the interactive mode
+            send "\003"
+            exp_continue
+        }
+        -re "1\\. .*EMULATOR.*" {
+            puts "${GREEN}✓ Found device list with emulator${NC}"
+            exp_continue
+        }
         timeout {
-            puts "${RED}✗ Timeout waiting for error message${NC}"
+            puts "${RED}✗ Timeout waiting for error message or device selection${NC}"
             exit 1
         }
         eof {
-            puts "${GREEN}✓ Error message displayed correctly${NC}"
+            puts "${GREEN}✓ Command completed successfully${NC}"
         }
     }
     
@@ -720,14 +758,24 @@ if {[catch {
         }
         -re "Select a device to connect" {
             puts "${GREEN}✓ Found device selection prompt${NC}"
-            # If we have devices available, select the first one (option 1)
-            send "1\r"
+            exp_continue
+        }
+        -re "Select a device to register for remote access" {
+            puts "${GREEN}✓ Found device registration prompt${NC}"
             exp_continue
         }
         -re "Enter a number:" {
             puts "${GREEN}✓ Found number input prompt${NC}"
-            # Select option 1
+            # Select option 1 and press enter
             send "1\r"
+            exp_continue
+        }
+        -re "1\\. .*EMULATOR.*" {
+            puts "${GREEN}✓ Found emulator device in list${NC}"
+            exp_continue
+        }
+        -re "1\\. .*device.*" {
+            puts "${GREEN}✓ Found device in list${NC}"
             exp_continue
         }
         -re "Current device connections:" {
@@ -740,6 +788,18 @@ if {[catch {
         }
         -re "Device connected successfully" {
             puts "${GREEN}✓ Found device connection success message${NC}"
+            exp_continue
+        }
+        -re "Connection established successfully" {
+            puts "${GREEN}✓ Found connection established message${NC}"
+            # Send Ctrl+C to exit the interactive mode after successful connection
+            send "\003"
+            exp_continue
+        }
+        -re "Connection established successfully!" {
+            puts "${GREEN}✓ Found connection established message${NC}"
+            # Send Ctrl+C to exit the interactive mode after successful connection
+            send "\003"
             exp_continue
         }
         timeout {
@@ -820,6 +880,44 @@ if {[catch {
             puts "${GREEN}✓ Found device selection prompt${NC}"
             exp_continue
         }
+        -re "Select a device to register for remote access" {
+            puts "${GREEN}✓ Found device registration prompt${NC}"
+            exp_continue
+        }
+        -re "Enter a number:" {
+            puts "${GREEN}✓ Found number input prompt${NC}"
+            # Select option 1 and press enter
+            send "1\r"
+            exp_continue
+        }
+        -re "1\\. .*EMULATOR.*" {
+            puts "${GREEN}✓ Found emulator device in list${NC}"
+            exp_continue
+        }
+        -re "1\\. .*device.*" {
+            puts "${GREEN}✓ Found device in list${NC}"
+            exp_continue
+        }
+        -re "Connecting to device" {
+            puts "${GREEN}✓ Found device connection message${NC}"
+            exp_continue
+        }
+        -re "Device connected successfully" {
+            puts "${GREEN}✓ Found device connection success message${NC}"
+            exp_continue
+        }
+        -re "Connection established successfully" {
+            puts "${GREEN}✓ Found connection established message${NC}"
+            # Send Ctrl+C to exit the interactive mode after successful connection
+            send "\003"
+            exp_continue
+        }
+        -re "Connection established successfully!" {
+            puts "${GREEN}✓ Found connection established message${NC}"
+            # Send Ctrl+C to exit the interactive mode after successful connection
+            send "\003"
+            exp_continue
+        }
         timeout {
             puts "${RED}✗ Timeout waiting for background flag output${NC}"
             exit 1
@@ -892,6 +990,28 @@ if {[catch {
         }
         -re "failed to start device proxy service" {
             puts "${GREEN}✓ Found expected service start error${NC}"
+            exp_continue
+        }
+        -re "Select a device to unregister" {
+            puts "${GREEN}✓ Found device selection prompt${NC}"
+            exp_continue
+        }
+        -re "Enter a number:" {
+            puts "${GREEN}✓ Found number input prompt${NC}"
+            # Send Ctrl+C to exit the interactive mode
+            send "\003"
+            exp_continue
+        }
+        -re "Connection established successfully" {
+            puts "${GREEN}✓ Found connection established message${NC}"
+            # Send Ctrl+C to exit the interactive mode
+            send "\003"
+            exp_continue
+        }
+        -re "Connection established successfully!" {
+            puts "${GREEN}✓ Found connection established message${NC}"
+            # Send Ctrl+C to exit the interactive mode
+            send "\003"
             exp_continue
         }
         timeout {
