@@ -27,79 +27,101 @@ puts "${BLUE}Testing gbox login command...${NC}"
 
 # Function to check and install Python dependencies
 proc check_python_deps {} {
-    global GREEN RED YELLOW BLUE NC venv_path
+    global GREEN RED YELLOW BLUE NC venv_path venv_python
     
     puts "${YELLOW}Checking Python dependencies...${NC}"
     
-    # Check if python3 is available
-    if {[catch {exec python3 --version} result]} {
-        puts "${RED}✗ Python3 not found. Please install Python3.${NC}"
+    # Check if python3 is available, try both python3 and python
+    set python_cmd ""
+    if {![catch {exec python3 --version} result]} {
+        set python_cmd "python3"
+        puts "${GREEN}✓ Python3 found: $result${NC}"
+    } elseif {![catch {exec python --version} result]} {
+        set python_cmd "python"
+        puts "${GREEN}✓ Python found: $result${NC}"
+    } else {
+        puts "${RED}✗ Python not found. Please install Python3.${NC}"
         return 0
     }
-    puts "${GREEN}✓ Python3 found: $result${NC}"
     
     # Get current working directory and construct venv path relative to it
     set current_dir [pwd]
     puts "${BLUE}Current working directory: $current_dir${NC}"
     
-    # Check if we're in the gbox project root or a subdirectory
-    if {[string match "*gbox*" $current_dir]} {
-        # Find the gbox project root by looking for go.mod or other indicators
-        set venv_path "$current_dir/venv"
-        # If we're in a subdirectory, try to find the project root
-        if {![file exists "$current_dir/go.mod"] && ![file exists "$current_dir/README.md"]} {
-            # We might be in a subdirectory, try parent directories
-            set parent_dir [file dirname $current_dir]
-            if {[file exists "$parent_dir/go.mod"] || [file exists "$parent_dir/README.md"]} {
-                set venv_path "$parent_dir/venv"
-                puts "${BLUE}Found project root at: $parent_dir${NC}"
+    # Check if we're in CI environment (GitHub Actions)
+    set ci_env [expr {[info exists env::CI] && $env::CI == "true"}]
+    
+    if {$ci_env} {
+        puts "${BLUE}Detected CI environment, using system Python${NC}"
+        set venv_path ""
+        set venv_python $python_cmd
+    } else {
+        # Check if we're in the gbox project root or a subdirectory
+        if {[string match "*gbox*" $current_dir]} {
+            # Find the gbox project root by looking for go.mod or other indicators
+            set venv_path "$current_dir/venv"
+            # If we're in a subdirectory, try to find the project root
+            if {![file exists "$current_dir/go.mod"] && ![file exists "$current_dir/README.md"]} {
+                # We might be in a subdirectory, try parent directories
+                set parent_dir [file dirname $current_dir]
+                if {[file exists "$parent_dir/go.mod"] || [file exists "$parent_dir/README.md"]} {
+                    set venv_path "$parent_dir/venv"
+                    puts "${BLUE}Found project root at: $parent_dir${NC}"
+                }
+            }
+        } else {
+            # Fallback to current directory
+            set venv_path "$current_dir/venv"
+        }
+        
+        puts "${BLUE}Using virtual environment path: $venv_path${NC}"
+        
+        if {![file exists $venv_path]} {
+            puts "${YELLOW}Virtual environment not found, creating one...${NC}"
+            if {[catch {exec $python_cmd -m venv $venv_path} result]} {
+                puts "${RED}✗ Failed to create virtual environment: $result${NC}"
+                return 0
+            }
+            puts "${GREEN}✓ Virtual environment created${NC}"
+        } else {
+            puts "${GREEN}✓ Virtual environment already exists${NC}"
+        }
+        
+        set venv_python "$venv_path/bin/python"
+    }
+    
+    # Check if playwright is installed
+    if {[catch {exec $venv_python -c "import playwright; print('playwright installed')"} result]} {
+        if {$ci_env} {
+            puts "${YELLOW}Playwright not found in CI environment, this should have been installed by CI setup${NC}"
+            puts "${RED}✗ Playwright not available in CI environment${NC}"
+            return 0
+        } else {
+            puts "${YELLOW}Playwright not found in virtual environment, installing...${NC}"
+            
+            # Install playwright in virtual environment
+            if {[catch {exec $venv_python -m pip install playwright==1.55.0} result]} {
+                puts "${RED}✗ Failed to install playwright: $result${NC}"
+                return 0
+            }
+            puts "${GREEN}✓ Playwright installed successfully${NC}"
+            
+            # Install chromium browser
+            if {[catch {exec $venv_python -m playwright install chromium} result]} {
+                puts "${RED}✗ Failed to install chromium browser: $result${NC}"
+                return 0
+            }
+            puts "${GREEN}✓ Chromium browser installed successfully${NC}"
+            
+            # Install system dependencies for CI
+            if {[catch {exec $venv_python -m playwright install-deps chromium} result]} {
+                puts "${YELLOW}Warning: Failed to install system dependencies (this may be expected in some environments)${NC}"
+            } else {
+                puts "${GREEN}✓ System dependencies installed successfully${NC}"
             }
         }
     } else {
-        # Fallback to current directory
-        set venv_path "$current_dir/venv"
-    }
-    
-    puts "${BLUE}Using virtual environment path: $venv_path${NC}"
-    
-    if {![file exists $venv_path]} {
-        puts "${YELLOW}Virtual environment not found, creating one...${NC}"
-        if {[catch {exec python3 -m venv $venv_path} result]} {
-            puts "${RED}✗ Failed to create virtual environment: $result${NC}"
-            return 0
-        }
-        puts "${GREEN}✓ Virtual environment created${NC}"
-    } else {
-        puts "${GREEN}✓ Virtual environment already exists${NC}"
-    }
-    
-    # Check if playwright is installed in virtual environment
-    set venv_python "$venv_path/bin/python"
-    if {[catch {exec $venv_python -c "import playwright; print('playwright installed')"} result]} {
-        puts "${YELLOW}Playwright not found in virtual environment, installing...${NC}"
-        
-        # Install playwright in virtual environment
-        if {[catch {exec $venv_python -m pip install playwright==1.55.0} result]} {
-            puts "${RED}✗ Failed to install playwright: $result${NC}"
-            return 0
-        }
-        puts "${GREEN}✓ Playwright installed successfully${NC}"
-        
-        # Install chromium browser
-        if {[catch {exec $venv_python -m playwright install chromium} result]} {
-            puts "${RED}✗ Failed to install chromium browser: $result${NC}"
-            return 0
-        }
-        puts "${GREEN}✓ Chromium browser installed successfully${NC}"
-        
-        # Install system dependencies for CI
-        if {[catch {exec $venv_python -m playwright install-deps chromium} result]} {
-            puts "${YELLOW}Warning: Failed to install system dependencies (this may be expected in some environments)${NC}"
-        } else {
-            puts "${GREEN}✓ System dependencies installed successfully${NC}"
-        }
-    } else {
-        puts "${GREEN}✓ Playwright already installed in virtual environment${NC}"
+        puts "${GREEN}✓ Playwright already installed${NC}"
     }
     
     return 1
@@ -337,8 +359,7 @@ if {[catch {
                 
                 # Run the playwright test and wait for completion using virtual environment
                 puts "${BLUE}=== Test 2 Phase 9: Running Playwright automation ===${NC}"
-                # Use the same venv_path that was determined in check_python_deps
-                set venv_python "$venv_path/bin/python"
+                # Use the same venv_python that was determined in check_python_deps
                 puts "${BLUE}Using Python executable: $venv_python${NC}"
                 if {[catch {
                     set playwright_result [exec $venv_python $temp_script]
