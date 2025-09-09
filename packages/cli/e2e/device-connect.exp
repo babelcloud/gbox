@@ -600,6 +600,105 @@ if {[catch {
 # Test 16: device-connect interactive mode (should show available devices or appropriate message)
 puts "\n${YELLOW}Testing device-connect interactive mode...${NC}"
 puts "${BLUE}Running Test 16: device-connect interactive mode${NC}"
+
+# First, try to start an Android emulator if available
+puts "${BLUE}Attempting to start Android emulator...${NC}"
+
+# Check for Android SDK and emulator in common locations
+set emulator_paths {
+    "emulator"
+    "$env(HOME)/Android/Sdk/emulator/emulator"
+    "$env(HOME)/Library/Android/sdk/emulator/emulator"
+    "/usr/local/bin/emulator"
+    "/opt/android-sdk/emulator/emulator"
+}
+
+set emulator_found 0
+set emulator_cmd ""
+
+foreach path $emulator_paths {
+    if {[file exists $path] || [file executable $path]} {
+        set emulator_cmd $path
+        set emulator_found 1
+        puts "${GREEN}✓ Found emulator at: $path${NC}"
+        break
+    }
+}
+
+if {$emulator_found} {
+    if {[catch {
+        spawn $emulator_cmd -list-avds
+        expect {
+            -re ".*" {
+                set emulator_list $expect_out(buffer)
+                exp_continue
+            }
+            eof {
+                # Check if we have any AVDs available
+                set lines [split $emulator_list "\n"]
+                set avd_found 0
+                foreach line $lines {
+                    if {[string length [string trim $line]] > 0 && ![string match "*List of*" $line]} {
+                        set avd_found 1
+                        puts "${GREEN}✓ Found AVD: $line${NC}"
+                        # Try to start the first available emulator
+                        spawn $emulator_cmd -avd $line -no-window -no-audio -no-snapshot-load
+                        puts "${GREEN}✓ Started Android emulator '$line' in background${NC}"
+                        # Wait a bit for emulator to start
+                        sleep 15
+                        break
+                    }
+                }
+                if {!$avd_found} {
+                    puts "${YELLOW}⚠ No AVDs found in emulator list${NC}"
+                }
+            }
+            timeout {
+                puts "${YELLOW}⚠ Timeout listing AVDs${NC}"
+            }
+        }
+        catch {close}
+    } result]} {
+        puts "${YELLOW}⚠ Could not list AVDs: $result${NC}"
+    }
+} else {
+    puts "${YELLOW}⚠ Android emulator not found in common locations${NC}"
+    puts "${YELLOW}  Please install Android SDK or add emulator to PATH${NC}"
+    puts "${YELLOW}  Common locations checked:${NC}"
+    foreach path $emulator_paths {
+        puts "${YELLOW}    - $path${NC}"
+    }
+    
+    # Try to use adb to check if any devices are already connected
+    puts "${BLUE}Checking for already connected devices via adb...${NC}"
+    if {[catch {
+        spawn adb devices
+        expect {
+            -re "List of devices attached" {
+                exp_continue
+            }
+            -re ".*device.*" {
+                puts "${GREEN}✓ Found connected device${NC}"
+                exp_continue
+            }
+            -re ".*emulator.*" {
+                puts "${GREEN}✓ Found emulator device${NC}"
+                exp_continue
+            }
+            eof {
+                puts "${GREEN}✓ ADB devices check completed${NC}"
+            }
+            timeout {
+                puts "${YELLOW}⚠ Timeout checking adb devices${NC}"
+            }
+        }
+        catch {close}
+    } result]} {
+        puts "${YELLOW}⚠ Could not check adb devices: $result${NC}"
+    }
+}
+
+# Now run the device-connect interactive mode test
 if {[catch {
     spawn $gbox_binary device-connect
     expect {
@@ -621,10 +720,26 @@ if {[catch {
         }
         -re "Select a device to connect" {
             puts "${GREEN}✓ Found device selection prompt${NC}"
+            # If we have devices available, select the first one (option 1)
+            send "1\r"
+            exp_continue
+        }
+        -re "Enter a number:" {
+            puts "${GREEN}✓ Found number input prompt${NC}"
+            # Select option 1
+            send "1\r"
             exp_continue
         }
         -re "Current device connections:" {
             puts "${GREEN}✓ Found current connections section${NC}"
+            exp_continue
+        }
+        -re "Connecting to device" {
+            puts "${GREEN}✓ Found device connection message${NC}"
+            exp_continue
+        }
+        -re "Device connected successfully" {
+            puts "${GREEN}✓ Found device connection success message${NC}"
             exp_continue
         }
         timeout {
