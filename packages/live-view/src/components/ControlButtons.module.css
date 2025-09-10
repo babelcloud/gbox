@@ -1,0 +1,72 @@
+.controlButtons {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 8px 0 8px 12px;
+  border-radius: 8px 0 0 8px;
+  z-index: 1000;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  margin: 0;
+  box-sizing: border-box;
+}
+
+.controlBtn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  padding: 0;
+  margin: 0;
+  color: white;
+  position: relative;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.controlBtn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
+  color: #4CAF50;
+}
+
+.controlBtn:active {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(0.95);
+}
+
+.controlBtn svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+
+.separator {
+  width: 40px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.2);
+  cursor: default;
+  border-radius: 0;
+}
+
+.controlBtn.active {
+  background: rgba(76, 175, 80, 0.3);
+  border: 2px solid #4CAF50;
+}
+
+.controlBtn.active:hover {
+  background: rgba(76, 175, 80, 0.4);
+  border-color: #45a049;
+}

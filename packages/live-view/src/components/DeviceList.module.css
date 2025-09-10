@@ -1,0 +1,108 @@
+.deviceList {
+  margin-bottom: 20px;
+}
+
+.deviceList h2 {
+  font-size: 18px;
+  margin-bottom: 15px;
+  color: #ffffff;
+}
+
+.loading {
+  text-align: center;
+  padding: 20px;
+  color: #999;
+}
+
+.spinner {
+  border: 3px solid #333;
+  border-top: 3px solid #007acc;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 10px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.empty {
+  text-align: center;
+  color: #999;
+  padding: 20px;
+}
+
+.deviceItem {
+  padding: 10px;
+  margin: 5px 0;
+  background: #3d3d3d;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.2s;
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.deviceItem:hover {
+  background: #4d4d4d;
+}
+
+.deviceItem.connected {
+  background: #2d5a2d;
+  cursor: default;
+}
+
+.deviceInfo {
+  flex: 1;
+}
+
+.deviceSerial {
+  font-weight: bold;
+  color: #ffffff;
+}
+
+.deviceModel {
+  font-size: 0.9em;
+  color: #cccccc;
+}
+
+.deviceState {
+  font-size: 0.8em;
+  color: #999999;
+}
+
+.deviceState.connecting {
+  color: #9acd32;
+}
+
+.deviceState.error {
+  color: #ff6b6b;
+}
+
+.disconnectBtn {
+  padding: 5px 10px;
+  background: #cc0000;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+  margin-left: 10px;
+  opacity: 0.7;
+}
+
+.deviceItem.connected:hover .disconnectBtn {
+  opacity: 1;
+  background: #ff0000;
+}
+
+.disconnectBtn:hover {
+  background: #990000;
+  transform: scale(1.05);
+}

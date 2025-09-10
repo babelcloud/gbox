@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
+	"github.com/babelcloud/gbox/packages/cli/internal/daemon"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect"
 	"github.com/babelcloud/gbox/packages/cli/internal/profile"
 	"github.com/fatih/color"
@@ -91,6 +92,7 @@ func printFrpcInstallationHint() {
 type DeviceConnectOptions struct {
 	DeviceID   string
 	Background bool
+	UseNative  bool // Use native Go implementation instead of external binary
 }
 
 // Global client instance
@@ -141,11 +143,13 @@ to remote cloud services for remote access and debugging.`,
 	flags := cmd.Flags()
 	flags.StringVarP(&opts.DeviceID, "device", "d", "", "Specify the Android device ID to connect to")
 	flags.BoolVarP(&opts.Background, "background", "b", false, "Run connection in background")
+	flags.BoolVar(&opts.UseNative, "native", false, "Use native Go implementation (experimental)")
 
 	cmd.AddCommand(
 		NewDeviceConnectListCommand(),
 		NewDeviceConnectUnregisterCommand(),
 		NewDeviceConnectKillServerCommand(),
+		NewDeviceConnectServerCommand(),
 	)
 
 	return cmd
@@ -157,15 +161,14 @@ func ExecuteDeviceConnect(cmd *cobra.Command, opts *DeviceConnectOptions, args [
 		return fmt.Errorf("ADB is not installed or not in your PATH. Please install ADB and try again.")
 	}
 
-	if !checkFrpcInstalled() {
-		printFrpcInstallationHint()
-		return fmt.Errorf("frpc is not installed or not in your PATH. Please install frpc and try again.")
-	}
-
-	// Ensure device proxy service is running
-	if err := device_connect.EnsureDeviceProxyRunning(isServiceRunning); err != nil {
-		return fmt.Errorf("failed to start device proxy service: %v", err)
-	}
+	// Always use the unified server (like adb start-server)
+	// The server will be auto-started if not running
+	
+	// Note: Legacy mode with external binaries is being phased out
+	// All functionality now goes through the unified gbox server
+	
+	// The actual device connection will happen via HTTP API calls
+	// to the server, which will be started automatically by the daemon manager
 
 	if opts.DeviceID == "" {
 		return runInteractiveDeviceSelection(opts)
@@ -222,11 +225,21 @@ func isServiceRunning() (bool, error) {
 }
 
 func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
-	client := getDeviceClient()
-	devices, err := client.GetDevices()
-	if err != nil {
+	// Use daemon manager to call API
+	var response struct {
+		Success bool                     `json:"success"`
+		Devices []map[string]interface{} `json:"devices"`
+	}
+	
+	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
 		return fmt.Errorf("failed to get available devices: %v", err)
 	}
+	
+	if !response.Success {
+		return fmt.Errorf("failed to get devices from server")
+	}
+	
+	devices := response.Devices
 	if len(devices) == 0 {
 		fmt.Println("No Android devices found.")
 		fmt.Println()
@@ -242,17 +255,34 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 
 	for i, device := range devices {
 		status := "Not Registered"
-		statusColor := color.New(color.Faint) // 使用淡色（灰色）
-		if device.IsRegistrable {             // Assuming IsRegistrable should be IsRegistered
+		statusColor := color.New(color.Faint)
+		
+		// Extract device info from map
+		serialNo := device["ro.serialno"].(string)
+		connectionType := device["connectionType"].(string)
+		isRegistered, _ := device["isRegistrable"].(bool)
+		
+		if isRegistered {
 			status = "Registered"
 			statusColor = color.New(color.FgGreen)
 		}
+		
+		model := "Unknown"
+		if m, ok := device["ro.product.model"].(string); ok {
+			model = m
+		}
+		
+		manufacturer := ""
+		if mfr, ok := device["ro.product.manufacturer"].(string); ok {
+			manufacturer = mfr
+		}
+		
 		fmt.Printf("%d. %s (%s, %s) - %s [%s]\n",
 			i+1,
-			color.New(color.FgCyan).Sprint(device.SerialNo+"-"+device.ConnectionType),
-			device.ProductModel,
-			device.ConnectionType,
-			device.ProductManufacturer,
+			color.New(color.FgCyan).Sprint(serialNo+"-"+connectionType),
+			model,
+			connectionType,
+			manufacturer,
 			statusColor.Sprint(status))
 	}
 	fmt.Println()
@@ -264,32 +294,36 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 	}
 
 	selectedDevice := devices[choice-1]
-	return connectToDevice(selectedDevice.Id, opts)
+	deviceID := selectedDevice["id"].(string)
+	return connectToDevice(deviceID, opts)
 }
 
 func connectToDevice(deviceID string, opts *DeviceConnectOptions) error {
-	client := getDeviceClient()
-
-	device, err := client.GetDeviceInfo(deviceID)
-	if err != nil {
-		return fmt.Errorf("failed to get device info: %v", err)
-	}
-
-	fmt.Printf("Establishing remote connection for %s (%s, %s)...\n",
-		device.ProductModel, device.ConnectionType, device.ProductManufacturer)
-
-	// Register the device
-	if err := client.RegisterDevice(deviceID); err != nil {
+	// Register device via daemon API
+	req := map[string]string{"deviceId": deviceID}
+	var resp map[string]interface{}
+	
+	if err := daemon.DefaultManager.CallAPI("POST", "/api/devices/register", req, &resp); err != nil {
 		return fmt.Errorf("failed to register device: %v", err)
 	}
+	
+	if success, ok := resp["success"].(bool); !ok || !success {
+		return fmt.Errorf("failed to register device: %v", resp["error"])
+	}
+	
+	fmt.Printf("Establishing remote connection for device %s...\n", deviceID)
 
 	fmt.Printf("Connection established successfully!\n")
+	
+	// Display local Web UI URL
+	fmt.Printf("\n📱 View and control your device at: %s\n", color.CyanString("http://localhost:29888"))
+	fmt.Printf("   This is the local live-view interface for device control\n")
 
 	// Get and display devices URL for the current profile
 	pm := profile.NewProfileManager()
 	if err := pm.Load(); err == nil {
 		if devicesURL, err := pm.GetDevicesURL(); err == nil {
-			fmt.Printf("You can view your devices at: %s\n", color.CyanString(devicesURL))
+			fmt.Printf("\n☁️  Remote access available at: %s\n", color.CyanString(devicesURL))
 		}
 	}
 
@@ -305,17 +339,12 @@ func connectToDevice(deviceID string, opts *DeviceConnectOptions) error {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	<-sigChan
-	fmt.Printf("Disconnecting %s (%s, %s)...\n",
-		device.ProductModel, device.ConnectionType, device.ProductManufacturer)
+	fmt.Printf("Disconnecting device %s...\n", deviceID)
 	
-	// First unregister the device
-	if err := client.UnregisterDevice(deviceID); err != nil {
+	// Unregister the device via daemon API
+	req = map[string]string{"deviceId": deviceID}
+	if err := daemon.DefaultManager.CallAPI("POST", "/api/devices/unregister", req, nil); err != nil {
 		fmt.Printf("Warning: failed to unregister device: %v\n", err)
-	}
-	
-	// Then stop the device proxy service using existing kill-server logic
-	if err := executeKillServer(); err != nil {
-		fmt.Printf("Warning: failed to stop device proxy service: %v\n", err)
 	}
 	
 	return nil
