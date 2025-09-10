@@ -6,3 +6,5 @@ gbox-linux-*
 gbox-windows-*
 gbox
 gbox-test
+
+assets/scrcpy-server*.jar
