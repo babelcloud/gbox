@@ -28,64 +28,6 @@ if {![file exists $gbox_binary]} {
 # Track executed tests
 set executed_tests {}
 
-# Function to clean up all boxes
-proc cleanup_boxes {} {
-    global gbox_binary GREEN YELLOW BLUE NC
-    
-    puts "\n${BLUE}Clearing all existing boxes after testing...${NC}"
-    if {[catch {
-        spawn $gbox_binary box terminate --all
-        expect {
-            -re "Are you sure.*terminate.*boxes" {
-                puts "${BLUE}Confirming termination of all boxes...${NC}"
-                send "y\r"
-                expect {
-                    -re "All boxes terminated" {
-                        puts "${GREEN}✓ All boxes terminated successfully${NC}"
-                    }
-                    -re "No boxes found" {
-                        puts "${GREEN}✓ No boxes to terminate${NC}"
-                    }
-                    -re "failed to terminate" {
-                        puts "${YELLOW}⚠ Warning: Some boxes may not have been terminated${NC}"
-                    }
-                    timeout {
-                        puts "${YELLOW}⚠ Warning: Timeout waiting for box termination${NC}"
-                    }
-                    eof {
-                        puts "${GREEN}✓ Box termination command completed${NC}"
-                    }
-                }
-            }
-            -re "All boxes terminated" {
-                puts "${GREEN}✓ All boxes terminated successfully${NC}"
-            }
-            -re "No boxes found" {
-                puts "${GREEN}✓ No boxes to terminate${NC}"
-            }
-            -re "failed to terminate" {
-                puts "${YELLOW}⚠ Warning: Some boxes may not have been terminated${NC}"
-            }
-            timeout {
-                puts "${YELLOW}⚠ Warning: Timeout waiting for box termination${NC}"
-            }
-            eof {
-                puts "${GREEN}✓ Box termination command completed${NC}"
-            }
-        }
-        
-        catch {close}
-    } result]} {
-        puts "${YELLOW}⚠ Warning: Box termination failed: $result${NC}"
-    }
-    
-    # Wait for a period of time to ensure that the terminate operation is completely completed.
-    puts "${BLUE}Waiting for box termination to complete...${NC}"
-    sleep 3
-    
-    puts "\n${GREEN}Test cleanup completed!${NC}"
-}
-
 # Test scripts to run in dependency order
 # Dependency Graph:
 #   box_create <- box_list
@@ -192,7 +134,6 @@ if {$selected_test != ""} {
             puts "${BLUE}Test output:${NC}\n$result"
             puts "\n${RED}Test failed: $selected_test${NC}"
             puts "${YELLOW}========================================${NC}"
-            cleanup_boxes
             exit 1  ;# Exit code for test failure
         }
         puts "${YELLOW}========================================${NC}"
@@ -230,7 +171,6 @@ if {$selected_test != ""} {
                 puts "${BLUE}Test output:${NC}\n$result"
                 puts "\n${RED}Test failed: $test${NC}"
                 puts "${YELLOW}========================================${NC}"
-                cleanup_boxes
                 exit 1  ;# Exit code for test failure
             }
             puts "${YELLOW}========================================${NC}"
@@ -255,15 +195,8 @@ puts "${YELLOW}========================================${NC}"
 
 if {$passed_tests == $total_tests} {
     puts "\n${GREEN}All tests passed successfully!${NC}"
-} else {
-    puts "\n${RED}Some tests failed.${NC}"
-}
-
-# Clean up all boxes after testing
-cleanup_boxes
-
-if {$passed_tests == $total_tests} {
     exit 0
 } else {
+    puts "\n${RED}Some tests failed.${NC}"
     exit 1  ;# Exit code for test failure
 } 
