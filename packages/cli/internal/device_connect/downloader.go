@@ -276,6 +276,11 @@ func getLatestRelease(repo string) (*GitHubRelease, error) {
 
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "gbox-cli")
+	
+	// Add GitHub token if available
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -285,7 +290,19 @@ func getLatestRelease(repo string) (*GitHubRelease, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API returned status: %d", resp.StatusCode)
+		// Read response body for better error message
+		body, _ := io.ReadAll(resp.Body)
+		errorMsg := fmt.Sprintf("GitHub API returned status: %d", resp.StatusCode)
+		if len(body) > 0 {
+			errorMsg += fmt.Sprintf(" - %s", string(body))
+		}
+		
+		// Provide helpful suggestions for 403 errors
+		if resp.StatusCode == 403 {
+			errorMsg += "\n\nPossible solutions:\n1. Set GITHUB_TOKEN environment variable to avoid rate limits\n2. Check your network connection\n3. Retry later (GitHub API may have temporary restrictions)"
+		}
+		
+		return nil, fmt.Errorf("%s", errorMsg)
 	}
 
 	var release GitHubRelease
@@ -307,6 +324,11 @@ func getReleaseByTag(repo, tag string) (*GitHubRelease, error) {
 
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "gbox-cli")
+	
+	// Add GitHub token if available
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -316,7 +338,19 @@ func getReleaseByTag(repo, tag string) (*GitHubRelease, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API returned status: %d", resp.StatusCode)
+		// Read response body for better error message
+		body, _ := io.ReadAll(resp.Body)
+		errorMsg := fmt.Sprintf("GitHub API returned status: %d", resp.StatusCode)
+		if len(body) > 0 {
+			errorMsg += fmt.Sprintf(" - %s", string(body))
+		}
+		
+		// Provide helpful suggestions for 403 errors
+		if resp.StatusCode == 403 {
+			errorMsg += "\n\nPossible solutions:\n1. Set GITHUB_TOKEN environment variable to avoid rate limits\n2. Check your network connection\n3. Retry later (GitHub API may have temporary restrictions)"
+		}
+		
+		return nil, fmt.Errorf("%s", errorMsg)
 	}
 
 	var release GitHubRelease
