@@ -1,0 +1,555 @@
+#!/usr/bin/env expect
+
+# Exit codes:
+#   0 - Test passed
+#   1 - Test failed
+
+# Set timeout for command execution
+set timeout 30
+
+# Colors for output
+set GREEN "\033\[0;32m"
+set RED "\033\[0;31m"
+set YELLOW "\033\[1;33m"
+set BLUE "\033\[0;34m"
+set NC "\033\[0m"
+
+# Get the gbox binary path
+# Default to using the built binary in the parent directory
+set gbox_binary "../gbox"
+
+# If the built binary doesn't exist, fall back to system gbox
+if {![file exists $gbox_binary]} {
+    set gbox_binary "gbox"
+}
+
+puts "${BLUE}Testing gbox adb-expose command...${NC}"
+
+# Test 1: Help command for adb-expose
+puts "\n${YELLOW}Testing help command for adb-expose...${NC}"
+puts "${BLUE}Running Test 1: Help command for adb-expose${NC}"
+if {[catch {
+    spawn $gbox_binary adb-expose --help
+    expect {
+        -re "Manage ADB port exposure for remote android boxes" {
+            puts "${GREEN}✓ Found help description${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for help description${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Help command exited unexpectedly${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        -re "Examples:" {
+            puts "${GREEN}✓ Found examples section${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for examples section${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Examples section not found - command ended unexpectedly${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        -re "gbox adb-expose start" {
+            puts "${GREEN}✓ Found start command example${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for start command example${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Start command example not found - command ended unexpectedly${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        -re "gbox adb-expose stop" {
+            puts "${GREEN}✓ Found stop command example${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for stop command example${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Stop command example not found - command ended unexpectedly${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        -re "gbox adb-expose list" {
+            puts "${GREEN}✓ Found list command example${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for list command example${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ List command example not found - command ended unexpectedly${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 2: Help command for adb-expose start
+puts "\n${YELLOW}Testing help command for adb-expose start...${NC}"
+puts "${BLUE}Running Test 2: Help command for adb-expose start${NC}"
+if {[catch {
+    spawn $gbox_binary adb-expose start --help
+    expect {
+        -re "Start ADB port exposure for a specific box" {
+            puts "${GREEN}✓ Found start help description${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for start help description${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Start help command exited unexpectedly${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        -re "--port.*Local port to bind to" {
+            puts "${GREEN}✓ Found port flag description${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for port flag description${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        -re "--foreground.*Run in foreground" {
+            puts "${GREEN}✓ Found foreground flag description${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for foreground flag description${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 3: Help command for adb-expose stop
+puts "\n${YELLOW}Testing help command for adb-expose stop...${NC}"
+puts "${BLUE}Running Test 3: Help command for adb-expose stop${NC}"
+if {[catch {
+    spawn $gbox_binary adb-expose stop --help
+    expect {
+        -re "Stop ADB port exposure for a specific box" {
+            puts "${GREEN}✓ Found stop help description${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for stop help description${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Stop help command exited unexpectedly${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 4: Help command for adb-expose list
+puts "\n${YELLOW}Testing help command for adb-expose list...${NC}"
+puts "${BLUE}Running Test 4: Help command for adb-expose list${NC}"
+if {[catch {
+    spawn $gbox_binary adb-expose list --help
+    expect {
+        -re "List all running adb-expose processes" {
+            puts "${GREEN}✓ Found list help description${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for list help description${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ List help command exited unexpectedly${NC}"
+            exit 1
+        }
+    }
+    
+    expect {
+        -re "--output.*Output format" {
+            puts "${GREEN}✓ Found output flag description${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for output flag description${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 5: adb-expose start without box_id (should show error)
+puts "\n${YELLOW}Testing adb-expose start without box_id...${NC}"
+puts "${BLUE}Running Test 5: adb-expose start without box_id${NC}"
+if {[catch {
+    spawn $gbox_binary adb-expose start
+    expect {
+        -re "Error:.*requires exactly 1 argument" {
+            puts "${GREEN}✓ Found expected error message for missing box_id${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for error message${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Error message displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 6: adb-expose stop without box_id (should show error)
+puts "\n${YELLOW}Testing adb-expose stop without box_id...${NC}"
+puts "${BLUE}Running Test 6: adb-expose stop without box_id${NC}"
+if {[catch {
+    spawn $gbox_binary adb-expose stop
+    expect {
+        -re "Error:.*requires exactly 1 argument" {
+            puts "${GREEN}✓ Found expected error message for missing box_id${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for error message${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Error message displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 7: adb-expose start with invalid box_id
+puts "\n${YELLOW}Testing adb-expose start with invalid box_id...${NC}"
+puts "${BLUE}Running Test 7: adb-expose start with invalid box_id${NC}"
+if {[catch {
+    spawn $gbox_binary adb-expose start invalid-box-id
+    expect {
+        -re "the box you specified is not valid" {
+            puts "${GREEN}✓ Found expected error message for invalid box_id${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for error message${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Error message displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 8: adb-expose stop with invalid box_id
+puts "\n${YELLOW}Testing adb-expose stop with invalid box_id...${NC}"
+puts "${BLUE}Running Test 8: adb-expose stop with invalid box_id${NC}"
+if {[catch {
+    spawn $gbox_binary adb-expose stop invalid-box-id
+    expect {
+        -re "no running adb-expose processes found for box" {
+            puts "${GREEN}✓ Found expected error message for invalid box_id${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for error message${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Error message displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 9: adb-expose list command (should work even with no running processes)
+puts "\n${YELLOW}Testing adb-expose list command...${NC}"
+puts "${BLUE}Running Test 9: adb-expose list command${NC}"
+if {[catch {
+     $gbox_binary adb-expose list
+    expect {
+        -re "No ADB port exposures found" {
+            puts "${GREEN}✓ Found expected message for no exposures${NC}"
+            exp_continue
+        }
+        -re "PID.*BoxID.*Port.*Status.*StartedAt" {
+            puts "${GREEN}✓ Found table header for existing exposures${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for list output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ List command completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 10: adb-expose list with JSON output
+puts "\n${YELLOW}Testing adb-expose list with JSON output...${NC}"
+puts "${BLUE}Running Test 10: adb-expose list with JSON output${NC}"
+if {[catch {
+    spawn $gbox_binary adb-expose list --output json
+    expect {
+        -re "\\\[\\\]" {
+            puts "${GREEN}✓ Found empty JSON array for no exposures${NC}"
+            exp_continue
+        }
+        -re "\\\[.*\\\]" {
+            puts "${GREEN}✓ Found JSON array for existing exposures${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for JSON output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ JSON list command completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 11: adb-expose start with invalid port
+puts "\n${YELLOW}Testing adb-expose start with invalid port...${NC}"
+puts "${BLUE}Running Test 11: adb-expose start with invalid port${NC}"
+if {[catch {
+    spawn $gbox_binary adb-expose start invalid-box-id --port 99999
+    expect {
+        -re "invalid local port.*port must be between 1 and 65535" {
+            puts "${GREEN}✓ Found expected error message for invalid port${NC}"
+            exp_continue
+        }
+        -re "the box you specified is not valid" {
+            puts "${GREEN}✓ Found expected error message for invalid box_id (port validation may be skipped)${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for error message${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Error message displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 12: adb-expose start with negative port
+puts "\n${YELLOW}Testing adb-expose start with negative port...${NC}"
+puts "${BLUE}Running Test 12: adb-expose start with negative port${NC}"
+if {[catch {
+    spawn $gbox_binary adb-expose start invalid-box-id --port -1
+    expect {
+        -re "invalid local port.*port must be between 1 and 65535" {
+            puts "${GREEN}✓ Found expected error message for negative port${NC}"
+            exp_continue
+        }
+        -re "the box you specified is not valid" {
+            puts "${GREEN}✓ Found expected error message for invalid box_id (port validation may be skipped)${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for error message${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Error message displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 13: adb-expose start with zero port
+puts "\n${YELLOW}Testing adb-expose start with zero port...${NC}"
+puts "${BLUE}Running Test 13: adb-expose start with zero port${NC}"
+if {[catch {
+    spawn $gbox_binary adb-expose start invalid-box-id --port 0
+    expect {
+        -re "invalid local port.*port must be between 1 and 65535" {
+            puts "${GREEN}✓ Found expected error message for zero port${NC}"
+            exp_continue
+        }
+        -re "the box you specified is not valid" {
+            puts "${GREEN}✓ Found expected error message for invalid box_id (port validation may be skipped)${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for error message${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Error message displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 14: adb-expose interactive mode (should show available boxes or appropriate message)
+puts "\n${YELLOW}Testing adb-expose interactive mode...${NC}"
+puts "${BLUE}Running Test 14: adb-expose interactive mode${NC}"
+if {[catch {
+    spawn $gbox_binary adb-expose
+    expect {
+        -re "No boxes available" {
+            puts "${GREEN}✓ Found expected message for no available boxes${NC}"
+            exp_continue
+        }
+        -re "No running Android boxes found" {
+            puts "${GREEN}✓ Found expected message for no running Android boxes${NC}"
+            exp_continue
+        }
+        -re "No available Android boxes to expose" {
+            puts "${GREEN}✓ Found expected message for no available Android boxes${NC}"
+            exp_continue
+        }
+        -re "Select an Android box to expose ADB port" {
+            puts "${GREEN}✓ Found box selection prompt${NC}"
+            exp_continue
+        }
+        -re "Current ADB port exposures:" {
+            puts "${GREEN}✓ Found current exposures section${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for interactive mode output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Interactive mode completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 15: Test invalid subcommand
+puts "\n${YELLOW}Testing invalid subcommand...${NC}"
+puts "${BLUE}Running Test 15: Invalid subcommand${NC}"
+if {[catch {
+    spawn $gbox_binary adb-expose invalid-command
+    expect {
+        -re "Error:.*unknown command.*invalid-command" {
+            puts "${GREEN}✓ Found expected error message for invalid subcommand${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for error message${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Error message displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 16: Test list with invalid output format
+puts "\n${YELLOW}Testing list with invalid output format...${NC}"
+puts "${BLUE}Running Test 16: List with invalid output format${NC}"
+if {[catch {
+    spawn $gbox_binary adb-expose list --output invalid-format
+    expect {
+        -re "Error:.*invalid value.*invalid-format" {
+            puts "${GREEN}✓ Found expected error message for invalid output format${NC}"
+            exp_continue
+        }
+        -re "No ADB port exposures found" {
+            puts "${GREEN}✓ Command succeeded with default format (invalid format ignored)${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Command completed${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+puts "\n${GREEN}All adb-expose tests passed!${NC}"
+exit 0

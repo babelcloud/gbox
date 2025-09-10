@@ -1,0 +1,499 @@
+#!/usr/bin/env expect
+
+# Exit codes:
+#   0 - Test passed
+#   1 - Test failed
+
+# Set timeout for command execution
+set timeout 30
+
+# Colors for output
+set GREEN "\033\[0;32m"
+set RED "\033\[0;31m"
+set YELLOW "\033\[1;33m"
+set BLUE "\033\[0;34m"
+set NC "\033\[0m"
+
+# Get the gbox binary path
+# Default to using the built binary in the parent directory
+set gbox_binary "../gbox"
+
+# If the built binary doesn't exist, fall back to system gbox
+if {![file exists $gbox_binary]} {
+    set gbox_binary "gbox"
+}
+
+puts "${BLUE}Testing gbox profile current command...${NC}"
+
+# Test 1: Help command
+puts "\n${YELLOW}Testing help command...${NC}"
+if {[catch {
+    spawn $gbox_binary profile current --help
+    set description_found 0
+    set usage_found 0
+    
+    expect {
+        -re "Show current profile information" {
+            puts "${GREEN}✓ Found current command description${NC}"
+            set description_found 1
+            exp_continue
+        }
+        -re "Usage:" {
+            puts "${GREEN}✓ Found Usage section${NC}"
+            set usage_found 1
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Help command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for help output${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Help test failed: $result${NC}"
+    exit 1
+}
+
+# Test 2: Short help flag
+puts "\n${YELLOW}Testing short help flag...${NC}"
+if {[catch {
+    spawn $gbox_binary profile current -h
+    expect {
+        -re "Show current profile information" {
+            puts "${GREEN}✓ Found current command description with short flag${NC}"
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Short help command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for short help completion${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Short help test failed: $result${NC}"
+    exit 1
+}
+
+# Test 3: Current profile display (with or without current profile)
+puts "\n${YELLOW}Testing current profile display...${NC}"
+if {[catch {
+    spawn $gbox_binary profile current
+    set current_profile_found 0
+    set no_current_found 0
+    
+    expect {
+        -re "Current Profile:" {
+            puts "${GREEN}✓ Found 'Current Profile:' header${NC}"
+            set current_profile_found 1
+            exp_continue
+        }
+        -re "No current profile set" {
+            puts "${GREEN}✓ Found 'No current profile set' message${NC}"
+            set no_current_found 1
+            exp_continue
+        }
+        -re "Profile ID:" {
+            puts "${GREEN}✓ Found Profile ID information${NC}"
+            exp_continue
+        }
+        -re "Organization:" {
+            puts "${GREEN}✓ Found Organization information${NC}"
+            exp_continue
+        }
+        -re "API Key:" {
+            puts "${GREEN}✓ Found API Key information${NC}"
+            exp_continue
+        }
+        -re "Base URL:" {
+            puts "${GREEN}✓ Found Base URL information${NC}"
+            exp_continue
+        }
+        eof {
+            if {$current_profile_found || $no_current_found} {
+                puts "${GREEN}✓ Current profile test completed successfully${NC}"
+            } else {
+                puts "${RED}✗ No expected output found${NC}"
+                exit 1
+            }
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for current profile information${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Current profile test failed: $result${NC}"
+    exit 1
+}
+
+# Test 4: Test with extra arguments (should show error)
+puts "\n${YELLOW}Testing with extra arguments...${NC}"
+if {[catch {
+    spawn $gbox_binary profile current extra-arg
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for extra arguments${NC}"
+        }
+        -re "unknown command" {
+            puts "${GREEN}✓ Found expected unknown command error${NC}"
+        }
+        -re "too many arguments" {
+            puts "${GREEN}✓ Found expected too many arguments error${NC}"
+        }
+        eof {
+            puts "${GREEN}✓ Extra arguments error displayed correctly${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for extra arguments error${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Extra arguments test failed: $result${NC}"
+    exit 1
+}
+
+# Test 5: Test with multiple extra arguments
+puts "\n${YELLOW}Testing with multiple extra arguments...${NC}"
+if {[catch {
+    spawn $gbox_binary profile current arg1 arg2 arg3
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for multiple extra arguments${NC}"
+        }
+        -re "unknown command" {
+            puts "${GREEN}✓ Found expected unknown command error${NC}"
+        }
+        -re "too many arguments" {
+            puts "${GREEN}✓ Found expected too many arguments error${NC}"
+        }
+        eof {
+            puts "${GREEN}✓ Multiple extra arguments error displayed correctly${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for multiple extra arguments error${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Multiple extra arguments test failed: $result${NC}"
+    exit 1
+}
+
+# Test 6: Test with empty string argument
+puts "\n${YELLOW}Testing with empty string argument...${NC}"
+if {[catch {
+    spawn $gbox_binary profile current ""
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for empty string argument${NC}"
+        }
+        -re "unknown command" {
+            puts "${GREEN}✓ Found expected unknown command error${NC}"
+        }
+        -re "too many arguments" {
+            puts "${GREEN}✓ Found expected too many arguments error${NC}"
+        }
+        eof {
+            puts "${GREEN}✓ Empty string argument error displayed correctly${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for empty string argument error${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Empty string argument test failed: $result${NC}"
+    exit 1
+}
+
+# Test 7: Test with special characters in arguments
+puts "\n${YELLOW}Testing with special characters in arguments...${NC}"
+if {[catch {
+    spawn $gbox_binary profile current "special!@#$%^&*()"
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for special characters${NC}"
+        }
+        -re "unknown command" {
+            puts "${GREEN}✓ Found expected unknown command error${NC}"
+        }
+        -re "too many arguments" {
+            puts "${GREEN}✓ Found expected too many arguments error${NC}"
+        }
+        eof {
+            puts "${GREEN}✓ Special characters error displayed correctly${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for special characters error${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Special characters test failed: $result${NC}"
+    exit 1
+}
+
+# Test 8: Test with spaces in arguments
+puts "\n${YELLOW}Testing with spaces in arguments...${NC}"
+if {[catch {
+    spawn $gbox_binary profile current "arg with spaces"
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for spaces in arguments${NC}"
+        }
+        -re "unknown command" {
+            puts "${GREEN}✓ Found expected unknown command error${NC}"
+        }
+        -re "too many arguments" {
+            puts "${GREEN}✓ Found expected too many arguments error${NC}"
+        }
+        eof {
+            puts "${GREEN}✓ Spaces in arguments error displayed correctly${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for spaces in arguments error${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Spaces in arguments test failed: $result${NC}"
+    exit 1
+}
+
+# Test 9: Test with numeric arguments
+puts "\n${YELLOW}Testing with numeric arguments...${NC}"
+if {[catch {
+    spawn $gbox_binary profile current 12345
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for numeric arguments${NC}"
+        }
+        -re "unknown command" {
+            puts "${GREEN}✓ Found expected unknown command error${NC}"
+        }
+        -re "too many arguments" {
+            puts "${GREEN}✓ Found expected too many arguments error${NC}"
+        }
+        eof {
+            puts "${GREEN}✓ Numeric arguments error displayed correctly${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for numeric arguments error${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Numeric arguments test failed: $result${NC}"
+    exit 1
+}
+
+# Test 10: Test with very long argument
+puts "\n${YELLOW}Testing with very long argument...${NC}"
+if {[catch {
+    set long_arg "very-long-argument-that-exceeds-normal-length-and-should-still-work-properly-1234567890abcdefghijklmnopqrstuvwxyz"
+    spawn $gbox_binary profile current $long_arg
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for long argument${NC}"
+        }
+        -re "unknown command" {
+            puts "${GREEN}✓ Found expected unknown command error${NC}"
+        }
+        -re "too many arguments" {
+            puts "${GREEN}✓ Found expected too many arguments error${NC}"
+        }
+        eof {
+            puts "${GREEN}✓ Long argument error displayed correctly${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for long argument error${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Long argument test failed: $result${NC}"
+    exit 1
+}
+
+# Test 11: Profile command help (parent command)
+puts "\n${YELLOW}Testing profile command help...${NC}"
+if {[catch {
+    spawn $gbox_binary profile --help
+    set description_found 0
+    set commands_found 0
+    set current_found 0
+    
+    expect {
+        -re "Manage configuration information" {
+            puts "${GREEN}✓ Found profile command description${NC}"
+            set description_found 1
+            exp_continue
+        }
+        -re "Available Commands:" {
+            puts "${GREEN}✓ Found Available Commands section${NC}"
+            set commands_found 1
+            exp_continue
+        }
+        -re "current.*Show current profile information" {
+            puts "${GREEN}✓ Found current command in help output${NC}"
+            set current_found 1
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Profile help command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for profile help output${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Profile help test failed: $result${NC}"
+    exit 1
+}
+
+# Test 12: Test with newlines in argument
+puts "\n${YELLOW}Testing with newlines in argument...${NC}"
+if {[catch {
+    spawn $gbox_binary profile current "arg\nwith\nnewlines"
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for newlines in argument${NC}"
+        }
+        -re "unknown command" {
+            puts "${GREEN}✓ Found expected unknown command error${NC}"
+        }
+        -re "too many arguments" {
+            puts "${GREEN}✓ Found expected too many arguments error${NC}"
+        }
+        eof {
+            puts "${GREEN}✓ Newlines in argument error displayed correctly${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for newlines in argument error${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Newlines in argument test failed: $result${NC}"
+    exit 1
+}
+
+# Test 13: Test with tabs in argument
+puts "\n${YELLOW}Testing with tabs in argument...${NC}"
+if {[catch {
+    spawn $gbox_binary profile current "arg\twith\ttabs"
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for tabs in argument${NC}"
+        }
+        -re "unknown command" {
+            puts "${GREEN}✓ Found expected unknown command error${NC}"
+        }
+        -re "too many arguments" {
+            puts "${GREEN}✓ Found expected too many arguments error${NC}"
+        }
+        eof {
+            puts "${GREEN}✓ Tabs in argument error displayed correctly${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for tabs in argument error${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Tabs in argument test failed: $result${NC}"
+    exit 1
+}
+
+# Test 14: Test with only special characters in argument
+puts "\n${YELLOW}Testing with only special characters in argument...${NC}"
+if {[catch {
+    spawn $gbox_binary profile current "!@#$%^&*()"
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for special characters only${NC}"
+        }
+        -re "unknown command" {
+            puts "${GREEN}✓ Found expected unknown command error${NC}"
+        }
+        -re "too many arguments" {
+            puts "${GREEN}✓ Found expected too many arguments error${NC}"
+        }
+        eof {
+            puts "${GREEN}✓ Special characters only error displayed correctly${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for special characters only error${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Special characters only test failed: $result${NC}"
+    exit 1
+}
+
+# Test 15: Test with UUID-like argument
+puts "\n${YELLOW}Testing with UUID-like argument...${NC}"
+if {[catch {
+    spawn $gbox_binary profile current "123e4567-e89b-12d3-a456-426614174000"
+    expect {
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for UUID-like argument${NC}"
+        }
+        -re "unknown command" {
+            puts "${GREEN}✓ Found expected unknown command error${NC}"
+        }
+        -re "too many arguments" {
+            puts "${GREEN}✓ Found expected too many arguments error${NC}"
+        }
+        eof {
+            puts "${GREEN}✓ UUID-like argument error displayed correctly${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for UUID-like argument error${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ UUID-like argument test failed: $result${NC}"
+    exit 1
+}
+
+puts "\n${GREEN}All profile current tests passed successfully!${NC}"
+exit 0

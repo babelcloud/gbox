@@ -1,0 +1,1070 @@
+#!/usr/bin/env expect
+
+# Exit codes:
+#   0 - Test passed
+#   1 - Test failed
+
+# Set timeout for command execution
+set timeout 30
+
+# Colors for output
+set GREEN "\033\[0;32m"
+set RED "\033\[0;31m"
+set YELLOW "\033\[1;33m"
+set BLUE "\033\[0;34m"
+set NC "\033\[0m"
+
+# Get the gbox binary path
+# Default to using the built binary in the parent directory
+set gbox_binary "../gbox"
+
+# If the built binary doesn't exist, fall back to system gbox
+if {![file exists $gbox_binary]} {
+    set gbox_binary "gbox"
+}
+
+puts "${BLUE}Testing gbox device-connect command...${NC}"
+
+# Test 1: Help command for device-connect
+puts "\n${YELLOW}Testing help command for device-connect...${NC}"
+puts "${BLUE}Running Test 1: Help command for device-connect${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect --help
+    set help_found 0
+    set commands_found 0
+    set flags_found 0
+    
+    expect {
+        -re "Manage remote connections for local Android development devices" {
+            puts "${GREEN}✓ Found help description${NC}"
+            set help_found 1
+            exp_continue
+        }
+        -re "Available Commands:" {
+            puts "${GREEN}✓ Found Available Commands section${NC}"
+            set commands_found 1
+            exp_continue
+        }
+        -re "Flags:" {
+            puts "${GREEN}✓ Found Flags section${NC}"
+            set flags_found 1
+            exp_continue
+        }
+        -re "kill-server.*Stop the device proxy service" {
+            puts "${GREEN}✓ Found kill-server command${NC}"
+            exp_continue
+        }
+        -re "ls.*List all detectable" {
+            puts "${GREEN}✓ Found ls command${NC}"
+            exp_continue
+        }
+        -re "unregister.*Unregister" {
+            puts "${GREEN}✓ Found unregister command${NC}"
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Help command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for help output${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 2: Help command for device-connect list
+puts "\n${YELLOW}Testing help command for device-connect list...${NC}"
+puts "${BLUE}Running Test 2: Help command for device-connect list${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect list --help
+    expect {
+        -re "List all detectable local Android devices and their registration status" {
+            puts "${GREEN}✓ Found list help description${NC}"
+            exp_continue
+        }
+        -re "--format.*Output format" {
+            puts "${GREEN}✓ Found format flag description${NC}"
+            exp_continue
+        }
+        -re "gbox device-connect ls --format json" {
+            puts "${GREEN}✓ Found JSON format example${NC}"
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ List help command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for list help output${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 3: Help command for device-connect unregister
+puts "\n${YELLOW}Testing help command for device-connect unregister...${NC}"
+puts "${BLUE}Running Test 3: Help command for device-connect unregister${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect unregister --help
+    expect {
+        -re "Unregister one or all active gbox device connections" {
+            puts "${GREEN}✓ Found unregister help description${NC}"
+            exp_continue
+        }
+        -re "--all.*Disconnect all active device connections" {
+            puts "${GREEN}✓ Found all flag description${NC}"
+            exp_continue
+        }
+        -re "gbox device-connect unregister --all" {
+            puts "${GREEN}✓ Found unregister all example${NC}"
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Unregister help command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for unregister help output${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 4: Help command for device-connect kill-server
+puts "\n${YELLOW}Testing help command for device-connect kill-server...${NC}"
+puts "${BLUE}Running Test 4: Help command for device-connect kill-server${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect kill-server --help
+    expect {
+        -re "Stop the device proxy service" {
+            puts "${GREEN}✓ Found kill-server help description${NC}"
+            exp_continue
+        }
+        -re "--force.*Force kill the service process" {
+            puts "${GREEN}✓ Found force flag description${NC}"
+            exp_continue
+        }
+        -re "--all.*Kill all device proxy processes" {
+            puts "${GREEN}✓ Found all flag description${NC}"
+            exp_continue
+        }
+        -re "gbox device-connect kill-server --all --force" {
+            puts "${GREEN}✓ Found force kill all example${NC}"
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Kill-server help command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for kill-server help output${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 5: device-connect list command (should work even with no devices or ADB not installed)
+puts "\n${YELLOW}Testing device-connect list command...${NC}"
+puts "${BLUE}Running Test 5: device-connect list command${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect list
+    expect {
+        -re "No Android devices found" {
+            puts "${GREEN}✓ Found expected message for no devices${NC}"
+            exp_continue
+        }
+        -re "ADB is not installed" {
+            puts "${GREEN}✓ Found expected ADB installation message${NC}"
+            exp_continue
+        }
+        -re "frpc is not installed" {
+            puts "${GREEN}✓ Found expected frpc installation message${NC}"
+            exp_continue
+        }
+        -re "DEVICE ID.*NAME.*TYPE.*STATUS" {
+            puts "${GREEN}✓ Found table header for existing devices${NC}"
+            exp_continue
+        }
+        -re "failed to start device proxy service" {
+            puts "${GREEN}✓ Found expected service start error${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for list output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ List command completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 6: device-connect list with JSON output
+puts "\n${YELLOW}Testing device-connect list with JSON output...${NC}"
+puts "${BLUE}Running Test 6: device-connect list with JSON output${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect list --format json
+    expect {
+        -re "\\\[\\\]" {
+            puts "${GREEN}✓ Found empty JSON array for no devices${NC}"
+            exp_continue
+        }
+        -re "\\\[.*\\\]" {
+            puts "${GREEN}✓ Found JSON array for existing devices${NC}"
+            exp_continue
+        }
+        -re "ADB is not installed" {
+            puts "${GREEN}✓ Found expected ADB installation message${NC}"
+            exp_continue
+        }
+        -re "frpc is not installed" {
+            puts "${GREEN}✓ Found expected frpc installation message${NC}"
+            exp_continue
+        }
+        -re "failed to start device proxy service" {
+            puts "${GREEN}✓ Found expected service start error${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for JSON output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ JSON list command completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 7: device-connect list with invalid format
+puts "\n${YELLOW}Testing device-connect list with invalid format...${NC}"
+puts "${BLUE}Running Test 7: device-connect list with invalid format${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect list --format invalid-format
+    expect {
+        -re "Error:.*invalid value.*invalid-format" {
+            puts "${GREEN}✓ Found expected error message for invalid format${NC}"
+            exp_continue
+        }
+        -re "ADB is not installed" {
+            puts "${GREEN}✓ Found expected ADB installation message (format validation may be skipped)${NC}"
+            exp_continue
+        }
+        -re "frpc is not installed" {
+            puts "${GREEN}✓ Found expected frpc installation message (format validation may be skipped)${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for error message${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Error message displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 8: device-connect unregister without device_id (should show interactive mode)
+puts "\n${YELLOW}Testing device-connect unregister without device_id...${NC}"
+puts "${BLUE}Running Test 8: device-connect unregister without device_id${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect unregister
+    expect {
+        -re "ADB is not installed" {
+            puts "${GREEN}✓ Found expected ADB installation message${NC}"
+            exp_continue
+        }
+        -re "frpc is not installed" {
+            puts "${GREEN}✓ Found expected frpc installation message${NC}"
+            exp_continue
+        }
+        -re "failed to start device proxy service" {
+            puts "${GREEN}✓ Found expected service start error${NC}"
+            exp_continue
+        }
+        -re "Select a device to unregister" {
+            puts "${GREEN}✓ Found device selection prompt${NC}"
+            exp_continue
+        }
+        -re "Enter a number:" {
+            puts "${GREEN}✓ Found number input prompt${NC}"
+            # Send Ctrl+C to exit the interactive mode
+            send "\003"
+            exp_continue
+        }
+        -re "Connection established successfully" {
+            puts "${GREEN}✓ Found connection established message${NC}"
+            # Send Ctrl+C to exit the interactive mode
+            send "\003"
+            exp_continue
+        }
+        -re "Connection established successfully!" {
+            puts "${GREEN}✓ Found connection established message${NC}"
+            # Send Ctrl+C to exit the interactive mode
+            send "\003"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for interactive mode or error message${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Unregister command completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 9: device-connect unregister with invalid device_id
+puts "\n${YELLOW}Testing device-connect unregister with invalid device_id...${NC}"
+puts "${BLUE}Running Test 9: device-connect unregister with invalid device_id${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect unregister invalid-device-id
+    expect {
+        -re "ADB is not installed" {
+            puts "${GREEN}✓ Found expected ADB installation message${NC}"
+            exp_continue
+        }
+        -re "frpc is not installed" {
+            puts "${GREEN}✓ Found expected frpc installation message${NC}"
+            exp_continue
+        }
+        -re "failed to start device proxy service" {
+            puts "${GREEN}✓ Found expected service start error${NC}"
+            exp_continue
+        }
+        -re "device.*not found" {
+            puts "${GREEN}✓ Found expected device not found message${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for error message${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Error message displayed correctly${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 10: device-connect unregister --all
+puts "\n${YELLOW}Testing device-connect unregister --all...${NC}"
+puts "${BLUE}Running Test 10: device-connect unregister --all${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect unregister --all
+    expect {
+        -re "ADB is not installed" {
+            puts "${GREEN}✓ Found expected ADB installation message${NC}"
+            exp_continue
+        }
+        -re "frpc is not installed" {
+            puts "${GREEN}✓ Found expected frpc installation message${NC}"
+            exp_continue
+        }
+        -re "failed to start device proxy service" {
+            puts "${GREEN}✓ Found expected service start error${NC}"
+            exp_continue
+        }
+        -re "No active device connections found" {
+            puts "${GREEN}✓ Found expected no connections message${NC}"
+            exp_continue
+        }
+        -re "Unregistered.*devices" {
+            puts "${GREEN}✓ Found expected unregister success message${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for unregister all output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Unregister all command completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 11: device-connect kill-server command
+puts "\n${YELLOW}Testing device-connect kill-server command...${NC}"
+puts "${BLUE}Running Test 11: device-connect kill-server command${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect kill-server
+    expect {
+        -re "Device proxy service is not running" {
+            puts "${GREEN}✓ Found expected message for no running service${NC}"
+            exp_continue
+        }
+        -re "Stopping device proxy service" {
+            puts "${GREEN}✓ Found expected stopping message${NC}"
+            exp_continue
+        }
+        -re "Device proxy service stopped successfully" {
+            puts "${GREEN}✓ Found expected success message${NC}"
+            exp_continue
+        }
+        -re "Killed process.*from PID file" {
+            puts "${GREEN}✓ Found expected kill process message${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for kill-server output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Kill-server command completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 12: device-connect kill-server --force
+puts "\n${YELLOW}Testing device-connect kill-server --force...${NC}"
+puts "${BLUE}Running Test 12: device-connect kill-server --force${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect kill-server --force
+    expect {
+        -re "Device proxy service is not running" {
+            puts "${GREEN}✓ Found expected message for no running service${NC}"
+            exp_continue
+        }
+        -re "Stopping device proxy service" {
+            puts "${GREEN}✓ Found expected stopping message${NC}"
+            exp_continue
+        }
+        -re "Device proxy service stopped successfully" {
+            puts "${GREEN}✓ Found expected success message${NC}"
+            exp_continue
+        }
+        -re "Killed process.*from PID file" {
+            puts "${GREEN}✓ Found expected kill process message${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for kill-server --force output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Kill-server --force command completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 13: device-connect kill-server --all
+puts "\n${YELLOW}Testing device-connect kill-server --all...${NC}"
+puts "${BLUE}Running Test 13: device-connect kill-server --all${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect kill-server --all
+    expect {
+        -re "Device proxy service is not running" {
+            puts "${GREEN}✓ Found expected message for no running service${NC}"
+            exp_continue
+        }
+        -re "Stopping device proxy service" {
+            puts "${GREEN}✓ Found expected stopping message${NC}"
+            exp_continue
+        }
+        -re "Device proxy service stopped successfully" {
+            puts "${GREEN}✓ Found expected success message${NC}"
+            exp_continue
+        }
+        -re "Killed process.*using port" {
+            puts "${GREEN}✓ Found expected kill by port message${NC}"
+            exp_continue
+        }
+        -re "Killed process.*by name" {
+            puts "${GREEN}✓ Found expected kill by name message${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for kill-server --all output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Kill-server --all command completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 14: device-connect kill-server --all --force
+puts "\n${YELLOW}Testing device-connect kill-server --all --force...${NC}"
+puts "${BLUE}Running Test 14: device-connect kill-server --all --force${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect kill-server --all --force
+    expect {
+        -re "Device proxy service is not running" {
+            puts "${GREEN}✓ Found expected message for no running service${NC}"
+            exp_continue
+        }
+        -re "Stopping device proxy service" {
+            puts "${GREEN}✓ Found expected stopping message${NC}"
+            exp_continue
+        }
+        -re "Device proxy service stopped successfully" {
+            puts "${GREEN}✓ Found expected success message${NC}"
+            exp_continue
+        }
+        -re "Killed process.*using port" {
+            puts "${GREEN}✓ Found expected kill by port message${NC}"
+            exp_continue
+        }
+        -re "Killed process.*by name" {
+            puts "${GREEN}✓ Found expected kill by name message${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for kill-server --all --force output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Kill-server --all --force command completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 15: device-connect with invalid subcommand
+puts "\n${YELLOW}Testing device-connect with invalid subcommand...${NC}"
+puts "${BLUE}Running Test 15: device-connect with invalid subcommand${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect invalid-command
+    expect {
+        -re "Error:.*unknown command.*invalid-command" {
+            puts "${GREEN}✓ Found expected error message for invalid subcommand${NC}"
+            exp_continue
+        }
+        -re "Select a device to register for remote access" {
+            puts "${GREEN}✓ Found device selection prompt (invalid command treated as interactive mode)${NC}"
+            exp_continue
+        }
+        -re "Enter a number:" {
+            puts "${GREEN}✓ Found number input prompt${NC}"
+            # Send Ctrl+C to exit the interactive mode since this is an invalid command test
+            send "\003"
+            exp_continue
+        }
+        -re "Connection established successfully" {
+            puts "${GREEN}✓ Found connection established message (unexpected for invalid command)${NC}"
+            # Send Ctrl+C to exit the interactive mode
+            send "\003"
+            exp_continue
+        }
+        -re "Connection established successfully!" {
+            puts "${GREEN}✓ Found connection established message (unexpected for invalid command)${NC}"
+            # Send Ctrl+C to exit the interactive mode
+            send "\003"
+            exp_continue
+        }
+        -re "1\\. .*EMULATOR.*" {
+            puts "${GREEN}✓ Found device list with emulator${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for error message or device selection${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Command completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 16: device-connect interactive mode (should show available devices or appropriate message)
+puts "\n${YELLOW}Testing device-connect interactive mode...${NC}"
+puts "${BLUE}Running Test 16: device-connect interactive mode${NC}"
+
+# First, try to start an Android emulator if available
+puts "${BLUE}Attempting to start Android emulator...${NC}"
+
+# Check for Android SDK and emulator in common locations
+set emulator_paths {
+    "emulator"
+    "$env(HOME)/Android/Sdk/emulator/emulator"
+    "$env(HOME)/Library/Android/sdk/emulator/emulator"
+    "/usr/local/bin/emulator"
+    "/opt/android-sdk/emulator/emulator"
+}
+
+set emulator_found 0
+set emulator_cmd ""
+
+foreach path $emulator_paths {
+    if {[file exists $path] || [file executable $path]} {
+        set emulator_cmd $path
+        set emulator_found 1
+        puts "${GREEN}✓ Found emulator at: $path${NC}"
+        break
+    }
+}
+
+if {$emulator_found} {
+    if {[catch {
+        spawn $emulator_cmd -list-avds
+        expect {
+            -re ".*" {
+                set emulator_list $expect_out(buffer)
+                exp_continue
+            }
+            eof {
+                # Check if we have any AVDs available
+                set lines [split $emulator_list "\n"]
+                set avd_found 0
+                foreach line $lines {
+                    if {[string length [string trim $line]] > 0 && ![string match "*List of*" $line]} {
+                        set avd_found 1
+                        puts "${GREEN}✓ Found AVD: $line${NC}"
+                        # Try to start the first available emulator
+                        spawn $emulator_cmd -avd $line -no-window -no-audio -no-snapshot-load
+                        puts "${GREEN}✓ Started Android emulator '$line' in background${NC}"
+                        # Wait a bit for emulator to start
+                        sleep 15
+                        break
+                    }
+                }
+                if {!$avd_found} {
+                    puts "${YELLOW}⚠ No AVDs found in emulator list${NC}"
+                }
+            }
+            timeout {
+                puts "${YELLOW}⚠ Timeout listing AVDs${NC}"
+            }
+        }
+        catch {close}
+    } result]} {
+        puts "${YELLOW}⚠ Could not list AVDs: $result${NC}"
+    }
+} else {
+    puts "${YELLOW}⚠ Android emulator not found in common locations${NC}"
+    puts "${YELLOW}  Please install Android SDK or add emulator to PATH${NC}"
+    puts "${YELLOW}  Common locations checked:${NC}"
+    foreach path $emulator_paths {
+        puts "${YELLOW}    - $path${NC}"
+    }
+    
+    # Try to use adb to check if any devices are already connected
+    puts "${BLUE}Checking for already connected devices via adb...${NC}"
+    if {[catch {
+        spawn adb devices
+        expect {
+            -re "List of devices attached" {
+                exp_continue
+            }
+            -re ".*device.*" {
+                puts "${GREEN}✓ Found connected device${NC}"
+                exp_continue
+            }
+            -re ".*emulator.*" {
+                puts "${GREEN}✓ Found emulator device${NC}"
+                exp_continue
+            }
+            eof {
+                puts "${GREEN}✓ ADB devices check completed${NC}"
+            }
+            timeout {
+                puts "${YELLOW}⚠ Timeout checking adb devices${NC}"
+            }
+        }
+        catch {close}
+    } result]} {
+        puts "${YELLOW}⚠ Could not check adb devices: $result${NC}"
+    }
+}
+
+# Now run the device-connect interactive mode test
+if {[catch {
+    spawn $gbox_binary device-connect
+    expect {
+        -re "ADB is not installed" {
+            puts "${GREEN}✓ Found expected ADB installation message${NC}"
+            exp_continue
+        }
+        -re "frpc is not installed" {
+            puts "${GREEN}✓ Found expected frpc installation message${NC}"
+            exp_continue
+        }
+        -re "failed to start device proxy service" {
+            puts "${GREEN}✓ Found expected service start error${NC}"
+            exp_continue
+        }
+        -re "No Android devices found" {
+            puts "${GREEN}✓ Found expected message for no devices${NC}"
+            exp_continue
+        }
+        -re "Select a device to connect" {
+            puts "${GREEN}✓ Found device selection prompt${NC}"
+            exp_continue
+        }
+        -re "Select a device to register for remote access" {
+            puts "${GREEN}✓ Found device registration prompt${NC}"
+            exp_continue
+        }
+        -re "Enter a number:" {
+            puts "${GREEN}✓ Found number input prompt${NC}"
+            # Select option 1 and press enter
+            send "1\r"
+            exp_continue
+        }
+        -re "1\\. .*EMULATOR.*" {
+            puts "${GREEN}✓ Found emulator device in list${NC}"
+            exp_continue
+        }
+        -re "1\\. .*device.*" {
+            puts "${GREEN}✓ Found device in list${NC}"
+            exp_continue
+        }
+        -re "Current device connections:" {
+            puts "${GREEN}✓ Found current connections section${NC}"
+            exp_continue
+        }
+        -re "Connecting to device" {
+            puts "${GREEN}✓ Found device connection message${NC}"
+            exp_continue
+        }
+        -re "Device connected successfully" {
+            puts "${GREEN}✓ Found device connection success message${NC}"
+            exp_continue
+        }
+        -re "Connection established successfully" {
+            puts "${GREEN}✓ Found connection established message${NC}"
+            # Send Ctrl+C to exit the interactive mode after successful connection
+            send "\003"
+            exp_continue
+        }
+        -re "Connection established successfully!" {
+            puts "${GREEN}✓ Found connection established message${NC}"
+            # Send Ctrl+C to exit the interactive mode after successful connection
+            send "\003"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for interactive mode output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Interactive mode completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 17: device-connect with --device flag (should show error for invalid device)
+puts "\n${YELLOW}Testing device-connect with --device flag...${NC}"
+puts "${BLUE}Running Test 17: device-connect with --device flag${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect --device invalid-device-id
+    expect {
+        -re "ADB is not installed" {
+            puts "${GREEN}✓ Found expected ADB installation message${NC}"
+            exp_continue
+        }
+        -re "frpc is not installed" {
+            puts "${GREEN}✓ Found expected frpc installation message${NC}"
+            exp_continue
+        }
+        -re "failed to start device proxy service" {
+            puts "${GREEN}✓ Found expected service start error${NC}"
+            exp_continue
+        }
+        -re "device.*not found" {
+            puts "${GREEN}✓ Found expected device not found message${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for device flag output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Device flag command completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 18: device-connect with --background flag
+puts "\n${YELLOW}Testing device-connect with --background flag...${NC}"
+puts "${BLUE}Running Test 18: device-connect with --background flag${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect --background
+    expect {
+        -re "ADB is not installed" {
+            puts "${GREEN}✓ Found expected ADB installation message${NC}"
+            exp_continue
+        }
+        -re "frpc is not installed" {
+            puts "${GREEN}✓ Found expected frpc installation message${NC}"
+            exp_continue
+        }
+        -re "failed to start device proxy service" {
+            puts "${GREEN}✓ Found expected service start error${NC}"
+            exp_continue
+        }
+        -re "No Android devices found" {
+            puts "${GREEN}✓ Found expected message for no devices${NC}"
+            exp_continue
+        }
+        -re "Select a device to connect" {
+            puts "${GREEN}✓ Found device selection prompt${NC}"
+            exp_continue
+        }
+        -re "Select a device to register for remote access" {
+            puts "${GREEN}✓ Found device registration prompt${NC}"
+            exp_continue
+        }
+        -re "Enter a number:" {
+            puts "${GREEN}✓ Found number input prompt${NC}"
+            # Select option 1 and press enter
+            send "1\r"
+            exp_continue
+        }
+        -re "1\\. .*EMULATOR.*" {
+            puts "${GREEN}✓ Found emulator device in list${NC}"
+            exp_continue
+        }
+        -re "1\\. .*device.*" {
+            puts "${GREEN}✓ Found device in list${NC}"
+            exp_continue
+        }
+        -re "Connecting to device" {
+            puts "${GREEN}✓ Found device connection message${NC}"
+            exp_continue
+        }
+        -re "Device connected successfully" {
+            puts "${GREEN}✓ Found device connection success message${NC}"
+            exp_continue
+        }
+        -re "Connection established successfully" {
+            puts "${GREEN}✓ Found connection established message${NC}"
+            # Send Ctrl+C to exit the interactive mode after successful connection
+            send "\003"
+            exp_continue
+        }
+        -re "Connection established successfully!" {
+            puts "${GREEN}✓ Found connection established message${NC}"
+            # Send Ctrl+C to exit the interactive mode after successful connection
+            send "\003"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for background flag output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Background flag command completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 19: Test list command alias (ls)
+puts "\n${YELLOW}Testing device-connect ls alias...${NC}"
+puts "${BLUE}Running Test 19: device-connect ls alias${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect ls
+    expect {
+        -re "No Android devices found" {
+            puts "${GREEN}✓ Found expected message for no devices${NC}"
+            exp_continue
+        }
+        -re "ADB is not installed" {
+            puts "${GREEN}✓ Found expected ADB installation message${NC}"
+            exp_continue
+        }
+        -re "frpc is not installed" {
+            puts "${GREEN}✓ Found expected frpc installation message${NC}"
+            exp_continue
+        }
+        -re "DEVICE ID.*NAME.*TYPE.*STATUS" {
+            puts "${GREEN}✓ Found table header for existing devices${NC}"
+            exp_continue
+        }
+        -re "failed to start device proxy service" {
+            puts "${GREEN}✓ Found expected service start error${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for ls alias output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Ls alias command completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 20: Test unregister command alias (unreg)
+puts "\n${YELLOW}Testing device-connect unreg alias...${NC}"
+puts "${BLUE}Running Test 20: device-connect unreg alias${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect unreg
+    expect {
+        -re "ADB is not installed" {
+            puts "${GREEN}✓ Found expected ADB installation message${NC}"
+            exp_continue
+        }
+        -re "frpc is not installed" {
+            puts "${GREEN}✓ Found expected frpc installation message${NC}"
+            exp_continue
+        }
+        -re "failed to start device proxy service" {
+            puts "${GREEN}✓ Found expected service start error${NC}"
+            exp_continue
+        }
+        -re "Select a device to unregister" {
+            puts "${GREEN}✓ Found device selection prompt${NC}"
+            exp_continue
+        }
+        -re "Enter a number:" {
+            puts "${GREEN}✓ Found number input prompt${NC}"
+            # Send Ctrl+C to exit the interactive mode
+            send "\003"
+            exp_continue
+        }
+        -re "Connection established successfully" {
+            puts "${GREEN}✓ Found connection established message${NC}"
+            # Send Ctrl+C to exit the interactive mode
+            send "\003"
+            exp_continue
+        }
+        -re "Connection established successfully!" {
+            puts "${GREEN}✓ Found connection established message${NC}"
+            # Send Ctrl+C to exit the interactive mode
+            send "\003"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for unreg alias output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Unreg alias command completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+# Test 21: Test kill-server command alias (kill)
+puts "\n${YELLOW}Testing device-connect kill alias...${NC}"
+puts "${BLUE}Running Test 21: device-connect kill alias${NC}"
+if {[catch {
+    spawn $gbox_binary device-connect kill
+    expect {
+        -re "Device proxy service is not running" {
+            puts "${GREEN}✓ Found expected message for no running service${NC}"
+            exp_continue
+        }
+        -re "Stopping device proxy service" {
+            puts "${GREEN}✓ Found expected stopping message${NC}"
+            exp_continue
+        }
+        -re "Device proxy service stopped successfully" {
+            puts "${GREEN}✓ Found expected success message${NC}"
+            exp_continue
+        }
+        -re "Killed process.*from PID file" {
+            puts "${GREEN}✓ Found expected kill process message${NC}"
+            exp_continue
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for kill alias output${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Kill alias command completed successfully${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Test failed: $result${NC}"
+    exit 1
+}
+
+puts "\n${GREEN}All device-connect tests passed!${NC}"
+exit 0

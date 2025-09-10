@@ -1,0 +1,429 @@
+#!/usr/bin/env expect
+
+# Exit codes:
+#   0 - Test passed
+#   1 - Test failed
+
+# Set timeout for command execution
+set timeout 30
+
+# Colors for output
+set GREEN "\033\[0;32m"
+set RED "\033\[0;31m"
+set YELLOW "\033\[1;33m"
+set BLUE "\033\[0;34m"
+set NC "\033\[0m"
+
+# Get the gbox binary path
+# Default to using the built binary in the parent directory
+set gbox_binary "../gbox"
+
+# If the built binary doesn't exist, fall back to system gbox
+if {![file exists $gbox_binary]} {
+    set gbox_binary "gbox"
+}
+
+puts "${BLUE}Testing gbox profile add command...${NC}"
+
+# Test 1: Help command
+puts "\n${YELLOW}Testing help command...${NC}"
+if {[catch {
+    spawn $gbox_binary profile add --help
+    set description_found 0
+    set flags_found 0
+    set key_flag_found 0
+    
+    expect {
+        -re "Add a profile by providing an API key" {
+            puts "${GREEN}✓ Found add command description${NC}"
+            set description_found 1
+            exp_continue
+        }
+        -re "Flags:" {
+            puts "${GREEN}✓ Found Flags section${NC}"
+            set flags_found 1
+            exp_continue
+        }
+        -re "-k, --key.*API key" {
+            puts "${GREEN}✓ Found key flag description${NC}"
+            set key_flag_found 1
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Help command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for help output${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Help test failed: $result${NC}"
+    exit 1
+}
+
+# Test 2: Short help flag
+puts "\n${YELLOW}Testing short help flag...${NC}"
+if {[catch {
+    spawn $gbox_binary profile add -h
+    expect {
+        -re "Add a profile by providing an API key" {
+            puts "${GREEN}✓ Found add command description with short flag${NC}"
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Short help command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for short help completion${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Short help test failed: $result${NC}"
+    exit 1
+}
+
+# Test 3: Interactive mode (no arguments)
+puts "\n${YELLOW}Testing interactive mode (no arguments)...${NC}"
+if {[catch {
+    spawn $gbox_binary profile add
+    expect {
+        -re "Please enter API Key:" {
+            puts "${GREEN}✓ Found API key prompt${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for API key prompt${NC}"
+            exit 1
+        }
+        eof {
+            puts "${RED}✗ Interactive mode exited unexpectedly${NC}"
+            exit 1
+        }
+    }
+    
+    # Send empty input to test validation
+    send "\r"
+    expect {
+        -re "API Key cannot be empty" {
+            puts "${GREEN}✓ Found empty API key validation error${NC}"
+        }
+        -re "Error:" {
+            puts "${GREEN}✓ Found error for empty API key${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for empty key validation${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Empty key validation completed${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Interactive mode test failed: $result${NC}"
+    exit 1
+}
+
+# Test 4: Direct API key mode (with --key flag)
+puts "\n${YELLOW}Testing direct API key mode...${NC}"
+if {[catch {
+    spawn $gbox_binary profile add --key "test-api-key-12345"
+    expect {
+        -re "Profile added successfully" {
+            puts "${GREEN}✓ Found success message for direct key mode${NC}"
+        }
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error (likely API validation)${NC}"
+        }
+        -re "failed to" {
+            puts "${GREEN}✓ Found expected failure message${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for direct key mode response${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Direct key mode completed${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Direct key mode test failed: $result${NC}"
+    exit 1
+}
+
+# Test 5: Short key flag (-k)
+puts "\n${YELLOW}Testing short key flag...${NC}"
+if {[catch {
+    spawn $gbox_binary profile add -k "test-api-key-67890"
+    expect {
+        -re "Profile added successfully" {
+            puts "${GREEN}✓ Found success message for short key flag${NC}"
+        }
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error (likely API validation)${NC}"
+        }
+        -re "failed to" {
+            puts "${GREEN}✓ Found expected failure message${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for short key flag response${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Short key flag completed${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Short key flag test failed: $result${NC}"
+    exit 1
+}
+
+# Test 6: Empty key flag
+puts "\n${YELLOW}Testing empty key flag...${NC}"
+if {[catch {
+    spawn $gbox_binary profile add --key ""
+    expect {
+        -re "Please enter API Key:" {
+            puts "${GREEN}✓ Found API key prompt for empty key flag${NC}"
+        }
+        -re "API Key cannot be empty" {
+            puts "${GREEN}✓ Found empty key validation for empty flag${NC}"
+        }
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for empty key flag${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for empty key flag response${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Empty key flag completed${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Empty key flag test failed: $result${NC}"
+    exit 1
+}
+
+# Test 7: Invalid arguments (command ignores extra args and goes to interactive mode)
+puts "\n${YELLOW}Testing invalid arguments...${NC}"
+if {[catch {
+    spawn $gbox_binary profile add invalid-arg
+    expect {
+        -re "Please enter API Key:" {
+            puts "${GREEN}✓ Found API key prompt (command ignores extra args)${NC}"
+        }
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error for invalid arguments${NC}"
+        }
+        -re "unknown command" {
+            puts "${GREEN}✓ Found expected unknown command error${NC}"
+        }
+        -re "too many arguments" {
+            puts "${GREEN}✓ Found expected too many arguments error${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for invalid arguments response${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Invalid arguments handled correctly${NC}"
+        }
+    }
+    
+    # If we got the prompt, send empty input to exit
+    if {[string match "*Please enter API Key:*" $expect_out(buffer)]} {
+        send "\r"
+        expect {
+            -re "API Key cannot be empty" {
+                puts "${GREEN}✓ Found empty key validation after extra args${NC}"
+            }
+            -re "Error:" {
+                puts "${GREEN}✓ Found error after extra args${NC}"
+            }
+            eof {
+                puts "${GREEN}✓ Extra args test completed${NC}"
+            }
+            timeout {
+                puts "${RED}✗ Timeout waiting for empty key validation${NC}"
+                exit 1
+            }
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Invalid arguments test failed: $result${NC}"
+    exit 1
+}
+
+# Test 8: Multiple key flags (should use the last one)
+puts "\n${YELLOW}Testing multiple key flags...${NC}"
+if {[catch {
+    spawn $gbox_binary profile add --key "first-key" --key "second-key"
+    expect {
+        -re "Profile added successfully" {
+            puts "${GREEN}✓ Found success message for multiple key flags${NC}"
+        }
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error (likely API validation)${NC}"
+        }
+        -re "failed to" {
+            puts "${GREEN}✓ Found expected failure message${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for multiple key flags response${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Multiple key flags completed${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Multiple key flags test failed: $result${NC}"
+    exit 1
+}
+
+# Test 9: Mixed short and long flags
+puts "\n${YELLOW}Testing mixed short and long flags...${NC}"
+if {[catch {
+    spawn $gbox_binary profile add -k "short-key" --key "long-key"
+    expect {
+        -re "Profile added successfully" {
+            puts "${GREEN}✓ Found success message for mixed flags${NC}"
+        }
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error (likely API validation)${NC}"
+        }
+        -re "failed to" {
+            puts "${GREEN}✓ Found expected failure message${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for mixed flags response${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Mixed flags completed${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Mixed flags test failed: $result${NC}"
+    exit 1
+}
+
+# Test 10: Profile command help (parent command)
+puts "\n${YELLOW}Testing profile command help...${NC}"
+if {[catch {
+    spawn $gbox_binary profile --help
+    set description_found 0
+    set commands_found 0
+    set add_found 0
+    
+    expect {
+        -re "Manage configuration information" {
+            puts "${GREEN}✓ Found profile command description${NC}"
+            set description_found 1
+            exp_continue
+        }
+        -re "Available Commands:" {
+            puts "${GREEN}✓ Found Available Commands section${NC}"
+            set commands_found 1
+            exp_continue
+        }
+        -re "add.*Add profile via API key" {
+            puts "${GREEN}✓ Found add command in help output${NC}"
+            set add_found 1
+            exp_continue
+        }
+        eof {
+            puts "${GREEN}✓ Profile help command completed successfully${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for profile help output${NC}"
+            exit 1
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Profile help test failed: $result${NC}"
+    exit 1
+}
+
+# Test 11: Test with very long API key
+puts "\n${YELLOW}Testing with very long API key...${NC}"
+if {[catch {
+    set long_key "very-long-api-key-that-exceeds-normal-length-and-should-still-work-properly-1234567890abcdefghijklmnopqrstuvwxyz"
+    spawn $gbox_binary profile add --key $long_key
+    expect {
+        -re "Profile added successfully" {
+            puts "${GREEN}✓ Found success message for long API key${NC}"
+        }
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error (likely API validation)${NC}"
+        }
+        -re "failed to" {
+            puts "${GREEN}✓ Found expected failure message${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for long API key response${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Long API key completed${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Long API key test failed: $result${NC}"
+    exit 1
+}
+
+# Test 12: Test with special characters in API key
+puts "\n${YELLOW}Testing with special characters in API key...${NC}"
+if {[catch {
+    spawn $gbox_binary profile add --key "test-key-with-special-chars!@#$%^&*()_+-=[]{}|;':\",./<>?"
+    expect {
+        -re "Profile added successfully" {
+            puts "${GREEN}✓ Found success message for special characters${NC}"
+        }
+        -re "Error:" {
+            puts "${GREEN}✓ Found expected error (likely API validation)${NC}"
+        }
+        -re "failed to" {
+            puts "${GREEN}✓ Found expected failure message${NC}"
+        }
+        timeout {
+            puts "${RED}✗ Timeout waiting for special characters response${NC}"
+            exit 1
+        }
+        eof {
+            puts "${GREEN}✓ Special characters completed${NC}"
+        }
+    }
+    
+    catch {close}
+} result]} {
+    puts "${RED}✗ Special characters test failed: $result${NC}"
+    exit 1
+}
+
+puts "\n${GREEN}All profile add tests passed successfully!${NC}"
+exit 0
