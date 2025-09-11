@@ -43,24 +43,6 @@ func runPrune(opts *PruneOptions) error {
 	gboxHome := config.GetGboxHome()
 	deviceProxyHome := config.GetDeviceProxyHome()
 
-	// Determine what to clean
-	var itemsToClean []string
-
-	// Always clean these items
-	itemsToClean = append(itemsToClean, "device proxy cache (version.json, binaries, assets)")
-	itemsToClean = append(itemsToClean, "log files (*.log)")
-	itemsToClean = append(itemsToClean, "PID files (*.pid)")
-
-	// Show what will be cleaned
-	fmt.Println("The following items will be cleaned:")
-	for _, item := range itemsToClean {
-		fmt.Printf("  - %s\n", item)
-	}
-	if opts.All {
-		fmt.Println("  - credentials.json")
-		fmt.Println("  - profiles.toml")
-	}
-
 	// Ask for confirmation if not forced
 	if !opts.Force {
 		fmt.Print("\nAre you sure you want to continue? (y/N): ")
