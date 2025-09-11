@@ -69,6 +69,7 @@ func init() {
 	rootCmd.AddCommand(NewVersionCommand())
 	rootCmd.AddCommand(NewAdbExposeCommand())
 	rootCmd.AddCommand(NewDeviceConnectCommand())
+	rootCmd.AddCommand(NewPruneCommand())
 
 	// Enable custom help output ordering
 	setupHelpCommand(rootCmd)
@@ -97,7 +98,7 @@ func executeScript(cmdName string, args []string) error {
 	scriptPath := filepath.Join(scriptDir, fmt.Sprintf("gbox-%s", cmdName))
 
 	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-		return fmt.Errorf("Script not found: %s", scriptPath)
+		return fmt.Errorf("script not found: %s", scriptPath)
 	}
 
 	cmd := exec.Command(scriptPath)
