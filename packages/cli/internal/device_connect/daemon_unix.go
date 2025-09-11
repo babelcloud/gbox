@@ -21,7 +21,7 @@ func StartDeviceProxyService() error {
 	}
 
 	// Create CLI cache directory
-	cliCacheHome := config.GetCliCacheHome()
+	cliCacheHome := config.GetGboxCliHome()
 	if err := os.MkdirAll(cliCacheHome, 0755); err != nil {
 		return fmt.Errorf("failed to create CLI cache directory: %v", err)
 	}

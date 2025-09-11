@@ -113,8 +113,8 @@ func GetGboxHome() string {
 	return v.GetString("gbox.home")
 }
 
-// GetCliCacheHome returns the CLI cache directory
-func GetCliCacheHome() string {
+// GetGboxCliHome returns the CLI cache directory
+func GetGboxCliHome() string {
 	// Check if cli.cache.home is explicitly set
 	if cliCacheHome := v.GetString("cli.cache.home"); cliCacheHome != "" {
 		return cliCacheHome

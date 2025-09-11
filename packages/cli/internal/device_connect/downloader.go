@@ -43,7 +43,7 @@ type VersionInfo struct {
 
 // getVersionCachePath returns the path to the version cache file
 func getVersionCachePath() string {
-	cliCacheHome := config.GetCliCacheHome()
+	cliCacheHome := config.GetGboxCliHome()
 	return filepath.Join(cliCacheHome, "version.json")
 }
 
@@ -66,7 +66,7 @@ func loadVersionInfo() (*VersionInfo, error) {
 // saveVersionInfo saves version information to cache
 func saveVersionInfo(info *VersionInfo) error {
 	cachePath := getVersionCachePath()
-	cliCacheHome := config.GetCliCacheHome()
+	cliCacheHome := config.GetGboxCliHome()
 
 	// Ensure directory exists
 	if err := os.MkdirAll(cliCacheHome, 0755); err != nil {
@@ -83,7 +83,7 @@ func saveVersionInfo(info *VersionInfo) error {
 
 // CheckAndDownloadDeviceProxy checks if update is needed and downloads if necessary
 func CheckAndDownloadDeviceProxy() (string, error) {
-	cliCacheHome := config.GetCliCacheHome()
+	cliCacheHome := config.GetGboxCliHome()
 	binaryName := "gbox-device-proxy"
 	if runtime.GOOS == "windows" {
 		binaryName += ".exe"
@@ -413,7 +413,7 @@ func findDeviceProxyAssetForPlatform(release *GitHubRelease) (string, string, er
 // downloadAndExtractBinary downloads and extracts the binary file
 func downloadAndExtractBinary(assetURL, assetName string) (string, error) {
 	// Get CLI cache directory first
-	cliCacheHome := config.GetCliCacheHome()
+	cliCacheHome := config.GetGboxCliHome()
 	if err := os.MkdirAll(cliCacheHome, 0755); err != nil {
 		return "", err
 	}

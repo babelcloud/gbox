@@ -41,7 +41,7 @@ func NewPruneCommand() *cobra.Command {
 func runPrune(opts *PruneOptions) error {
 	// Get cache directories
 	gboxHome := config.GetGboxHome()
-	cliCacheHome := config.GetCliCacheHome()
+	cliCacheHome := config.GetGboxCliHome()
 
 	// Ask for confirmation if not forced
 	if !opts.Force {

@@ -160,7 +160,7 @@ func TestVersionCache(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Temporarily override CLI cache home for testing
-	originalHome := config.GetCliCacheHome()
+	originalHome := config.GetGboxCliHome()
 	defer func() {
 		// Restore original home
 		os.Setenv("GBOX_CLI_CACHE_HOME", originalHome)

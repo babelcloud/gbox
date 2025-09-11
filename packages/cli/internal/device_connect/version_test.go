@@ -20,7 +20,7 @@ func TestVersionMatchingLogic(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Temporarily override device proxy home for testing
-	originalHome := config.GetCliCacheHome()
+	originalHome := config.GetGboxCliHome()
 	defer func() {
 		os.Setenv("GBOX_CLI_CACHE_HOME", originalHome)
 	}()
@@ -164,7 +164,7 @@ func TestVersionCacheOperations(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Temporarily override device proxy home for testing
-	originalHome := config.GetCliCacheHome()
+	originalHome := config.GetGboxCliHome()
 	defer func() {
 		os.Setenv("GBOX_CLI_CACHE_HOME", originalHome)
 	}()
@@ -281,7 +281,7 @@ func TestVersionMatchingPriority(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Temporarily override device proxy home for testing
-	originalHome := config.GetCliCacheHome()
+	originalHome := config.GetGboxCliHome()
 	defer func() {
 		os.Setenv("GBOX_CLI_CACHE_HOME", originalHome)
 	}()

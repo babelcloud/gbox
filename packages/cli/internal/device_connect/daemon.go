@@ -93,7 +93,7 @@ func FindDeviceProxyBinary() (string, error) {
 	}
 
 	// Priority 3: Check CLI cache directory (where we download binaries)
-	cliCacheHome := config.GetCliCacheHome()
+	cliCacheHome := config.GetGboxCliHome()
 	deviceProxyBinaryPath := filepath.Join(cliCacheHome, binaryName)
 	if debug {
 		fmt.Fprintf(os.Stderr, "[DEBUG] Checking device proxy home: %s\n", deviceProxyBinaryPath)

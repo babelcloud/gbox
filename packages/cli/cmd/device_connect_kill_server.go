@@ -49,7 +49,7 @@ func NewDeviceConnectKillServerCommand() *cobra.Command {
 
 func ExecuteDeviceConnectKillServer(cmd *cobra.Command, opts *DeviceConnectKillServerOptions) error {
 	// Check if PID file exists first
-	cliCacheHome := config.GetCliCacheHome()
+	cliCacheHome := config.GetGboxCliHome()
 	pidFile := filepath.Join(cliCacheHome, "device-proxy.pid")
 
 	pidFileExists := false

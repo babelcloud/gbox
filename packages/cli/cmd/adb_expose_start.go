@@ -61,7 +61,7 @@ func ExecuteAdbExpose(cmd *cobra.Command, opts *AdbExposeOptions, args []string)
 		return fmt.Errorf("failed to get API key: %v", err)
 	}
 
-	logPath := fmt.Sprintf("%s/gbox-adb-expose-%s-%d.log", config.GetCliCacheHome(), opts.BoxID, localPort)
+	logPath := fmt.Sprintf("%s/gbox-adb-expose-%s-%d.log", config.GetGboxCliHome(), opts.BoxID, localPort)
 	if shouldReturn, err := adb_expose.DaemonizeIfNeeded(opts.Foreground, logPath, opts.BoxID, true); shouldReturn {
 		return err
 	}
