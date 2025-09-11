@@ -69,6 +69,7 @@ func init() {
 	rootCmd.AddCommand(NewVersionCommand())
 	rootCmd.AddCommand(NewAdbExposeCommand())
 	rootCmd.AddCommand(NewDeviceConnectCommand())
+	rootCmd.AddCommand(NewCacheCommand())
 
 	// Enable custom help output ordering
 	setupHelpCommand(rootCmd)
