@@ -53,6 +53,7 @@ func StartDeviceProxyService() error {
 	cmd.Stdout = logFd
 	cmd.Stderr = logFd
 	cmd.Env = env
+	cmd.Dir = cliCacheHome // Set working directory to CLI cache home
 
 	// Set process group to make child process independent (Windows doesn't support Setpgid)
 	cmd.SysProcAttr = &syscall.SysProcAttr{}

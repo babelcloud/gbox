@@ -113,17 +113,6 @@ func GetGboxHome() string {
 	return v.GetString("gbox.home")
 }
 
-// GetDeviceProxyHome returns the device proxy home directory
-func GetDeviceProxyHome() string {
-	// Check if device_proxy.home is explicitly set
-	if deviceProxyHome := v.GetString("device_proxy.home"); deviceProxyHome != "" {
-		return deviceProxyHome
-	}
-
-	// Otherwise, use gbox.home + "/device-proxy"
-	return filepath.Join(GetGboxHome(), "device-proxy")
-}
-
 // GetCliCacheHome returns the CLI cache directory
 func GetCliCacheHome() string {
 	// Check if cli.cache.home is explicitly set
