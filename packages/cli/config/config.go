@@ -44,6 +44,7 @@ func init() {
 	v.BindEnv("mcp.server.url", "MCP_SERVER_URL") // Bind MCP server URL env var
 	v.BindEnv("gbox.home", "GBOX_HOME")
 	v.BindEnv("device_proxy.home", "DEVICE_PROXY_HOME")
+	v.BindEnv("cli.cache.home", "GBOX_CLI_CACHE_HOME") // Bind CLI cache home env var
 	v.BindEnv("profile.path", "GBOX_PROFILE_PATH") // Bind profile path env var
 	v.BindEnv("github.client_secret", "GBOX_GITHUB_CLIENT_SECRET")
 
@@ -121,4 +122,15 @@ func GetDeviceProxyHome() string {
 
 	// Otherwise, use gbox.home + "/device-proxy"
 	return filepath.Join(GetGboxHome(), "device-proxy")
+}
+
+// GetCliCacheHome returns the CLI cache directory
+func GetCliCacheHome() string {
+	// Check if cli.cache.home is explicitly set
+	if cliCacheHome := v.GetString("cli.cache.home"); cliCacheHome != "" {
+		return cliCacheHome
+	}
+
+	// Otherwise, use gbox.home + "/cli"
+	return filepath.Join(GetGboxHome(), "cli")
 }

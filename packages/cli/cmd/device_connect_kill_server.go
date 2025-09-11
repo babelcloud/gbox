@@ -49,8 +49,8 @@ func NewDeviceConnectKillServerCommand() *cobra.Command {
 
 func ExecuteDeviceConnectKillServer(cmd *cobra.Command, opts *DeviceConnectKillServerOptions) error {
 	// Check if PID file exists first
-	deviceProxyHome := config.GetDeviceProxyHome()
-	pidFile := filepath.Join(deviceProxyHome, "device-proxy.pid")
+	cliCacheHome := config.GetCliCacheHome()
+	pidFile := filepath.Join(cliCacheHome, "device-proxy.pid")
 
 	pidFileExists := false
 	var pidFromFile int

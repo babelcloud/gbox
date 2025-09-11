@@ -29,7 +29,7 @@ type PidInfo struct {
 }
 
 func ensureGboxDir() error {
-	dir := config.GetGboxHome()
+	dir := config.GetCliCacheHome()
 	return os.MkdirAll(dir, 0700)
 }
 
@@ -38,11 +38,11 @@ const pidFileNameSuffix = ".pid"
 const logFileNameSuffix = ".log"
 
 func pidFilePath(boxId string, localPort int) string {
-	return config.GetGboxHome() + "/" + pidFileNamePrefix + boxId + "-" + strconv.Itoa(localPort) + pidFileNameSuffix
+	return config.GetCliCacheHome() + "/" + pidFileNamePrefix + boxId + "-" + strconv.Itoa(localPort) + pidFileNameSuffix
 }
 
 func logFilePath(boxId string, localPort int) string {
-	return config.GetGboxHome() + "/" + pidFileNamePrefix + boxId + "-" + strconv.Itoa(localPort) + logFileNameSuffix
+	return config.GetCliCacheHome() + "/" + pidFileNamePrefix + boxId + "-" + strconv.Itoa(localPort) + logFileNameSuffix
 }
 
 const pidFilePattern = "gbox-adb-expose-*.pid"
@@ -92,7 +92,7 @@ func RemoveLogFile(boxId string, localPort int) error {
 }
 
 func ListPidFiles() ([]PidInfo, error) {
-	dir := config.GetGboxHome()
+	dir := config.GetCliCacheHome()
 	files, err := filepath.Glob(dir + "/" + pidFilePattern)
 	if err != nil {
 		return nil, err

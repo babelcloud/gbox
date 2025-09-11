@@ -20,14 +20,14 @@ func StartDeviceProxyService() error {
 		return fmt.Errorf("device proxy binary not found: %v", err)
 	}
 
-	// Create device proxy home directory
-	deviceProxyHome := config.GetDeviceProxyHome()
-	if err := os.MkdirAll(deviceProxyHome, 0755); err != nil {
-		return fmt.Errorf("failed to create device proxy home directory: %v", err)
+	// Create CLI cache directory
+	cliCacheHome := config.GetCliCacheHome()
+	if err := os.MkdirAll(cliCacheHome, 0755); err != nil {
+		return fmt.Errorf("failed to create CLI cache directory: %v", err)
 	}
 
 	// Create log file
-	logFile := filepath.Join(deviceProxyHome, "device-proxy.log")
+	logFile := filepath.Join(cliCacheHome, "device-proxy.log")
 	logFd, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to create log file: %v", err)
@@ -35,7 +35,7 @@ func StartDeviceProxyService() error {
 	defer logFd.Close()
 
 	// Create PID file path
-	pidFile := filepath.Join(deviceProxyHome, "device-proxy.pid")
+	pidFile := filepath.Join(cliCacheHome, "device-proxy.pid")
 
 	// Get API key from current profile
 	apiKey, err := profile.Default.GetEffectiveAPIKey()

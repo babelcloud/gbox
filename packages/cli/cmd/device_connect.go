@@ -175,8 +175,8 @@ func ExecuteDeviceConnect(cmd *cobra.Command, opts *DeviceConnectOptions, args [
 
 func isServiceRunning() (bool, error) {
 	// First check if PID file exists
-	deviceProxyHome := config.GetDeviceProxyHome()
-	pidFile := filepath.Join(deviceProxyHome, "device-proxy.pid")
+	cliCacheHome := config.GetCliCacheHome()
+	pidFile := filepath.Join(cliCacheHome, "device-proxy.pid")
 
 	if _, err := os.Stat(pidFile); os.IsNotExist(err) {
 		return false, nil

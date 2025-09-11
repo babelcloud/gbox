@@ -43,8 +43,8 @@ type VersionInfo struct {
 
 // getVersionCachePath returns the path to the version cache file
 func getVersionCachePath() string {
-	deviceProxyHome := config.GetDeviceProxyHome()
-	return filepath.Join(deviceProxyHome, "version.json")
+	cliCacheHome := config.GetCliCacheHome()
+	return filepath.Join(cliCacheHome, "version.json")
 }
 
 // loadVersionInfo loads version information from cache
@@ -66,10 +66,10 @@ func loadVersionInfo() (*VersionInfo, error) {
 // saveVersionInfo saves version information to cache
 func saveVersionInfo(info *VersionInfo) error {
 	cachePath := getVersionCachePath()
-	deviceProxyHome := config.GetDeviceProxyHome()
+	cliCacheHome := config.GetCliCacheHome()
 
 	// Ensure directory exists
-	if err := os.MkdirAll(deviceProxyHome, 0755); err != nil {
+	if err := os.MkdirAll(cliCacheHome, 0755); err != nil {
 		return err
 	}
 
@@ -83,12 +83,12 @@ func saveVersionInfo(info *VersionInfo) error {
 
 // CheckAndDownloadDeviceProxy checks if update is needed and downloads if necessary
 func CheckAndDownloadDeviceProxy() (string, error) {
-	deviceProxyHome := config.GetDeviceProxyHome()
+	cliCacheHome := config.GetCliCacheHome()
 	binaryName := "gbox-device-proxy"
 	if runtime.GOOS == "windows" {
 		binaryName += ".exe"
 	}
-	binaryPath := filepath.Join(deviceProxyHome, binaryName)
+	binaryPath := filepath.Join(cliCacheHome, binaryName)
 
 	// Check if binary exists
 	if _, err := os.Stat(binaryPath); err != nil {
@@ -412,14 +412,14 @@ func findDeviceProxyAssetForPlatform(release *GitHubRelease) (string, string, er
 
 // downloadAndExtractBinary downloads and extracts the binary file
 func downloadAndExtractBinary(assetURL, assetName string) (string, error) {
-	// Get device proxy home directory first
-	deviceProxyHome := config.GetDeviceProxyHome()
-	if err := os.MkdirAll(deviceProxyHome, 0755); err != nil {
+	// Get CLI cache directory first
+	cliCacheHome := config.GetCliCacheHome()
+	if err := os.MkdirAll(cliCacheHome, 0755); err != nil {
 		return "", err
 	}
 
-	// Download the asset directly to device proxy home directory
-	assetPath := filepath.Join(deviceProxyHome, assetName)
+	// Download the asset directly to CLI cache directory
+	assetPath := filepath.Join(cliCacheHome, assetName)
 	if err := downloadFile(assetURL, assetPath); err != nil {
 		return "", err
 	}
@@ -442,7 +442,7 @@ func downloadAndExtractBinary(assetURL, assetName string) (string, error) {
 		binaryName += ".exe"
 	}
 
-	finalPath := filepath.Join(deviceProxyHome, binaryName)
+	finalPath := filepath.Join(cliCacheHome, binaryName)
 
 	// Remove existing file if it exists (in case it's corrupted)
 	if _, err := os.Stat(finalPath); err == nil {

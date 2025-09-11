@@ -159,14 +159,14 @@ func TestVersionCache(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Temporarily override device proxy home for testing
-	originalHome := config.GetDeviceProxyHome()
+	// Temporarily override CLI cache home for testing
+	originalHome := config.GetCliCacheHome()
 	defer func() {
 		// Restore original home
-		os.Setenv("DEVICE_PROXY_HOME", originalHome)
+		os.Setenv("GBOX_CLI_CACHE_HOME", originalHome)
 	}()
 
-	os.Setenv("DEVICE_PROXY_HOME", tempDir)
+	os.Setenv("GBOX_CLI_CACHE_HOME", tempDir)
 
 	// Test saving and loading version info
 	testInfo := &VersionInfo{
