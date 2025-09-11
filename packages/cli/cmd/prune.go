@@ -68,6 +68,12 @@ func runPrune(opts *PruneOptions) error {
 		errors = append(errors, fmt.Errorf("failed to prune CLI cache: %v", err))
 	}
 
+	// Prune device-proxy directory (created by device proxy binary at runtime)
+	deviceProxyHome := filepath.Join(gboxHome, "device-proxy")
+	if err := pruneDeviceProxyHome(deviceProxyHome, &cleanedItems, &errors); err != nil {
+		errors = append(errors, fmt.Errorf("failed to prune device-proxy directory: %v", err))
+	}
+
 	// Prune credentials and profiles from gbox home (only if --all is specified)
 	if opts.All {
 		if err := pruneCredentialsAndProfiles(gboxHome, &cleanedItems, &errors); err != nil {
@@ -76,14 +82,9 @@ func runPrune(opts *PruneOptions) error {
 	}
 
 	// Report results
-	if len(cleanedItems) > 0 {
-		fmt.Println("\nCleaned cache items:")
-		for _, item := range cleanedItems {
-			fmt.Printf("  - %s\n", item)
-		}
-	} else {
+	if len(cleanedItems) <= 0 {
 		fmt.Println("\nNo cache items found to clean.")
-	}
+	} 
 
 	if len(errors) > 0 {
 		fmt.Println("\nErrors encountered:")
@@ -182,6 +183,22 @@ func pruneCliCache(cliCacheHome string, cleanCredentials bool, cleanedItems *[]s
 		}
 	}
 
+	return nil
+}
+
+// pruneDeviceProxyHome prunes the device-proxy directory created by device proxy binary at runtime
+func pruneDeviceProxyHome(deviceProxyHome string, cleanedItems *[]string, errors *[]error) error {
+	if _, err := os.Stat(deviceProxyHome); os.IsNotExist(err) {
+		return nil // Directory doesn't exist, nothing to clean
+	}
+
+	// Remove the entire device-proxy directory and all its contents
+	if err := os.RemoveAll(deviceProxyHome); err != nil {
+		*errors = append(*errors, fmt.Errorf("failed to remove device-proxy directory: %v", err))
+		return err
+	}
+
+	*cleanedItems = append(*cleanedItems, deviceProxyHome)
 	return nil
 }
 
