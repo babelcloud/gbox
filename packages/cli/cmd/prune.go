@@ -45,18 +45,11 @@ func runPrune(opts *PruneOptions) error {
 
 	// Determine what to clean
 	var itemsToClean []string
-	var allItemsToClean []string
 
 	// Always clean these items
 	itemsToClean = append(itemsToClean, "device proxy cache (version.json, binaries, assets)")
 	itemsToClean = append(itemsToClean, "log files (*.log)")
 	itemsToClean = append(itemsToClean, "PID files (*.pid)")
-
-	// Only clean credentials and profiles if --all is specified
-	if opts.All {
-		allItemsToClean = append(itemsToClean, "credentials.json")
-		allItemsToClean = append(allItemsToClean, "profiles.toml")
-	}
 
 	// Show what will be cleaned
 	fmt.Println("The following items will be cleaned:")
@@ -88,14 +81,14 @@ func runPrune(opts *PruneOptions) error {
 	var cleanedItems []string
 	var errors []error
 
-	// Clean device proxy cache
-	if err := cleanDeviceProxyCache(deviceProxyHome, &cleanedItems, &errors); err != nil {
-		errors = append(errors, fmt.Errorf("failed to clean device proxy cache: %v", err))
+	// Prune device proxy cache
+	if err := pruneDeviceProxyCache(deviceProxyHome, &cleanedItems, &errors); err != nil {
+		errors = append(errors, fmt.Errorf("failed to prune device proxy cache: %v", err))
 	}
 
-	// Clean other cache files in gbox home
-	if err := cleanGboxCache(gboxHome, opts.All, &cleanedItems, &errors); err != nil {
-		errors = append(errors, fmt.Errorf("failed to clean gbox cache: %v", err))
+	// Prune other cache files in gbox home
+	if err := pruneGboxCache(gboxHome, opts.All, &cleanedItems, &errors); err != nil {
+		errors = append(errors, fmt.Errorf("failed to prune gbox cache: %v", err))
 	}
 
 	// Report results
@@ -120,8 +113,8 @@ func runPrune(opts *PruneOptions) error {
 	return nil
 }
 
-// cleanDeviceProxyCache cleans device proxy related cache files
-func cleanDeviceProxyCache(deviceProxyHome string, cleanedItems *[]string, errors *[]error) error {
+// pruneDeviceProxyCache prunes device proxy related cache files
+func pruneDeviceProxyCache(deviceProxyHome string, cleanedItems *[]string, errors *[]error) error {
 	if _, err := os.Stat(deviceProxyHome); os.IsNotExist(err) {
 		return nil // Directory doesn't exist, nothing to clean
 	}
@@ -172,8 +165,8 @@ func cleanDeviceProxyCache(deviceProxyHome string, cleanedItems *[]string, error
 	return nil
 }
 
-// cleanGboxCache cleans other gbox cache files
-func cleanGboxCache(gboxHome string, cleanCredentials bool, cleanedItems *[]string, errors *[]error) error {
+// pruneGboxCache prunes other gbox cache files
+func pruneGboxCache(gboxHome string, cleanCredentials bool, cleanedItems *[]string, errors *[]error) error {
 	if _, err := os.Stat(gboxHome); os.IsNotExist(err) {
 		return nil // Directory doesn't exist, nothing to clean
 	}
