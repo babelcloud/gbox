@@ -1,61 +1,89 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
 	"github.com/spf13/cobra"
 )
 
-// CacheOptions holds command options
-type CacheOptions struct {
+// PruneOptions holds command options
+type PruneOptions struct {
+	All   bool
 	Force bool
 }
 
-// NewCacheCommand creates a new cache command
-func NewCacheCommand() *cobra.Command {
-	opts := &CacheOptions{}
+// NewPruneCommand creates a new prune command
+func NewPruneCommand() *cobra.Command {
+	opts := &PruneOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "cache",
-		Short: "Manage GBOX cache",
-		Long:  `Manage GBOX cache files and directories`,
-	}
-
-	// Add clean subcommand
-	cleanCmd := &cobra.Command{
-		Use:   "clean",
+		Use:   "prune",
 		Short: "Clean GBOX cache",
-		Long:  `Clean all GBOX cache files and directories. This will remove downloaded binaries, version cache, and other cached data.`,
+		Long:  `Clean GBOX cache files and directories. By default, this will clean all cache except login credentials and profiles. Use --all to also clean credentials.json and profiles.toml.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCacheClean(opts)
+			return runPrune(opts)
 		},
 	}
 
-	cleanCmd.Flags().BoolVarP(&opts.Force, "force", "f", false, "Force clean without confirmation")
-
-	cmd.AddCommand(cleanCmd)
+	cmd.Flags().BoolVar(&opts.All, "all", false, "Also clean login credentials and profiles (credentials.json and profiles.toml)")
+	cmd.Flags().BoolVarP(&opts.Force, "force", "f", false, "Force clean without confirmation")
 
 	return cmd
 }
 
-// runCacheClean executes the cache clean command logic
-func runCacheClean(opts *CacheOptions) error {
-	if !opts.Force {
-		fmt.Println("Cache clean requires --force flag to proceed.")
-		fmt.Println("This will remove all cached files including downloaded binaries and version information.")
-		fmt.Println("Use: gbox cache clean --force")
-		return nil
-	}
-
-	fmt.Println("Cleaning GBOX cache...")
-
+// runPrune executes the prune command logic
+func runPrune(opts *PruneOptions) error {
 	// Get cache directories
 	gboxHome := config.GetGboxHome()
 	deviceProxyHome := config.GetDeviceProxyHome()
+
+	// Determine what to clean
+	var itemsToClean []string
+	var allItemsToClean []string
+
+	// Always clean these items
+	itemsToClean = append(itemsToClean, "device proxy cache (version.json, binaries, assets)")
+	itemsToClean = append(itemsToClean, "log files (*.log)")
+	itemsToClean = append(itemsToClean, "PID files (*.pid)")
+
+	// Only clean credentials and profiles if --all is specified
+	if opts.All {
+		allItemsToClean = append(itemsToClean, "credentials.json")
+		allItemsToClean = append(allItemsToClean, "profiles.toml")
+	}
+
+	// Show what will be cleaned
+	fmt.Println("The following items will be cleaned:")
+	for _, item := range itemsToClean {
+		fmt.Printf("  - %s\n", item)
+	}
+	if opts.All {
+		fmt.Println("  - credentials.json")
+		fmt.Println("  - profiles.toml")
+	}
+
+	// Ask for confirmation if not forced
+	if !opts.Force {
+		fmt.Print("\nAre you sure you want to continue? (y/N): ")
+		reader := bufio.NewReader(os.Stdin)
+		response, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read user input: %v", err)
+		}
+		response = strings.TrimSpace(strings.ToLower(response))
+		if response != "y" && response != "yes" {
+			fmt.Println("Operation cancelled.")
+			return nil
+		}
+	}
+
+	fmt.Println("\nCleaning GBOX cache...")
 
 	var cleanedItems []string
 	var errors []error
@@ -66,18 +94,18 @@ func runCacheClean(opts *CacheOptions) error {
 	}
 
 	// Clean other cache files in gbox home
-	if err := cleanGboxCache(gboxHome, &cleanedItems, &errors); err != nil {
+	if err := cleanGboxCache(gboxHome, opts.All, &cleanedItems, &errors); err != nil {
 		errors = append(errors, fmt.Errorf("failed to clean gbox cache: %v", err))
 	}
 
 	// Report results
 	if len(cleanedItems) > 0 {
-		fmt.Println("Cleaned cache items:")
+		fmt.Println("\nCleaned cache items:")
 		for _, item := range cleanedItems {
 			fmt.Printf("  - %s\n", item)
 		}
 	} else {
-		fmt.Println("No cache items found to clean.")
+		fmt.Println("\nNo cache items found to clean.")
 	}
 
 	if len(errors) > 0 {
@@ -85,10 +113,10 @@ func runCacheClean(opts *CacheOptions) error {
 		for _, err := range errors {
 			fmt.Printf("  - %v\n", err)
 		}
-		return fmt.Errorf("cache clean completed with errors")
+		return fmt.Errorf("prune completed with errors")
 	}
 
-	fmt.Println("Cache clean completed successfully.")
+	fmt.Println("\nPrune completed successfully.")
 	return nil
 }
 
@@ -145,25 +173,27 @@ func cleanDeviceProxyCache(deviceProxyHome string, cleanedItems *[]string, error
 }
 
 // cleanGboxCache cleans other gbox cache files
-func cleanGboxCache(gboxHome string, cleanedItems *[]string, errors *[]error) error {
+func cleanGboxCache(gboxHome string, cleanCredentials bool, cleanedItems *[]string, errors *[]error) error {
 	if _, err := os.Stat(gboxHome); os.IsNotExist(err) {
 		return nil // Directory doesn't exist, nothing to clean
 	}
 
-	// Clean credentials file
-	credentialsPath := filepath.Join(gboxHome, "credentials.json")
-	if err := os.Remove(credentialsPath); err == nil {
-		*cleanedItems = append(*cleanedItems, credentialsPath)
-	} else if !os.IsNotExist(err) {
-		*errors = append(*errors, fmt.Errorf("failed to remove credentials file: %v", err))
-	}
+	// Clean credentials file only if --all is specified
+	if cleanCredentials {
+		credentialsPath := filepath.Join(gboxHome, "credentials.json")
+		if err := os.Remove(credentialsPath); err == nil {
+			*cleanedItems = append(*cleanedItems, credentialsPath)
+		} else if !os.IsNotExist(err) {
+			*errors = append(*errors, fmt.Errorf("failed to remove credentials file: %v", err))
+		}
 
-	// Clean profiles file
-	profilesPath := filepath.Join(gboxHome, "profiles.toml")
-	if err := os.Remove(profilesPath); err == nil {
-		*cleanedItems = append(*cleanedItems, profilesPath)
-	} else if !os.IsNotExist(err) {
-		*errors = append(*errors, fmt.Errorf("failed to remove profiles file: %v", err))
+		// Clean profiles file only if --all is specified
+		profilesPath := filepath.Join(gboxHome, "profiles.toml")
+		if err := os.Remove(profilesPath); err == nil {
+			*cleanedItems = append(*cleanedItems, profilesPath)
+		} else if !os.IsNotExist(err) {
+			*errors = append(*errors, fmt.Errorf("failed to remove profiles file: %v", err))
+		}
 	}
 
 	// Clean log files
