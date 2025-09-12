@@ -71,6 +71,9 @@ func init() {
 	rootCmd.AddCommand(NewDeviceConnectCommand())
 	rootCmd.AddCommand(NewPruneCommand())
 
+	// Add unified server command with subcommands
+	rootCmd.AddCommand(NewServerCmd())
+
 	// Enable custom help output ordering
 	setupHelpCommand(rootCmd)
 }

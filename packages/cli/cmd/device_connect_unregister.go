@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/babelcloud/gbox/packages/cli/internal/device_connect"
+	"github.com/babelcloud/gbox/packages/cli/internal/daemon"
 	"github.com/spf13/cobra"
 )
 
@@ -42,11 +42,6 @@ func ExecuteDeviceConnectUnregister(cmd *cobra.Command, opts *DeviceConnectUnreg
 		return fmt.Errorf("ADB is not installed or not in your PATH. Please install ADB and try again.")
 	}
 
-	if !checkFrpcInstalled() {
-		printFrpcInstallationHint()
-		return fmt.Errorf("frpc is not installed or not in your PATH. Please install frpc and try again.")
-	}
-
 	if opts.All {
 		return unregisterAllDevices()
 	}
@@ -60,25 +55,37 @@ func ExecuteDeviceConnectUnregister(cmd *cobra.Command, opts *DeviceConnectUnreg
 }
 
 func unregisterAllDevices() error {
-	client := getDeviceClient()
-
-	devices, err := client.GetDevices()
-	if err != nil {
+	// Get devices from daemon manager
+	var response struct {
+		Success bool                     `json:"success"`
+		Devices []map[string]interface{} `json:"devices"`
+	}
+	
+	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
 		return fmt.Errorf("failed to get available devices: %v", err)
+	}
+	
+	if !response.Success {
+		return fmt.Errorf("failed to get devices from server")
 	}
 
 	unregisteredCount := 0
-	for _, device := range devices {
-		if device.IsRegistrable {
-			fmt.Printf("Unregistering %s (%s, %s)...\n",
-				device.Udid, device.ProductModel, device.ConnectionType)
+	for _, device := range response.Devices {
+		deviceID, _ := device["id"].(string)
+		name, _ := device["ro.product.model"].(string)
+		connectionType, _ := device["connectionType"].(string)
+		isRegistrable, _ := device["isRegistrable"].(bool)
+		
+		if isRegistrable {
+			fmt.Printf("Unregistering %s (%s, %s)...\n", deviceID, name, connectionType)
 
-			if err := client.UnregisterDevice(device.Udid); err != nil {
-				fmt.Printf("Failed to unregister %s: %v\n", device.Udid, err)
+			req := map[string]string{"deviceId": deviceID}
+			if err := daemon.DefaultManager.CallAPI("POST", "/api/devices/unregister", req, nil); err != nil {
+				fmt.Printf("Failed to unregister %s: %v\n", deviceID, err)
 				continue
 			}
 
-			fmt.Printf("Device %s unregistered successfully.\n", device.Udid)
+			fmt.Printf("Device %s unregistered successfully.\n", deviceID)
 			unregisteredCount++
 		}
 	}
@@ -93,17 +100,47 @@ func unregisterAllDevices() error {
 }
 
 func unregisterDevice(deviceID string) error {
-	client := getDeviceClient()
+	// Get device info first to show details
+	var response struct {
+		Success bool                     `json:"success"`
+		Devices []map[string]interface{} `json:"devices"`
+	}
+	
+	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
+		return fmt.Errorf("failed to get available devices: %v", err)
+	}
+	
+	if !response.Success {
+		return fmt.Errorf("failed to get devices from server")
+	}
 
-	device, err := client.GetDeviceInfo(deviceID)
-	if err != nil {
+	// Find the device to get its details
+	var targetDevice map[string]interface{}
+	for _, device := range response.Devices {
+		if deviceID == device["id"].(string) {
+			targetDevice = device
+			break
+		}
+	}
+	
+	if targetDevice == nil {
 		return fmt.Errorf("device not found: %s", deviceID)
 	}
 
-	fmt.Printf("Unregistering %s (%s, %s)...\n",
-		deviceID, device.ProductModel, device.ConnectionType)
+	model := "Unknown"
+	if m, ok := targetDevice["ro.product.model"].(string); ok {
+		model = m
+	}
+	
+	connectionType := "Unknown"
+	if ct, ok := targetDevice["connectionType"].(string); ok {
+		connectionType = ct
+	}
 
-	if err := client.UnregisterDevice(deviceID); err != nil {
+	fmt.Printf("Unregistering %s (%s, %s)...\n", deviceID, model, connectionType)
+
+	req := map[string]string{"deviceId": deviceID}
+	if err := daemon.DefaultManager.CallAPI("POST", "/api/devices/unregister", req, nil); err != nil {
 		return fmt.Errorf("failed to unregister device: %v", err)
 	}
 
@@ -113,17 +150,24 @@ func unregisterDevice(deviceID string) error {
 }
 
 func runInteractiveUnregisterSelection() error {
-	client := getDeviceClient()
-
-	devices, err := client.GetDevices()
-	if err != nil {
+	// Get devices from daemon manager
+	var response struct {
+		Success bool                     `json:"success"`
+		Devices []map[string]interface{} `json:"devices"`
+	}
+	
+	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
 		return fmt.Errorf("failed to get available devices: %v", err)
+	}
+	
+	if !response.Success {
+		return fmt.Errorf("failed to get devices from server")
 	}
 
 	// Filter only registered devices
-	var registeredDevices []device_connect.DeviceInfo
-	for _, device := range devices {
-		if device.IsRegistrable {
+	var registeredDevices []map[string]interface{}
+	for _, device := range response.Devices {
+		if isRegistrable, ok := device["isRegistrable"].(bool); ok && isRegistrable {
 			registeredDevices = append(registeredDevices, device)
 		}
 	}
@@ -137,12 +181,26 @@ func runInteractiveUnregisterSelection() error {
 	fmt.Println()
 
 	for i, device := range registeredDevices {
+		deviceID, _ := device["id"].(string)
+		model := "Unknown"
+		if m, ok := device["ro.product.model"].(string); ok {
+			model = m
+		}
+		connectionType := "Unknown"
+		if ct, ok := device["connectionType"].(string); ok {
+			connectionType = ct
+		}
+		manufacturer := ""
+		if mfr, ok := device["ro.product.manufacturer"].(string); ok {
+			manufacturer = mfr
+		}
+		
 		fmt.Printf("%d. %s (%s, %s) - %s\n",
 			i+1,
-			device.Udid,
-			device.ProductModel,
-			device.ConnectionType,
-			device.ProductManufacturer)
+			deviceID,
+			model,
+			connectionType,
+			manufacturer)
 	}
 
 	fmt.Println()
@@ -156,5 +214,6 @@ func runInteractiveUnregisterSelection() error {
 	}
 
 	selectedDevice := registeredDevices[choice-1]
-	return unregisterDevice(selectedDevice.Udid)
+	deviceID := selectedDevice["id"].(string)
+	return unregisterDevice(deviceID)
 }

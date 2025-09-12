@@ -12,8 +12,8 @@ type TableColumn struct {
 	Width  int    // calculated width
 }
 
-// renderTable renders a table with dynamic column width calculation
-func renderTable(columns []TableColumn, data []map[string]interface{}) {
+// RenderTable renders a table with dynamic column width calculation
+func RenderTable(columns []TableColumn, data []map[string]interface{}) {
 	if len(data) == 0 {
 		fmt.Println("No data to display")
 		return
