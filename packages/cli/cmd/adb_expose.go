@@ -83,6 +83,8 @@ func NewAdbExposeStartCommand() *cobra.Command {
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return completeBoxIDs(cmd, args, toComplete)
 		},
+		SilenceUsage:  true, // Don't show usage on error
+		SilenceErrors: true, // Don't show errors (we handle them ourselves)
 	}
 
 	cmd.Flags().IntVarP(&opts.LocalPort, "port", "p", 0, "Local port to bind to (default: auto-find available port starting from 5555)")
@@ -103,6 +105,8 @@ func NewAdbExposeStopCommand() *cobra.Command {
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return completeBoxIDs(cmd, args, toComplete)
 		},
+		SilenceUsage:  true, // Don't show usage on error
+		SilenceErrors: true, // Don't show errors (we handle them ourselves)
 	}
 	return cmd
 }
@@ -111,11 +115,13 @@ func NewAdbExposeListCommand() *cobra.Command {
 	opts := &AdbExposeListOptions{}
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List all running adb-expose processes",
+		Short: "List all exposed ADB ports",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ExecuteAdbExposeList(cmd, opts)
 		},
+		SilenceUsage:  true, // Don't show usage on error
+		SilenceErrors: true, // Don't show errors (we handle them ourselves)
 	}
 
 	cmd.Flags().StringVarP(&opts.OutputFormat, "output", "o", "table", "Output format (table|json)")
@@ -142,19 +148,14 @@ func ExecuteAdbExposeInteractive(cmd *cobra.Command, opts *AdbExposeOptions) err
 		return fmt.Errorf("interactive mode not available in daemon process")
 	}
 
-	// Get current exposures without running cleanup logic
-	infos, err := adb_expose.ListPidFiles()
-	if err != nil {
-		return fmt.Errorf("failed to list current exposures: %v", err)
+	// Use the new client-server architecture to list current exposures
+	fmt.Println("Current ADB port exposures:")
+	fmt.Println("============================")
+	if err := adb_expose.ListCommand(""); err != nil {
+		// If server is not running, just show a message
+		fmt.Println("ADB Expose server is not running")
 	}
-
-	// Only show current exposures section if there are any
-	if len(infos) > 0 {
-		fmt.Println("Current ADB port exposures:")
-		fmt.Println("============================")
-		printAdbExposeTable(infos)
-		fmt.Println()
-	}
+	fmt.Println()
 
 	// Get available boxes
 	sdkClient, err := client.NewClientFromProfile()
@@ -172,22 +173,11 @@ func ExecuteAdbExposeInteractive(cmd *cobra.Command, opts *AdbExposeOptions) err
 		return nil
 	}
 
-	// Filter running Android boxes and exclude already exposed ones
+	// Filter running Android boxes
 	var availableBoxes []client.BoxInfo
-	exposedBoxIDs := make(map[string]bool)
-
-	// Use the infos variable we already got above
-	for _, info := range infos {
-		if adb_expose.IsProcessAlive(info.Pid) {
-			exposedBoxIDs[info.BoxID] = true
-		}
-	}
-
 	for _, box := range boxes {
 		if box.Status == "running" && strings.HasPrefix(box.Type, "android") {
-			if !exposedBoxIDs[box.ID] {
-				availableBoxes = append(availableBoxes, box)
-			}
+			availableBoxes = append(availableBoxes, box)
 		}
 	}
 
@@ -283,7 +273,7 @@ func ExecuteAdbExposeInteractive(cmd *cobra.Command, opts *AdbExposeOptions) err
 // ExecuteAdbExposeStop stops adb-expose processes for a specific box
 // This function is now implemented in adb_expose_stop.go
 
-// ExecuteAdbExposeList lists all running adb-expose processes
+// ExecuteAdbExposeList lists all exposed ADB ports
 // This function is now implemented in adb_expose_list.go
 
 func boxValid(boxID string) bool {

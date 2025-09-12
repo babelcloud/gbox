@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+// Note: assets will be embedded at build time using a different approach
+
 // ScrcpyConnection handles the actual scrcpy server connection
 type ScrcpyConnection struct {
 	deviceSerial string
@@ -226,7 +228,9 @@ func (sc *ScrcpyConnection) Close() error {
 
 // findScrcpyServerJar finds the scrcpy-server.jar file
 func findScrcpyServerJar() string {
-	// Common locations to check
+	// Note: embedded assets will be handled differently
+
+	// Fallback to external files
 	locations := []string{
 		// In project assets directory (primary location)
 		"./assets/scrcpy-server.jar",
@@ -243,13 +247,14 @@ func findScrcpyServerJar() string {
 	for _, path := range locations {
 		if _, err := os.Stat(path); err == nil {
 			absPath, _ := filepath.Abs(path)
-			log.Printf("Found scrcpy-server.jar at: %s", absPath)
 			return absPath
 		}
 	}
 
 	return ""
 }
+
+// Note: embedded server extraction removed - using external files only
 
 // logWriter implements io.Writer for logging
 type logWriter struct {

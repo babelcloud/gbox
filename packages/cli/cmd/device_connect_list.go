@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/babelcloud/gbox/packages/cli/internal/device_connect"
+	"github.com/babelcloud/gbox/packages/cli/internal/daemon"
 	"github.com/spf13/cobra"
 )
 
@@ -31,15 +31,15 @@ func NewDeviceConnectListCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ExecuteDeviceConnectList(cmd, opts)
 		},
-		Example: `  # List all local Android devices and their registration status (default text format):
+		Example: `  # List all local Android devices and their registration status:
   gbox device-connect ls
 
-  # List all local Android devices and their registration status in JSON format:
+  # List devices in JSON format for scripting:
   gbox device-connect ls --format json`,
 	}
 
 	flags := cmd.Flags()
-	flags.StringVarP(&opts.OutputFormat, "format", "", "text", "Specify output format. Options are \"text\" (default) or \"json\".")
+	flags.StringVarP(&opts.OutputFormat, "format", "", "text", "Output format: text (default) or json")
 
 	cmd.RegisterFlagCompletionFunc("format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"text", "json"}, cobra.ShellCompDirectiveNoFileComp
@@ -54,31 +54,28 @@ func ExecuteDeviceConnectList(cmd *cobra.Command, opts *DeviceConnectListOptions
 		return fmt.Errorf("ADB is not installed or not in your PATH. Please install ADB and try again.")
 	}
 
-	if !checkFrpcInstalled() {
-		printFrpcInstallationHint()
-		return fmt.Errorf("frpc is not installed or not in your PATH. Please install frpc and try again.")
+	// Use daemon manager to call unified server API
+	var response struct {
+		Success bool                     `json:"success"`
+		Devices []map[string]interface{} `json:"devices"`
 	}
-
-	// Ensure device proxy service is running
-	if err := device_connect.EnsureDeviceProxyRunning(isServiceRunning); err != nil {
-		return fmt.Errorf("failed to start device proxy service: %v", err)
-	}
-
-	client := getDeviceClient()
-
-	devices, err := client.GetDevices()
-	if err != nil {
+	
+	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
 		return fmt.Errorf("failed to get available devices: %v", err)
+	}
+	
+	if !response.Success {
+		return fmt.Errorf("failed to get devices from server")
 	}
 
 	if opts.OutputFormat == "json" {
-		return outputDevicesJSON(devices)
+		return outputDevicesJSONFromAPI(response.Devices)
 	}
 
-	return outputDevicesText(devices)
+	return outputDevicesTextFromAPI(response.Devices)
 }
 
-func outputDevicesJSON(devices []device_connect.DeviceInfo) error {
+func outputDevicesJSONFromAPI(devices []map[string]interface{}) error {
 	// Create a simplified JSON output for compatibility
 	type SimpleDeviceInfo struct {
 		DeviceID         string `json:"device_id"`
@@ -89,20 +86,25 @@ func outputDevicesJSON(devices []device_connect.DeviceInfo) error {
 
 	var simpleDevices []SimpleDeviceInfo
 	for _, device := range devices {
+		deviceID, _ := device["id"].(string)
+		name, _ := device["ro.product.model"].(string)
+		serialNo, _ := device["ro.serialno"].(string)
+		isRegistrable, _ := device["isRegistrable"].(bool)
+		
 		status := statusNotRegistered
-		if device.IsRegistrable {
+		if isRegistrable {
 			status = statusRegistered
 		}
 
 		deviceType := deviceTypeDevice
 		// Check if it's an emulator based on serial number
-		if strings.Contains(strings.ToUpper(device.SerialNo), "EMULATOR") {
+		if strings.Contains(strings.ToUpper(serialNo), "EMULATOR") {
 			deviceType = deviceTypeEmulator
 		}
 
 		simpleDevices = append(simpleDevices, SimpleDeviceInfo{
-			DeviceID:         device.Udid,
-			Name:             device.ProductModel,
+			DeviceID:         deviceID,
+			Name:             name,
 			Type:             deviceType,
 			ConnectionStatus: status,
 		})
@@ -116,7 +118,7 @@ func outputDevicesJSON(devices []device_connect.DeviceInfo) error {
 	return nil
 }
 
-func outputDevicesText(devices []device_connect.DeviceInfo) error {
+func outputDevicesTextFromAPI(devices []map[string]interface{}) error {
 	if len(devices) == 0 {
 		fmt.Println("No Android devices found.")
 		return nil
@@ -130,11 +132,14 @@ func outputDevicesText(devices []device_connect.DeviceInfo) error {
 
 	// Find maximum widths for each column
 	for _, device := range devices {
-		if len(device.Udid) > deviceIDWidth {
-			deviceIDWidth = len(device.Udid)
+		deviceID, _ := device["id"].(string)
+		name, _ := device["ro.product.model"].(string)
+		
+		if len(deviceID) > deviceIDWidth {
+			deviceIDWidth = len(deviceID)
 		}
-		if len(device.ProductModel) > nameWidth {
-			nameWidth = len(device.ProductModel)
+		if len(name) > nameWidth {
+			nameWidth = len(name)
 		}
 		if len(deviceTypeEmulator) > typeWidth {
 			typeWidth = len(deviceTypeEmulator)
@@ -159,20 +164,25 @@ func outputDevicesText(devices []device_connect.DeviceInfo) error {
 
 	// Print data rows
 	for _, device := range devices {
+		deviceID, _ := device["id"].(string)
+		name, _ := device["ro.product.model"].(string)
+		serialNo, _ := device["ro.serialno"].(string)
+		isRegistrable, _ := device["isRegistrable"].(bool)
+		
 		status := statusNotRegistered
-		if device.IsRegistrable {
+		if isRegistrable {
 			status = statusRegistered
 		}
 
 		deviceType := deviceTypeDevice
 		// Check if it's an emulator based on serial number
-		if strings.Contains(strings.ToUpper(device.SerialNo), "EMULATOR") {
+		if strings.Contains(strings.ToUpper(serialNo), "EMULATOR") {
 			deviceType = deviceTypeEmulator
 		}
 
 		fmt.Printf("%-*s %-*s %-*s %-*s\n",
-			deviceIDWidth, device.Id,
-			nameWidth, device.ProductModel,
+			deviceIDWidth, deviceID,
+			nameWidth, name,
 			typeWidth, deviceType,
 			statusWidth, status)
 	}
