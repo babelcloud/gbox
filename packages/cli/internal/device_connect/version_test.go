@@ -22,10 +22,10 @@ func TestVersionMatchingLogic(t *testing.T) {
 	// Temporarily override device proxy home for testing
 	originalHome := config.GetGboxCliHome()
 	defer func() {
-		os.Setenv("GBOX_CLI_CACHE_HOME", originalHome)
+		os.Setenv("GBOX_CLI_HOME", originalHome)
 	}()
 
-	os.Setenv("GBOX_CLI_CACHE_HOME", tempDir)
+	os.Setenv("GBOX_CLI_HOME", tempDir)
 
 	// Test scenario 1: No binary exists - should download latest
 	t.Run("NoBinaryExists", func(t *testing.T) {
@@ -166,10 +166,10 @@ func TestVersionCacheOperations(t *testing.T) {
 	// Temporarily override device proxy home for testing
 	originalHome := config.GetGboxCliHome()
 	defer func() {
-		os.Setenv("GBOX_CLI_CACHE_HOME", originalHome)
+		os.Setenv("GBOX_CLI_HOME", originalHome)
 	}()
 
-	os.Setenv("GBOX_CLI_CACHE_HOME", tempDir)
+	os.Setenv("GBOX_CLI_HOME", tempDir)
 
 	// Test saving version info
 	t.Run("SaveVersionInfo", func(t *testing.T) {
@@ -283,10 +283,10 @@ func TestVersionMatchingPriority(t *testing.T) {
 	// Temporarily override device proxy home for testing
 	originalHome := config.GetGboxCliHome()
 	defer func() {
-		os.Setenv("GBOX_CLI_CACHE_HOME", originalHome)
+		os.Setenv("GBOX_CLI_HOME", originalHome)
 	}()
 
-	os.Setenv("GBOX_CLI_CACHE_HOME", tempDir)
+	os.Setenv("GBOX_CLI_HOME", tempDir)
 
 	// Test scenario: Current version is "dev" - should download latest
 	t.Run("DevVersionDownloadsLatest", func(t *testing.T) {

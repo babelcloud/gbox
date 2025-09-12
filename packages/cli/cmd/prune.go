@@ -41,7 +41,7 @@ func NewPruneCommand() *cobra.Command {
 func runPrune(opts *PruneOptions) error {
 	// Get cache directories
 	gboxHome := config.GetGboxHome()
-	cliCacheHome := config.GetGboxCliHome()
+	cliHome := config.GetGboxCliHome()
 
 	// Ask for confirmation if not forced
 	if !opts.Force {
@@ -64,7 +64,7 @@ func runPrune(opts *PruneOptions) error {
 	var errors []error
 
 	// Prune CLI cache directory (contains all cache files)
-	if err := pruneCliCache(cliCacheHome, opts.All, &cleanedItems, &errors); err != nil {
+	if err := pruneData(cliHome, opts.All, &cleanedItems, &errors); err != nil {
 		errors = append(errors, fmt.Errorf("failed to prune CLI cache: %v", err))
 	}
 
@@ -98,14 +98,14 @@ func runPrune(opts *PruneOptions) error {
 	return nil
 }
 
-// pruneCliCache prunes all CLI cache files from the unified cache directory
-func pruneCliCache(cliCacheHome string, cleanCredentials bool, cleanedItems *[]string, errors *[]error) error {
-	if _, err := os.Stat(cliCacheHome); os.IsNotExist(err) {
+// pruneData prunes all CLI cache files from the unified cache directory
+func pruneData(cliHome string, cleanCredentials bool, cleanedItems *[]string, errors *[]error) error {
+	if _, err := os.Stat(cliHome); os.IsNotExist(err) {
 		return nil // Directory doesn't exist, nothing to clean
 	}
 
 	// Clean version cache file
-	versionCachePath := filepath.Join(cliCacheHome, "version.json")
+	versionCachePath := filepath.Join(cliHome, "version.json")
 	if err := os.Remove(versionCachePath); err == nil {
 		*cleanedItems = append(*cleanedItems, versionCachePath)
 	} else if !os.IsNotExist(err) {
@@ -117,7 +117,7 @@ func pruneCliCache(cliCacheHome string, cleanCredentials bool, cleanedItems *[]s
 	if runtime.GOOS == "windows" {
 		binaryName += ".exe"
 	}
-	binaryPath := filepath.Join(cliCacheHome, binaryName)
+	binaryPath := filepath.Join(cliHome, binaryName)
 	if err := os.Remove(binaryPath); err == nil {
 		*cleanedItems = append(*cleanedItems, binaryPath)
 	} else if !os.IsNotExist(err) {
@@ -125,7 +125,7 @@ func pruneCliCache(cliCacheHome string, cleanCredentials bool, cleanedItems *[]s
 	}
 
 	// Clean any downloaded asset files (tar.gz, zip, etc.)
-	entries, err := os.ReadDir(cliCacheHome)
+	entries, err := os.ReadDir(cliHome)
 	if err != nil {
 		return err
 	}
@@ -138,7 +138,7 @@ func pruneCliCache(cliCacheHome string, cleanCredentials bool, cleanedItems *[]s
 		fileName := entry.Name()
 		// Check if it's a downloaded asset file
 		if isAssetFile(fileName) {
-			assetPath := filepath.Join(cliCacheHome, fileName)
+			assetPath := filepath.Join(cliHome, fileName)
 			if err := os.Remove(assetPath); err == nil {
 				*cleanedItems = append(*cleanedItems, assetPath)
 			} else if !os.IsNotExist(err) {
@@ -150,7 +150,7 @@ func pruneCliCache(cliCacheHome string, cleanCredentials bool, cleanedItems *[]s
 	// Clean log files
 	logPatterns := []string{"gbox-adb-expose-*.log", "device-proxy.log", "*.log"}
 	for _, pattern := range logPatterns {
-		matches, err := filepath.Glob(filepath.Join(cliCacheHome, pattern))
+		matches, err := filepath.Glob(filepath.Join(cliHome, pattern))
 		if err != nil {
 			*errors = append(*errors, fmt.Errorf("failed to glob log files with pattern %s: %v", pattern, err))
 			continue
@@ -168,7 +168,7 @@ func pruneCliCache(cliCacheHome string, cleanCredentials bool, cleanedItems *[]s
 	// Clean PID files
 	pidPatterns := []string{"gbox-adb-expose-*.pid", "device-proxy.pid", "*.pid"}
 	for _, pattern := range pidPatterns {
-		matches, err := filepath.Glob(filepath.Join(cliCacheHome, pattern))
+		matches, err := filepath.Glob(filepath.Join(cliHome, pattern))
 		if err != nil {
 			*errors = append(*errors, fmt.Errorf("failed to glob PID files with pattern %s: %v", pattern, err))
 			continue

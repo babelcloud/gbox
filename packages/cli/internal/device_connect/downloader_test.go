@@ -163,10 +163,10 @@ func TestVersionCache(t *testing.T) {
 	originalHome := config.GetGboxCliHome()
 	defer func() {
 		// Restore original home
-		os.Setenv("GBOX_CLI_CACHE_HOME", originalHome)
+		os.Setenv("GBOX_CLI_HOME", originalHome)
 	}()
 
-	os.Setenv("GBOX_CLI_CACHE_HOME", tempDir)
+	os.Setenv("GBOX_CLI_HOME", tempDir)
 
 	// Test saving and loading version info
 	testInfo := &VersionInfo{
