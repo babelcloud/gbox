@@ -75,6 +75,7 @@ download-scrcpy-server: ## Download scrcpy-server.jar
 # Build binary for a single platform
 binary: build-deps ## Build binary for the current platform (GOOS/GOARCH)
 	@echo "Building $(BINARY_NAME) binary ($(GOOS)/$(GOARCH))..."
+	@echo "Note: live-view static files will be embedded in the binary"
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o $(BINARY_NAME) $(MAIN_FILE)
 	@echo "Binary built: $(BINARY_NAME)"
 

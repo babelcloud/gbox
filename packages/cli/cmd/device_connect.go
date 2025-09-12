@@ -14,7 +14,6 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -98,32 +97,25 @@ func printFrpcInstallationHint() {
 	fmt.Println()
 }
 
+// Note: Device client functionality has been moved to daemon.DefaultManager
+// All device operations now go through the unified server API
+
 type DeviceConnectOptions struct {
 	DeviceID   string
 	Background bool
-	UseNative  bool // Use native Go implementation instead of external binary
-}
-
-// Global client instance
-var deviceClient *device_connect.Client
-
-// getDeviceClient returns the global device client, initializing it if needed
-func getDeviceClient() *device_connect.Client {
-	if deviceClient == nil {
-		deviceClient = device_connect.NewClient(device_connect.DefaultURL)
-	}
-	return deviceClient
 }
 
 func NewDeviceConnectCommand() *cobra.Command {
 	opts := &DeviceConnectOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "device-connect [command] [flags]",
+		Use:   "device-connect [device_id] [flags]",
 		Short: "Manage remote connections for local Android development devices",
 		Long: `Manage remote connections for local Android development devices.
 This command allows you to securely connect Android devices (emulators or physical devices)
-to remote cloud services for remote access and debugging.`,
+to remote cloud services for remote access and debugging.
+
+If no device ID is provided, an interactive device selection will be shown.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ExecuteDeviceConnect(cmd, opts, args)
 		},
@@ -131,39 +123,33 @@ to remote cloud services for remote access and debugging.`,
   gbox device-connect
 
   # Connect to specific device
-  gbox device-connect --device abc123xyz456-usb
+  gbox device-connect abc123xyz456-usb
 
-  # Connect device in background
-  gbox device-connect --device abc789pqr012-ip --background
+  # Connect in background mode
+  gbox device-connect --background
 
   # List all available devices
   gbox device-connect ls
 
-  # List devices in JSON format
-  gbox device-connect ls --format json
+  # Register a device for remote access
+  gbox device-connect register
 
   # Unregister specific device
-  gbox device-connect unregister abc789pqr012-ip
-
-  # Stop the device proxy service
-  gbox device-connect kill-server`,
+  gbox device-connect unregister abc789pqr012-ip`,
 	}
 
 	flags := cmd.Flags()
-	flags.StringVarP(&opts.DeviceID, "device", "d", "", "Specify the Android device ID to connect to")
-	flags.BoolVarP(&opts.Background, "background", "b", false, "Run connection in background")
-	flags.BoolVar(&opts.UseNative, "native", false, "Use native Go implementation (experimental)")
+	flags.StringVarP(&opts.DeviceID, "device", "d", "", "Specify the Android device ID to connect")
+	flags.BoolVarP(&opts.Background, "background", "b", false, "Run in background mode")
 
 	cmd.AddCommand(
+		NewDeviceConnectRegisterCommand(),
 		NewDeviceConnectListCommand(),
 		NewDeviceConnectUnregisterCommand(),
-		NewDeviceConnectKillServerCommand(),
-		NewDeviceConnectServerCommand(),
 	)
 
 	return cmd
 }
-
 func ExecuteDeviceConnect(cmd *cobra.Command, opts *DeviceConnectOptions, args []string) error {
 	debug := os.Getenv("DEBUG") == "true"
 
@@ -233,10 +219,17 @@ func ExecuteDeviceConnect(cmd *cobra.Command, opts *DeviceConnectOptions, args [
 	// The actual device connection will happen via HTTP API calls
 	// to the server, which will be started automatically by the daemon manager
 
-	if opts.DeviceID == "" {
+	var deviceID string
+	if len(args) > 0 {
+		deviceID = args[0]
+	} else if opts.DeviceID != "" {
+		deviceID = opts.DeviceID
+	}
+
+	if deviceID == "" {
 		return runInteractiveDeviceSelection(opts)
 	}
-	return connectToDevice(opts.DeviceID, opts)
+	return connectToDevice(deviceID, opts)
 }
 
 // checkAndInstallPrerequisites checks and installs Node.js, npm, Appium and related components
@@ -340,25 +333,17 @@ func isServiceRunning() (bool, error) {
 		return false, nil
 	}
 
-	// Try to check service status via API
-	client := getDeviceClient()
-	running, onDemandEnabled, err := client.IsServiceRunning()
-	if err != nil {
+	// Try to check service status via daemon API
+	var response struct {
+		Success bool `json:"success"`
+	}
+
+	if err := daemon.DefaultManager.CallAPI("GET", "/api/status", nil, &response); err != nil {
 		// If API check fails, assume service is running (we have a valid PID)
 		return true, nil
 	}
 
-	// Check if onDemandEnabled is false and warn user
-	if running && !onDemandEnabled {
-		fmt.Println("Warning: Reusing existing device-proxy service that does not have on-demand registration enabled.")
-		fmt.Println("All devices will be automatically registered for remote access.")
-		fmt.Println("If you don't want this behavior, either:")
-		fmt.Println("  - Stop the existing service and restart with ENABLE_DEVICE_REGISTER_ON_DEMAND=true")
-		fmt.Println("  - Use 'gbox device-connect kill-server' to stop the current service")
-		fmt.Println()
-	}
-
-	return running, nil
+	return response.Success, nil
 }
 
 func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
@@ -516,58 +501,6 @@ func executeKillServer() error {
 	// Create a dummy command for ExecuteDeviceConnectKillServer
 	// We only need this for the function signature, the actual cmd parameter is not used in the implementation
 	return ExecuteDeviceConnectKillServer(nil, opts)
-}
-
-// getDevicesWithValidation retries fetching devices until at least one device has a non-empty serial number,
-// or until the timeout is reached. This avoids the abnormal "-usb" entries when the upstream is not ready.
-func getDevicesWithValidation(client *device_connect.Client, timeout time.Duration) ([]device_connect.DeviceInfo, error) {
-	deadline := time.Now().Add(timeout)
-	var lastErr error
-	var lastDevices []device_connect.DeviceInfo
-	for {
-		devices, err := client.GetDevices()
-		if err == nil {
-			lastDevices = devices
-			if !hasAnyEmptySerial(devices) {
-				return devices, nil
-			}
-			lastErr = fmt.Errorf("some devices missing serial numbers; retrying")
-		} else {
-			lastErr = err
-		}
-
-		if time.Now().After(deadline) {
-			if len(lastDevices) > 0 {
-				valid := filterValidDevices(lastDevices)
-				if len(valid) > 0 {
-					return valid, nil
-				}
-			}
-			return nil, lastErr
-		}
-		time.Sleep(1 * time.Second)
-	}
-}
-
-// hasAnyEmptySerial returns true if any device has an empty SerialNo
-func hasAnyEmptySerial(devices []device_connect.DeviceInfo) bool {
-	for _, d := range devices {
-		if d.SerialNo == "" {
-			return true
-		}
-	}
-	return false
-}
-
-// filterValidDevices returns only devices with a non-empty SerialNo
-func filterValidDevices(devices []device_connect.DeviceInfo) []device_connect.DeviceInfo {
-	var result []device_connect.DeviceInfo
-	for _, d := range devices {
-		if d.SerialNo != "" {
-			result = append(result, d)
-		}
-	}
-	return result
 }
 
 // runAsRoot executes a command with root privileges if needed

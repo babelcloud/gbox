@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -36,6 +37,7 @@ func newServerStartCmd() *cobra.Command {
 	var (
 		port       int
 		foreground bool
+		replyFd    int
 	)
 
 	cmd := &cobra.Command{
@@ -47,8 +49,8 @@ func newServerStartCmd() *cobra.Command {
 				// Run in foreground mode
 				return runServerInForeground(port)
 			}
-			// Run in background mode (default)
-			return startServerInBackground(port)
+			// Default: run in daemon mode with IPC communication
+			return runServerInDaemon(port, replyFd)
 		},
 		Example: `  # Start server in background
   gbox server start
@@ -64,6 +66,7 @@ func newServerStartCmd() *cobra.Command {
 	flags := cmd.Flags()
 	flags.IntVarP(&port, "port", "p", 29888, "Server port")
 	flags.BoolVarP(&foreground, "foreground", "f", false, "Run server in foreground (show logs)")
+	flags.IntVar(&replyFd, "reply-fd", 0, "File descriptor for IPC communication (internal use)")
 
 	return cmd
 }
@@ -78,20 +81,20 @@ func newServerStopCmd() *cobra.Command {
 		Long:  `Stop the gbox server if it's running.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dm := daemon.NewManager()
-			
+
 			if force {
 				// Force stop all processes
 				dm.CleanupOldServers()
 				fmt.Println("Force stopped all server processes")
 				return nil
 			}
-			
+
 			// Normal stop
 			if !dm.IsServerRunning() {
 				fmt.Println("Server is not running")
 				return nil
 			}
-			
+
 			fmt.Println("Stopping gbox server...")
 			if err := dm.StopServer(); err != nil {
 				// Try force cleanup if normal stop fails
@@ -99,7 +102,7 @@ func newServerStopCmd() *cobra.Command {
 				fmt.Println("Server stopped (forced)")
 				return nil
 			}
-			
+
 			fmt.Println("Server stopped successfully")
 			return nil
 		},
@@ -125,12 +128,12 @@ func newServerStatusCmd() *cobra.Command {
 		Long:  `Check if the gbox server is running and display its status.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dm := daemon.NewManager()
-			
+
 			if dm.IsServerRunning() {
 				fmt.Println("✅ Server is running")
 				fmt.Printf("   Web UI: http://localhost:29888\n")
 				fmt.Printf("   API endpoint: http://localhost:29888/api/status\n")
-				
+
 				// Try to get more info from API
 				client := &http.Client{Timeout: 2 * time.Second}
 				if resp, err := client.Get("http://localhost:29888/api/status"); err == nil {
@@ -151,7 +154,7 @@ func newServerStatusCmd() *cobra.Command {
 				fmt.Println("❌ Server is not running")
 				fmt.Println("   Use 'gbox server start' to start the server")
 			}
-			
+
 			return nil
 		},
 	}
@@ -172,7 +175,7 @@ func newServerRestartCmd() *cobra.Command {
 		Long:  `Stop and then start the gbox server.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dm := daemon.NewManager()
-			
+
 			// Stop server if it's running
 			if dm.IsServerRunning() {
 				fmt.Println("Stopping gbox server...")
@@ -183,24 +186,24 @@ func newServerRestartCmd() *cobra.Command {
 				} else {
 					fmt.Println("Server stopped successfully")
 				}
-				
+
 				// Wait a moment for cleanup
 				time.Sleep(500 * time.Millisecond)
 			}
-			
+
 			// Start server
 			if foreground {
 				// Run in foreground mode
 				fmt.Println("Restarting server in foreground mode...")
 				return runServerInForeground(port)
 			}
-			
+
 			// Start in background mode
 			fmt.Printf("Starting gbox server on port %d...\n", port)
 			if err := dm.StartServer(); err != nil {
 				return fmt.Errorf("failed to start server: %v", err)
 			}
-			
+
 			fmt.Println("Server restarted successfully")
 			fmt.Printf("Web UI available at: http://localhost:%d\n", port)
 			return nil
@@ -225,21 +228,63 @@ func newServerRestartCmd() *cobra.Command {
 
 // Helper functions
 
+// runServerInDaemon runs the server in daemon mode with IPC communication
+func runServerInDaemon(port int, replyFd int) error {
+	// Start the server
+	server := server.NewGBoxServer(port)
+
+	// Start server in a goroutine
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- server.Start()
+	}()
+
+	// Wait a bit for server to start
+	time.Sleep(2 * time.Second)
+
+	// Check if server started successfully by trying to connect
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 1*time.Second)
+	if err != nil {
+		// Server failed to start
+		if replyFd > 0 {
+			replyFile := os.NewFile(uintptr(replyFd), "reply")
+			if replyFile != nil {
+				replyFile.WriteString(fmt.Sprintf("ERROR: server failed to start: %v", err))
+				replyFile.Close()
+			}
+		}
+		return fmt.Errorf("server failed to start: %v", err)
+	}
+	conn.Close()
+
+	// Server started successfully
+	if replyFd > 0 {
+		replyFile := os.NewFile(uintptr(replyFd), "reply")
+		if replyFile != nil {
+			replyFile.WriteString("OK")
+			replyFile.Close()
+		}
+	}
+
+	// Keep the server running
+	select {}
+}
+
 func startServerInBackground(port int) error {
 	dm := daemon.NewManager()
-	
+
 	// Check if already running
 	if dm.IsServerRunning() {
 		fmt.Println("Server is already running")
 		fmt.Printf("Web UI available at: http://localhost:%d\n", port)
 		return nil
 	}
-	
+
 	fmt.Printf("Starting gbox server on port %d...\n", port)
 	if err := dm.StartServer(); err != nil {
 		return fmt.Errorf("failed to start server: %v", err)
 	}
-	
+
 	fmt.Println("Server started successfully")
 	fmt.Printf("Web UI available at: http://localhost:%d\n", port)
 	return nil
@@ -254,19 +299,23 @@ func runServerInForeground(port int) error {
 		return fmt.Errorf("server already running")
 	}
 
-	log.Printf("Starting gbox server on port %d (foreground mode)", port)
+	// Starting server in foreground mode
 
 	srv := server.NewGBoxServer(port)
 	if err := srv.Start(); err != nil {
 		return fmt.Errorf("failed to start server: %v", err)
 	}
 
-	fmt.Printf("Server running on http://localhost:%d\n", port)
-	fmt.Println("Services available:")
-	fmt.Printf("  - Device Connect (WebRTC): http://localhost:%d/\n", port)
-	fmt.Printf("  - ADB Expose API: http://localhost:%d/api/adb-expose/status\n", port)
-	fmt.Printf("  - Server Status: http://localhost:%d/api/status\n", port)
-	fmt.Println("\nPress Ctrl+C to stop...")
+	// ANSI color codes
+	const (
+		ColorReset = "\033[0m"
+		ColorGreen = "\033[32m"
+		ColorBlue  = "\033[34m"
+		ColorCyan  = "\033[36m"
+	)
+
+	fmt.Printf("%s🚀 GBOX Local Server%s %s➜ %shttp://localhost:%d%s\n", ColorGreen, ColorReset, ColorCyan, ColorBlue, port, ColorReset)
+	fmt.Printf("%sPress Ctrl+C to stop...%s\n", ColorCyan, ColorReset)
 
 	// Wait for interrupt signal
 	sigChan := make(chan os.Signal, 1)
