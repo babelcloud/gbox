@@ -16,8 +16,10 @@
 .mainContent {
   flex: 1;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   background: #000;
+  overflow: visible;
+  position: relative;
 }
 
 .videoContainer {
@@ -29,7 +31,7 @@
   justify-content: center;
   overflow: hidden;
   min-height: 0;
-  padding: 20px;
+  padding: 20px 20px 80px 20px;
 }
 
 .videoWrapper {
@@ -39,9 +41,10 @@
   justify-content: center;
   width: 100%;
   height: 100%;
-  max-width: calc(100% - 40px);
-  max-height: calc(100% - 40px);
+  max-width: 100%;
+  max-height: 100%;
 }
+
 
 .video {
   object-fit: contain;
@@ -86,14 +89,67 @@
   height: 24px;
 }
 
-.stats {
+.controlsArea {
+  width: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  position: relative;
+}
+
+.statsArea {
   position: absolute;
-  bottom: 10px;
-  right: 10px;
+  bottom: 0;
+  right: 0;
+  left: 0;
+  height: 60px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 10px 20px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.stats {
   background: rgba(0, 0, 0, 0.7);
   padding: 8px 12px;
   border-radius: 5px;
   font-size: 12px;
   color: #ccc;
-  z-index: 10;
+  pointer-events: auto;
+}
+
+.toggleButton {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: rgba(0, 0, 0, 0.8);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  color: white;
+  z-index: 1000;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.toggleButton:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-50%) scale(1.1);
+  color: #4CAF50;
+}
+
+.toggleButton:active {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-50%) scale(0.95);
 }

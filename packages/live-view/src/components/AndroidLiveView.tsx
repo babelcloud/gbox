@@ -94,6 +94,7 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
   }, [isConnected]);
 
 
+
   // Initialize WebRTC client
   useEffect(() => {
     if (!videoRef.current) return;
@@ -218,12 +219,6 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
               style={{ touchAction: 'none', outline: 'none' }}
               tabIndex={0}
             />
-            {showControls && showAndroidControls && isConnected && (
-              <ControlButtons 
-                onAction={handleControlAction} 
-                onIMESwitch={handleIMESwitch}
-              />
-            )}
           </div>
           
           <div
@@ -234,15 +229,28 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
               top: touchPosition.y,
             }}
           />
-          
-          {showControls && (
+        </div>
+        
+        {showControls && showAndroidControls && isConnected && (
+          <div className={styles.controlsArea}>
+            <ControlButtons 
+              onAction={handleControlAction} 
+              onIMESwitch={handleIMESwitch}
+              isVisible={true}
+              onToggleVisibility={() => {}}
+            />
+          </div>
+        )}
+        
+        {showControls && (
+          <div className={styles.statsArea}>
             <div className={styles.stats}>
               <div>Resolution: {stats.resolution || '-'}</div>
               <div>FPS: {stats.fps || '-'}</div>
               <div>Latency: {stats.latency ? `${stats.latency}ms` : '-'}</div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"time"
 
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/device"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/protocol"
+	"github.com/babelcloud/gbox/packages/cli/internal/util"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -23,8 +23,12 @@ type ControlHandler struct {
 
 // NewControlHandler creates a new control stream handler
 func NewControlHandler(conn net.Conn, dataChannel *webrtc.DataChannel, screenWidth, screenHeight int) *ControlHandler {
-	log.Printf("NewControlHandler: creating with conn=%v, dataChannel=%v, screen=%dx%d",
-		conn != nil, dataChannel != nil, screenWidth, screenHeight)
+	logger := util.GetLogger()
+	logger.Debug("Creating control handler",
+		"conn_available", conn != nil,
+		"datachannel_available", dataChannel != nil,
+		"screen_width", screenWidth,
+		"screen_height", screenHeight)
 	return &ControlHandler{
 		conn:         conn,
 		dataChannel:  dataChannel,
@@ -35,23 +39,23 @@ func NewControlHandler(conn net.Conn, dataChannel *webrtc.DataChannel, screenWid
 
 // HandleIncomingMessages handles control messages from WebRTC
 func (ch *ControlHandler) HandleIncomingMessages() {
-	log.Printf("HandleIncomingMessages called")
+	logger := util.GetLogger()
+	logger.Debug("HandleIncomingMessages called")
+	
 	if ch.dataChannel == nil {
-		log.Printf("DataChannel is nil, cannot set up message handling")
+		logger.Error("DataChannel is nil, cannot set up message handling")
 		return
 	}
 
-	log.Printf("Setting up DataChannel message handling, DataChannel state: %s", ch.dataChannel.ReadyState())
-	log.Printf("About to set OnMessage handler for DataChannel")
+	logger.Debug("Setting up DataChannel message handling", 
+		"state", ch.dataChannel.ReadyState())
 
 	ch.dataChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
-		log.Printf("DataChannel message received, data length: %d", len(msg.Data))
-		log.Printf("DataChannel message data: %s", string(msg.Data))
-
-		// Parse control message
+		// Parse control message first to determine if it's a ping
 		var message map[string]interface{}
 		if err := json.Unmarshal(msg.Data, &message); err != nil {
-			log.Printf("Failed to parse control message: %v", err)
+			logger := util.GetLogger()
+			logger.Error("Failed to parse control message", "error", err)
 			return
 		}
 
@@ -68,15 +72,36 @@ func (ch *ControlHandler) HandleIncomingMessages() {
 			case 9:
 				msgType = "clipboard_set"
 			default:
-				log.Printf("Unknown numeric control message type: %d", int(v))
+				logger := util.GetLogger()
+				logger.Error("Unknown numeric control message type", "type", int(v))
 				return
 			}
 		default:
-			log.Printf("Control message missing or invalid type field: %v", message)
+			logger := util.GetLogger()
+			logger.Error("Control message missing or invalid type field", "message", message)
 			return
 		}
 
-		log.Printf("Received control message: type=%s", msgType)
+		// Log ping messages at debug level
+		if msgType == "ping" {
+			logger := util.GetLogger()
+			logger.Debug("Ping message received", 
+				"data_length", len(msg.Data),
+				"data", string(msg.Data))
+		} else {
+			// For non-ping messages, log appropriately
+			logger := util.GetLogger()
+			logger.Debug("DataChannel message received", 
+				"data_length", len(msg.Data),
+				"data", string(msg.Data))
+			
+			// Log touch/key events at debug level, others at info level
+			if msgType == "touch" || msgType == "key" {
+				logger.Debug("Received control message", "type", msgType)
+			} else {
+				logger.Info("Received control message", "type", msgType)
+			}
+		}
 
 		switch msgType {
 		case "ping":
@@ -94,11 +119,12 @@ func (ch *ControlHandler) HandleIncomingMessages() {
 		case "clipboard_set":
 			ch.handleClipboardSet(message)
 		default:
-			log.Printf("Unknown control message type: %s", msgType)
+			logger := util.GetLogger()
+			logger.Warn("Unknown control message type", "type", msgType)
 		}
 	})
 
-	log.Printf("OnMessage handler set successfully for DataChannel")
+	logger.Debug("OnMessage handler set successfully for DataChannel")
 }
 
 // handlePingMessage handles ping/pong messages for connection health
@@ -113,7 +139,11 @@ func (ch *ControlHandler) handlePingMessage(message map[string]interface{}) {
 		if pongData, err := json.Marshal(pongResponse); err == nil {
 			if ch.dataChannel != nil && ch.dataChannel.ReadyState() == webrtc.DataChannelStateOpen {
 				if err := ch.dataChannel.Send(pongData); err != nil {
-					log.Printf("Failed to send pong response: %v", err)
+					logger := util.GetLogger()
+					logger.Error("Failed to send pong response", "error", err)
+				} else {
+					logger := util.GetLogger()
+					logger.Debug("Pong response sent", "ping_id", id)
 				}
 			}
 		}
@@ -127,7 +157,8 @@ func (ch *ControlHandler) handleKeyEvent(message map[string]interface{}) {
 	metaState, _ := message["metaState"].(float64)
 	repeat, _ := message["repeat"].(float64)
 
-	log.Printf("Key event: action=%s, keycode=%d, meta=%d", action, int(keycode), int(metaState))
+	logger := util.GetLogger()
+	logger.Debug("Key event", "action", action, "keycode", int(keycode), "meta_state", int(metaState))
 
 	// Send to device via control connection
 	if ch.conn != nil {
@@ -143,14 +174,17 @@ func (ch *ControlHandler) handleTouchEvent(message map[string]interface{}) {
 	pressure, _ := message["pressure"].(float64)
 	pointerId, _ := message["pointerId"].(float64)
 
-	log.Printf("Touch event: action=%s, pos=(%.2f, %.2f), pressure=%.2f", action, x, y, pressure)
+	logger := util.GetLogger()
+	logger.Debug("Touch event", "action", action, "x", x, "y", y, "pressure", pressure)
 
 	// Send to device via control connection
 	if ch.conn != nil {
-		log.Printf("Sending touch event to device: action=%s, x=%.2f, y=%.2f", action, x, y)
+		logger := util.GetLogger()
+		logger.Debug("Sending touch event to device", "action", action, "x", x, "y", y)
 		ch.SendTouchEventToDevice(action, x, y, pressure, int(pointerId))
 	} else {
-		log.Printf("Control connection is nil, cannot send touch event")
+		logger := util.GetLogger()
+		logger.Debug("Control connection is nil, cannot send touch event")
 	}
 }
 
@@ -161,14 +195,17 @@ func (ch *ControlHandler) handleScrollEvent(message map[string]interface{}) {
 	hScroll, _ := message["hScroll"].(float64)
 	vScroll, _ := message["vScroll"].(float64)
 
-	log.Printf("Scroll event: pos=(%.2f, %.2f), scroll=(%.2f, %.2f)", x, y, hScroll, vScroll)
+	logger := util.GetLogger()
+	logger.Debug("Scroll event", "x", x, "y", y, "hScroll", hScroll, "vScroll", vScroll)
 
 	// Send to device via control connection
 	if ch.conn != nil {
-		log.Printf("Sending scroll event to device: x=%.2f, y=%.2f, hScroll=%.2f, vScroll=%.2f", x, y, hScroll, vScroll)
+		logger := util.GetLogger()
+		logger.Debug("Sending scroll event to device", "x", x, "y", y, "hScroll", hScroll, "vScroll", vScroll)
 		ch.SendScrollEventToDevice(x, y, hScroll, vScroll)
 	} else {
-		log.Printf("Control connection is nil, cannot send scroll event - this is expected during initial connection setup")
+		logger := util.GetLogger()
+		logger.Debug("Control connection is nil, cannot send scroll event - this is expected during initial connection setup")
 		// This is expected during initial connection setup, the connection will be updated later
 		// We could queue the event here if needed, but for now just log it
 	}
@@ -176,27 +213,31 @@ func (ch *ControlHandler) handleScrollEvent(message map[string]interface{}) {
 
 // handleResetVideo handles video reset requests (keyframe)
 func (ch *ControlHandler) handleResetVideo(message map[string]interface{}) {
-	log.Println("Reset video requested (keyframe)")
+	logger := util.GetLogger()
+	logger.Info("Reset video requested (keyframe)")
 	// This would trigger a keyframe request
 }
 
 // handleClipboardGet handles clipboard get requests
 func (ch *ControlHandler) handleClipboardGet(message map[string]interface{}) {
-	log.Println("Clipboard get requested")
+	logger := util.GetLogger()
+	logger.Info("Clipboard get requested")
 	// TODO: Implement clipboard get functionality
 	// This would get clipboard content from Android device and send it back
 }
 
 // handleClipboardSet handles clipboard set requests
 func (ch *ControlHandler) handleClipboardSet(message map[string]interface{}) {
-	log.Println("Clipboard set requested")
+	logger := util.GetLogger()
+	logger.Info("Clipboard set requested")
 
 	// Check if this is a JSON format message (new format) or binary format (old format)
 	if textInterface, ok := message["text"]; ok {
 		// JSON format: {"type": "clipboard_set", "text": "你好", "paste": true}
 		text, ok := textInterface.(string)
 		if !ok {
-			log.Printf("Clipboard set message text field is not a string")
+			logger := util.GetLogger()
+			logger.Error("Clipboard set message text field is not a string")
 			return
 		}
 
@@ -207,7 +248,8 @@ func (ch *ControlHandler) handleClipboardSet(message map[string]interface{}) {
 			}
 		}
 
-		log.Printf("Clipboard set (JSON format): text='%s', paste=%v", text, paste)
+		logger := util.GetLogger()
+		logger.Debug("Clipboard set (JSON format)", "text", text, "paste", paste)
 
 		// Send clipboard data to Android device using scrcpy protocol
 		ch.sendClipboardToDevice(text, paste)
@@ -217,7 +259,8 @@ func (ch *ControlHandler) handleClipboardSet(message map[string]interface{}) {
 	// Binary format: extract data from message
 	dataInterface, ok := message["data"]
 	if !ok {
-		log.Printf("Clipboard set message missing both text and data fields")
+		logger := util.GetLogger()
+		logger.Error("Clipboard set message missing both text and data fields")
 		return
 	}
 
@@ -241,12 +284,14 @@ func (ch *ControlHandler) handleClipboardSet(message map[string]interface{}) {
 			}
 		}
 	} else {
-		log.Printf("Clipboard set message data is not in expected format (array or map)")
+		logger := util.GetLogger()
+		logger.Error("Clipboard set message data is not in expected format (array or map)")
 		return
 	}
 
 	if len(data) < 13 {
-		log.Printf("Clipboard set message data too short: %d bytes", len(data))
+		logger := util.GetLogger()
+		logger.Error("Clipboard set message data too short", "bytes", len(data))
 		return
 	}
 
@@ -259,12 +304,13 @@ func (ch *ControlHandler) handleClipboardSet(message map[string]interface{}) {
 	textLength := int(data[9])<<24 | int(data[10])<<16 | int(data[11])<<8 | int(data[12])
 
 	if len(data) < 13+textLength {
-		log.Printf("Clipboard set message data incomplete: expected %d bytes, got %d", 13+textLength, len(data))
+		logger := util.GetLogger()
+		logger.Error("Clipboard set message data incomplete", "expected", 13+textLength, "got", len(data))
 		return
 	}
 
 	text := string(data[13 : 13+textLength])
-	log.Printf("Clipboard set (binary format): sequence=%d, paste=%d, text='%s'", sequence, pasteFlag, text)
+	logger.Debug("Clipboard set (binary format)", "sequence", sequence, "paste", pasteFlag, "text", text)
 
 	// Send clipboard data to Android device using scrcpy protocol
 	ch.sendClipboardToDevice(text, pasteFlag == 1)
@@ -273,7 +319,8 @@ func (ch *ControlHandler) handleClipboardSet(message map[string]interface{}) {
 // sendClipboardToDevice sends clipboard data to Android device
 func (ch *ControlHandler) sendClipboardToDevice(text string, paste bool) {
 	if ch.conn == nil {
-		log.Printf("No connection available for clipboard operation")
+		logger := util.GetLogger()
+		logger.Error("No connection available for clipboard operation")
 		return
 	}
 
@@ -317,7 +364,8 @@ func (ch *ControlHandler) sendClipboardToDevice(text string, paste bool) {
 	// Debug: verify buffer size matches expected size
 	expectedSize := 8 + 1 + 4 + textLength
 	if len(buffer) != expectedSize {
-		log.Printf("ERROR: Buffer size mismatch! Expected: %d, Actual: %d", expectedSize, len(buffer))
+		logger := util.GetLogger()
+		logger.Error("Buffer size mismatch", "expected", expectedSize, "actual", len(buffer))
 	}
 
 	// Create control message
@@ -328,17 +376,17 @@ func (ch *ControlHandler) sendClipboardToDevice(text string, paste bool) {
 	}
 
 	// Debug: log the buffer content
-	log.Printf("Clipboard buffer length: %d", len(buffer))
+	logger := util.GetLogger()
+	logger.Debug("Clipboard buffer", "length", len(buffer))
 	if len(buffer) >= 20 {
-		log.Printf("Clipboard buffer first 20 bytes: %v", buffer[:20])
-		log.Printf("Clipboard buffer last 20 bytes: %v", buffer[len(buffer)-20:])
+		logger.Debug("Clipboard buffer details", "first_20_bytes", buffer[:20], "last_20_bytes", buffer[len(buffer)-20:])
 	} else {
-		log.Printf("Clipboard buffer content: %v", buffer)
+		logger.Debug("Clipboard buffer content", "buffer", buffer)
 	}
 
 	// Send to device
 	ch.sendControlMessage(controlMsg)
-	log.Printf("Clipboard data sent to device: text='%s', paste=%v", text, paste)
+	logger.Info("Clipboard data sent to device", "text", text, "paste", paste)
 }
 
 // SendKeyEventToDevice sends key event to Android device using protocol package
@@ -369,6 +417,14 @@ func (ch *ControlHandler) SendTouchEventToDevice(action string, x, y, pressure f
 		return
 	}
 
+	// Check if touch point is within screen bounds
+	if x < 0 || x > float64(ch.screenWidth) || y < 0 || y > float64(ch.screenHeight) {
+		logger := util.GetLogger()
+		logger.Debug("Touch event outside screen bounds, ignoring", 
+			"x", x, "y", y, "screen_width", ch.screenWidth, "screen_height", ch.screenHeight)
+		return
+	}
+
 	touchEvent := &protocol.TouchEvent{
 		Action:    action,
 		X:         x,
@@ -389,7 +445,8 @@ func (ch *ControlHandler) SendTouchEventToDevice(action string, x, y, pressure f
 // SendScrollEventToDevice sends scroll event to Android device using protocol package
 func (ch *ControlHandler) SendScrollEventToDevice(x, y, hScroll, vScroll float64) {
 	if ch.conn == nil {
-		log.Printf("SendScrollEventToDevice: control connection is nil")
+		logger := util.GetLogger()
+		logger.Debug("SendScrollEventToDevice: control connection is nil")
 		return
 	}
 
@@ -400,8 +457,9 @@ func (ch *ControlHandler) SendScrollEventToDevice(x, y, hScroll, vScroll float64
 		VScroll: vScroll,
 	}
 
-	log.Printf("SendScrollEventToDevice: creating scroll event with screen=%dx%d", ch.screenWidth, ch.screenHeight)
-	log.Printf("SendScrollEventToDevice: scroll event data: x=%.2f, y=%.2f, hScroll=%.2f, vScroll=%.2f", x, y, hScroll, vScroll)
+	logger := util.GetLogger()
+	logger.Debug("SendScrollEventToDevice: creating scroll event", "screen_width", ch.screenWidth, "screen_height", ch.screenHeight)
+	logger.Debug("SendScrollEventToDevice: scroll event data", "x", x, "y", y, "hScroll", hScroll, "vScroll", vScroll)
 
 	controlMsg := &device.ControlMessage{
 		Type:     protocol.ControlMsgTypeInjectScrollEvent,
@@ -409,14 +467,15 @@ func (ch *ControlHandler) SendScrollEventToDevice(x, y, hScroll, vScroll float64
 		Data:     protocol.EncodeScrollEvent(*scrollEvent, ch.screenWidth, ch.screenHeight),
 	}
 
-	log.Printf("SendScrollEventToDevice: encoded data length=%d", len(controlMsg.Data))
+	logger.Debug("SendScrollEventToDevice: encoded data", "length", len(controlMsg.Data))
 	ch.sendControlMessage(controlMsg)
 }
 
 // sendControlMessage sends a control message to the device
 func (ch *ControlHandler) sendControlMessage(msg *device.ControlMessage) {
 	if ch.conn == nil {
-		log.Printf("Control connection is nil, cannot send message type %d", msg.Type)
+		logger := util.GetLogger()
+		logger.Error("Control connection is nil, cannot send message", "type", msg.Type)
 		return
 	}
 
@@ -426,25 +485,28 @@ func (ch *ControlHandler) sendControlMessage(msg *device.ControlMessage) {
 	buf[0] = byte(msg.Type)
 	copy(buf[1:], msg.Data)
 
-	log.Printf("Sending control message to device: type=%d, data_len=%d", msg.Type, len(msg.Data))
+	logger := util.GetLogger()
+	logger.Debug("Sending control message to device", "type", msg.Type, "data_len", len(msg.Data))
 
 	// Debug: log the actual data being sent to scrcpy server for clipboard messages
 	if msg.Type == protocol.ControlMsgTypeSetClipboard {
-		log.Printf("Clipboard message - Total length: %d", len(buf))
+		logger := util.GetLogger()
+		logger.Debug("Clipboard message details", "total_length", len(buf))
 		if len(buf) >= 20 {
-			log.Printf("First 20 bytes: %v", buf[:20])
-			log.Printf("Last 20 bytes: %v", buf[len(buf)-20:])
+			logger.Debug("Clipboard message data", "first_20_bytes", buf[:20], "last_20_bytes", buf[len(buf)-20:])
 		} else {
-			log.Printf("All data: %v", buf)
+			logger.Debug("Clipboard message all data", "data", buf)
 		}
 	}
 
 	if _, err := ch.conn.Write(buf); err != nil {
-		log.Printf("Failed to send control message: %v", err)
+		logger := util.GetLogger()
+		logger.Error("Failed to send control message", "error", err)
 		// Mark connection as invalid to prevent further attempts
 		ch.conn = nil
 	} else {
-		log.Printf("Control message sent successfully")
+		logger := util.GetLogger()
+		logger.Debug("Control message sent successfully")
 	}
 }
 
@@ -462,19 +524,28 @@ func (ch *ControlHandler) SendKeyFrameRequest() {
 func (ch *ControlHandler) UpdateScreenDimensions(width, height int) {
 	ch.screenWidth = width
 	ch.screenHeight = height
-	log.Printf("Updated screen dimensions: %dx%d", width, height)
+	if util.IsVerbose() {
+		logger := util.GetLogger()
+		logger.Debug("Updated screen dimensions", "width", width, "height", height)
+	}
 }
 
 // UpdateConnection updates the control connection
 func (ch *ControlHandler) UpdateConnection(conn net.Conn) {
 	ch.conn = conn
-	log.Printf("Updated control connection")
+	if util.IsVerbose() {
+		logger := util.GetLogger()
+		logger.Debug("Updated control connection")
+	}
 }
 
 // UpdateDataChannel updates the DataChannel
 func (ch *ControlHandler) UpdateDataChannel(dataChannel *webrtc.DataChannel) {
 	ch.dataChannel = dataChannel
-	log.Printf("Updated DataChannel")
+	if util.IsVerbose() {
+		logger := util.GetLogger()
+		logger.Debug("Updated DataChannel")
+	}
 }
 
 // HandleOutgoingMessages handles messages from device to WebRTC
@@ -489,14 +560,16 @@ func (ch *ControlHandler) HandleOutgoingMessages() {
 		n, err := ch.conn.Read(buffer)
 		if err != nil {
 			if err != io.EOF {
-				log.Printf("Control stream read error: %v", err)
+				logger := util.GetLogger()
+				logger.Error("Control stream read error", "error", err)
 			}
 			break
 		}
 
 		if n > 0 {
 			// Process control response from device
-			log.Printf("Received control response: %d bytes", n)
+			logger := util.GetLogger()
+			logger.Debug("Received control response", "bytes", n)
 		}
 	}
 }

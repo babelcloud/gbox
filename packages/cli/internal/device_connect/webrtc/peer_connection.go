@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/babelcloud/gbox/packages/cli/internal/util"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 )
@@ -59,11 +60,17 @@ func CreatePeerConnection() (*webrtc.PeerConnection, error) {
 
 	// Set up connection state logging
 	pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
-		log.Printf("WebRTC Connection State: %s", s.String())
+		// Only log important state changes or when verbose
+		if util.IsVerbose() || s == webrtc.PeerConnectionStateConnected || s == webrtc.PeerConnectionStateFailed || s == webrtc.PeerConnectionStateClosed {
+			log.Printf("WebRTC Connection State: %s", s.String())
+		}
 	})
 
 	pc.OnICEConnectionStateChange(func(s webrtc.ICEConnectionState) {
-		log.Printf("ICE Connection State: %s", s.String())
+		// Only log important state changes or when verbose
+		if util.IsVerbose() || s == webrtc.ICEConnectionStateConnected || s == webrtc.ICEConnectionStateFailed || s == webrtc.ICEConnectionStateDisconnected {
+			log.Printf("ICE Connection State: %s", s.String())
+		}
 	})
 
 	return pc, nil
