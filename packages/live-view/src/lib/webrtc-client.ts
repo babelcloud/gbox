@@ -109,21 +109,18 @@ export class WebRTCClient {
     console.log(`[WebRTC] Creating WebSocket connection to: ${fullWsUrl}`);
     this.ws = new WebSocket(fullWsUrl);
 
-    // Create WebRTC peer connection with ultra-low-latency optimizations
+    // Create WebRTC peer connection with balanced low-latency settings
     this.pc = new RTCPeerConnection({
       iceServers: [],
       bundlePolicy: "max-bundle",
       rtcpMuxPolicy: "require",
-      iceCandidatePoolSize: 0, // Disable candidate pool for faster connection
-      // Ultra-low latency optimizations
-      iceTransportPolicy: "all",
+      iceCandidatePoolSize: 1, // Use small candidate pool for stability
     });
 
-    // Create data channel for control messages with ultra-low latency settings
+    // Create data channel for control messages
     this.dataChannel = this.pc.createDataChannel("control", {
       ordered: false, // Allow out-of-order delivery for lower latency
       maxRetransmits: 0, // No retransmissions for lower latency
-      // Note: Cannot use both maxRetransmits and maxPacketLifeTime together
     });
     this.setupDataChannel();
     console.log("[WebRTC] Created data channel: control");
@@ -136,36 +133,12 @@ export class WebRTCClient {
       direction: "recvonly",
     });
 
-    // Set ultra-low latency hints and optimizations
+    // Set reasonable low latency hints (not ultra-aggressive)
     if ("playoutDelayHint" in videoTransceiver.receiver) {
-      (videoTransceiver.receiver as any).playoutDelayHint = 0;
+      (videoTransceiver.receiver as any).playoutDelayHint = 0.1; // 100ms instead of 0
     }
     if ("playoutDelayHint" in audioTransceiver.receiver) {
-      (audioTransceiver.receiver as any).playoutDelayHint = 0;
-    }
-
-    // Set jitter buffer settings for lower latency
-    if ("jitterBufferTarget" in videoTransceiver.receiver) {
-      (videoTransceiver.receiver as any).jitterBufferTarget = 0;
-    }
-    if ("jitterBufferTarget" in audioTransceiver.receiver) {
-      (audioTransceiver.receiver as any).jitterBufferTarget = 0;
-    }
-
-    // Configure transceivers for low latency
-    if (videoTransceiver.sender && "setParameters" in videoTransceiver.sender) {
-      try {
-        const params = videoTransceiver.sender.getParameters();
-        if (params.encodings && params.encodings.length > 0) {
-          // Optimize for ultra-low latency
-          params.encodings[0].maxBitrate = 12000000; // 12 Mbps max for better quality
-          params.encodings[0].maxFramerate = 60;
-          params.encodings[0].scaleResolutionDownBy = 1; // No downscaling
-          videoTransceiver.sender.setParameters(params);
-        }
-      } catch (e) {
-        console.warn("Failed to set video sender parameters:", e);
-      }
+      (audioTransceiver.receiver as any).playoutDelayHint = 0.1; // 100ms instead of 0
     }
 
     this.setupWebRTCHandlers();
@@ -230,30 +203,19 @@ export class WebRTCClient {
       if (event.track.kind === "video" && this.videoElement) {
         console.log("[WebRTC] Video track received, setting up playback");
         event.track.enabled = true;
+        
+        // Basic video element setup
         this.videoElement.autoplay = true;
         this.videoElement.muted = false;
         this.videoElement.playsInline = true;
         this.videoElement.controls = false;
+        this.videoElement.preload = "auto";
         this.videoElement.srcObject = event.streams[0];
 
-        // Optimize video element for ultra-low latency
-        this.videoElement.preload = "none";
-        this.videoElement.defaultMuted = false;
-        // Additional low-latency optimizations
+        // Basic styling
         this.videoElement.style.objectFit = "contain";
         this.videoElement.style.background = "black";
-        // Disable buffering optimizations that add latency
-        if ("webkitPreservesPitch" in this.videoElement) {
-          (this.videoElement as any).webkitPreservesPitch = false;
-        }
-
-        // Set low latency playback hints if available
-        if ("requestVideoFrameCallback" in this.videoElement) {
-          // Use modern frame callback for better timing
-          (this.videoElement as any).requestVideoFrameCallback(() => {
-            // Frame rendered callback for timing analysis
-          });
-        }
+        
         console.log("[WebRTC] Video srcObject set");
 
         this.videoElement.onloadedmetadata = () => {
@@ -264,9 +226,11 @@ export class WebRTCClient {
           if (width && height) {
             this.onStatsUpdate?.({ resolution: `${width}x${height}` });
           }
+        };
 
-          // Optimize buffering for low latency
-          this.optimizeVideoBuffering();
+        this.videoElement.onplaying = () => {
+          // Reset stall detection when video starts playing
+          this.lastVideoTime = this.videoElement?.currentTime || 0;
         };
 
         this.onConnectionStateChange?.("connected", undefined);
@@ -515,13 +479,87 @@ export class WebRTCClient {
     this.dataChannel.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        if (message.type === "pong" && message.id) {
-          // Handle ping response
+        
+        // Handle ping responses for latency measurement
+        if (message.type === "pong" && message.id && this.pendingPings?.has(message.id)) {
+          const pingStart = this.pendingPings.get(message.id);
+          if (pingStart) {
+            const latency = performance.now() - pingStart;
+
+            // Store ping time for averaging
+            if (!this.pingTimes) this.pingTimes = [];
+            this.pingTimes.push(latency);
+
+            // Keep only last 5 ping times
+            if (this.pingTimes.length > 5) {
+              this.pingTimes.shift();
+            }
+
+            // Update latency display with average
+            const avgLatency = this.pingTimes.reduce((a, b) => a + b, 0) / this.pingTimes.length;
+            this.onStatsUpdate?.({ latency: Math.round(avgLatency) });
+
+            this.pendingPings.delete(message.id);
+          }
         }
       } catch (e) {
         // Not JSON
       }
     };
+  }
+
+  // Ping measurement properties
+  private pingTimes: number[] = [];
+  private pingInterval: number | null = null;
+  private pendingPings: Map<string, number> | null = null;
+
+  private startPingMeasurement(): void {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+    }
+
+    this.pingTimes = [];
+    this.pendingPings = new Map();
+    
+    // Measure ping every 2 seconds
+    this.pingInterval = window.setInterval(() => {
+      this.measurePing();
+    }, 2000);
+  }
+
+  private measurePing(): void {
+    if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
+      return;
+    }
+
+    const pingStart = performance.now();
+    const pingId = Math.random().toString(36).substring(2, 11);
+
+    // Send ping message
+    this.dataChannel.send(JSON.stringify({
+      type: 'ping',
+      id: pingId,
+      timestamp: pingStart
+    }));
+
+    // Store ping start time
+    if (!this.pendingPings) {
+      this.pendingPings = new Map();
+    }
+    this.pendingPings.set(pingId, pingStart);
+
+    // Clean up old pings after 5 seconds
+    setTimeout(() => {
+      this.pendingPings?.delete(pingId);
+    }, 5000);
+  }
+
+  private stopPingMeasurement(): void {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+    this.pendingPings?.clear();
   }
 
   sendControlMessage(message: ControlMessage): void {
@@ -625,6 +663,13 @@ export class WebRTCClient {
       return;
     }
 
+    // Only handle left mouse button (button 0) for touch simulation
+    // Right click (button 2) and middle click (button 1) should be ignored
+    if ((action === "down" || action === "up") && event.button !== 0) {
+      console.log(`[WebRTC] Ignoring non-left mouse button: ${event.button}`);
+      return;
+    }
+
     // Check if peer connection is in a valid state
     if (
       this.pc.connectionState === "closed" ||
@@ -715,7 +760,14 @@ export class WebRTCClient {
     const x = relativeX / displayWidth;
     const y = relativeY / displayHeight;
 
-    // Ensure coordinates are within bounds
+    // Only send touch events if the click is within the actual video display area
+    if (x < 0 || x > 1 || y < 0 || y > 1) {
+      // Click is in the black bars (letterbox/pillarbox), ignore it
+      console.log(`[WebRTC] Click outside video area ignored: x=${x.toFixed(3)}, y=${y.toFixed(3)}`);
+      return;
+    }
+
+    // Ensure coordinates are within bounds (should already be, but safety check)
     const clampedX = Math.max(0, Math.min(1, x));
     const clampedY = Math.max(0, Math.min(1, y));
 
@@ -789,11 +841,22 @@ export class WebRTCClient {
     const x = relativeX / displayWidth;
     const y = relativeY / displayHeight;
 
+    // Only send touch events if the touch is within the actual video display area
+    if (x < 0 || x > 1 || y < 0 || y > 1) {
+      // Touch is in the black bars (letterbox/pillarbox), ignore it
+      console.log(`[WebRTC] Touch outside video area ignored: x=${x.toFixed(3)}, y=${y.toFixed(3)}`);
+      return;
+    }
+
+    // Ensure coordinates are within bounds (should already be, but safety check)
+    const clampedX = Math.max(0, Math.min(1, x));
+    const clampedY = Math.max(0, Math.min(1, y));
+
     this.sendControlMessage({
       type: "touch",
       action,
-      x: Math.max(0, Math.min(1, x)),
-      y: Math.max(0, Math.min(1, y)),
+      x: clampedX,
+      y: clampedY,
       pressure: action === "down" || action === "move" ? 1.0 : 0.0,
       pointerId: 0,
     });
@@ -811,40 +874,59 @@ export class WebRTCClient {
     this.sendControlMessage({ type: "reset_video" });
   }
 
-  // Optimize video buffering for low latency
-  private optimizeVideoBuffering(): void {
-    if (!this.videoElement) return;
+  // Check for video stalls and request keyframe if needed
+  private checkForVideoStall(): void {
+    if (!this.videoElement || this.videoElement.paused) return;
 
-    // Try to minimize buffering
-    try {
-      // Set current time to reduce buffer
-      if (this.videoElement.buffered.length > 0) {
-        const bufferedEnd = this.videoElement.buffered.end(0);
-        const currentTime = this.videoElement.currentTime;
+    const currentTime = this.videoElement.currentTime;
+    const timeDiff = currentTime - this.lastVideoTime;
 
-        // If we have too much buffered content, seek to reduce it
-        if (bufferedEnd - currentTime > 0.5) {
-          // More than 500ms buffered
-          console.log("[WebRTC] Reducing video buffer for lower latency");
-          this.videoElement.currentTime = bufferedEnd - 0.1; // Keep only 100ms buffer
-        }
-      }
-    } catch (e) {
-      console.warn("[WebRTC] Failed to optimize video buffering:", e);
+    // If video time hasn't advanced by at least 0.1 seconds in 2 seconds, consider it stalled
+    if (timeDiff < 0.1) {
+      console.log('[WebRTC] Video appears stalled, requesting keyframe');
+      this.requestKeyframe();
     }
+
+    this.lastVideoTime = currentTime;
   }
+
+  private lastVideoTime = 0;
+  private stallCheckInterval: number | null = null;
 
   private startStats(): void {
     if (this.statsInterval) {
       clearInterval(this.statsInterval);
     }
 
-    // Update stats more frequently for better responsiveness
+    // Update stats every second
     this.statsInterval = window.setInterval(() => {
       this.updateStats();
-      // Also optimize buffering periodically
-      this.optimizeVideoBuffering();
-    }, 500); // Update every 500ms instead of 1000ms
+    }, 1000);
+
+    // Start stall detection
+    this.startStallDetection();
+    // Start ping measurement for accurate latency
+    this.startPingMeasurement();
+  }
+
+  private startStallDetection(): void {
+    if (this.stallCheckInterval) {
+      clearInterval(this.stallCheckInterval);
+    }
+
+    this.lastVideoTime = this.videoElement?.currentTime || 0;
+    
+    // Check for stalls every 2 seconds
+    this.stallCheckInterval = window.setInterval(() => {
+      this.checkForVideoStall();
+    }, 2000);
+  }
+
+  private stopStallDetection(): void {
+    if (this.stallCheckInterval) {
+      clearInterval(this.stallCheckInterval);
+      this.stallCheckInterval = null;
+    }
   }
 
   private lastFramesDecoded = 0;
@@ -858,7 +940,7 @@ export class WebRTCClient {
       const stats = await this.pc.getStats();
       let fps = 0;
       let resolution = "";
-      let latency = 0;
+      let webrtcLatency = 0;
 
       stats.forEach((report: any) => {
         if (
@@ -868,41 +950,25 @@ export class WebRTCClient {
           const width = report.frameWidth || 0;
           const height = report.frameHeight || 0;
 
-          // Calculate FPS from frames decoded difference
-          const currentTime = Date.now();
-          const currentFramesDecoded = report.framesDecoded || 0;
-
-          if (this.lastFramesDecoded > 0 && this.lastStatsTime > 0) {
-            const timeDiff = (currentTime - this.lastStatsTime) / 1000; // in seconds
-            const framesDiff = currentFramesDecoded - this.lastFramesDecoded;
-            if (timeDiff > 0 && framesDiff >= 0) {
-              fps = Math.round(framesDiff / timeDiff);
-            }
-          }
-
-          this.lastFramesDecoded = currentFramesDecoded;
-          this.lastStatsTime = currentTime;
-
-          // Use framesPerSecond if available as fallback
-          if (fps === 0 && report.framesPerSecond) {
+          // Use direct framesPerSecond if available (most reliable)
+          if (report.framesPerSecond) {
             fps = Math.round(report.framesPerSecond);
           }
+          // Fallback: calculate FPS from frames decoded difference
+          else if (report.framesDecoded) {
+            const currentTime = Date.now();
+            const currentFramesDecoded = report.framesDecoded || 0;
 
-          // Additional fallback: use framesReceived if framesDecoded is not available
-          if (fps === 0 && report.framesReceived) {
-            const currentFramesReceived = report.framesReceived || 0;
-            if (
-              this.lastFramesReceived !== undefined &&
-              this.lastStatsTime > 0
-            ) {
-              const timeDiff = (currentTime - this.lastStatsTime) / 1000;
-              const framesDiff =
-                currentFramesReceived - this.lastFramesReceived;
+            if (this.lastFramesDecoded > 0 && this.lastStatsTime > 0) {
+              const timeDiff = (currentTime - this.lastStatsTime) / 1000; // in seconds
+              const framesDiff = currentFramesDecoded - this.lastFramesDecoded;
               if (timeDiff > 0 && framesDiff >= 0) {
                 fps = Math.round(framesDiff / timeDiff);
               }
             }
-            this.lastFramesReceived = currentFramesReceived;
+
+            this.lastFramesDecoded = currentFramesDecoded;
+            this.lastStatsTime = currentTime;
           }
 
           if (width && height) {
@@ -910,11 +976,16 @@ export class WebRTCClient {
           }
         }
 
-        // Get latency from candidate-pair stats
-        if (report.type === "candidate-pair" && report.state === "succeeded") {
-          latency = Math.round(report.currentRoundTripTime * 1000) || 0; // Convert to ms
+        // Get latency from candidate-pair stats (as fallback)
+        if (report.type === "candidate-pair" && report.state === "succeeded" && report.currentRoundTripTime) {
+          webrtcLatency = Math.round(report.currentRoundTripTime * 1000); // Convert to ms
         }
       });
+
+      // Use ping-pong latency if available, otherwise use WebRTC latency
+      const latency = this.pingTimes.length > 0 ? 
+        Math.round(this.pingTimes.reduce((a, b) => a + b, 0) / this.pingTimes.length) : 
+        webrtcLatency;
 
       this.onStatsUpdate?.({ fps, resolution, latency });
     } catch (err) {
@@ -993,11 +1064,14 @@ export class WebRTCClient {
     this.isConnected = false;
     this.onConnectionStateChange?.("disconnected", undefined);
 
-    // Stop stats collection
+    // Stop all intervals
     if (this.statsInterval) {
       clearInterval(this.statsInterval);
       this.statsInterval = null;
     }
+
+    this.stopStallDetection();
+    this.stopPingMeasurement();
 
     // Close data channel
     if (this.dataChannel) {
@@ -1048,6 +1122,7 @@ export class WebRTCClient {
     this.lastFramesDecoded = 0;
     this.lastFramesReceived = 0;
     this.lastStatsTime = 0;
+    this.lastVideoTime = 0;
 
     console.log("[WebRTC] Disconnect completed");
   }
@@ -1063,6 +1138,8 @@ export class WebRTCClient {
 
   cleanup(): void {
     this.stopReconnection();
+    this.stopStallDetection();
+    this.stopPingMeasurement();
     if (this.isConnected || this.pc || this.ws) {
       this.disconnect(true);
     }

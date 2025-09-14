@@ -14,6 +14,7 @@ import (
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/device"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/protocol"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/stream"
+	"github.com/babelcloud/gbox/packages/cli/internal/util"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 )
@@ -269,7 +270,9 @@ func (b *Bridge) startMediaStreaming(conn net.Conn) {
 
 // handleVideoStreamOptimized processes the first video connection
 func (b *Bridge) handleVideoStreamOptimized(conn net.Conn) {
-	log.Println("Processing optimized video stream")
+	if util.IsVerbose() {
+		log.Println("Processing optimized video stream")
+	}
 
 	// Read codec ID from video stream
 	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
@@ -316,7 +319,9 @@ func (b *Bridge) handleVideoStreamOptimized(conn net.Conn) {
 
 // handleVideoStream processes video stream with codec
 func (b *Bridge) handleVideoStream(conn net.Conn, codecID uint32) {
-	log.Printf("Starting video stream handler with codec ID: 0x%08x", codecID)
+	if util.IsVerbose() {
+		log.Printf("Starting video stream handler with codec ID: 0x%08x", codecID)
+	}
 
 	// Read video dimensions
 	sizeData := make([]byte, 8)
@@ -351,7 +356,9 @@ func (b *Bridge) handleVideoStream(conn net.Conn, codecID uint32) {
 
 // handleAudioStream processes audio stream
 func (b *Bridge) handleAudioStream(conn net.Conn, codecID uint32) {
-	log.Printf("Starting audio stream handler with codec ID: 0x%08x", codecID)
+	if util.IsVerbose() {
+		log.Printf("Starting audio stream handler with codec ID: 0x%08x", codecID)
+	}
 
 	// Audio track should already be created in NewBridge
 	if b.AudioTrack == nil {
