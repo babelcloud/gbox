@@ -302,6 +302,59 @@ func (pm *ProfileManager) listTable() {
 	}
 }
 
+// ListTableForSelection displays profiles in table format for selection (used in profile use command)
+func (pm *ProfileManager) ListTableForSelection() {
+	// Calculate column widths based on content
+	maxIDLen := 2      // "ID" header
+	maxKeyLen := 3     // "Key" header
+	maxOrgLen := 12    // "Organization" header
+
+	for id, profile := range pm.config.Profiles {
+		// Add arrow to current profile ID for width calculation
+		displayID := id
+		if id == pm.config.Current {
+			displayID = "→ " + id
+		}
+		if len(displayID) > maxIDLen {
+			maxIDLen = len(displayID)
+		}
+
+		// Calculate masked key width
+		maskedKey := pm.GetMaskedAPIKey(profile.APIKey)
+		if len(maskedKey) > maxKeyLen {
+			maxKeyLen = len(maskedKey)
+		}
+
+		if len(profile.GetOrgName()) > maxOrgLen {
+			maxOrgLen = len(profile.GetOrgName())
+		}
+	}
+
+	// Add some padding
+	maxIDLen += 2
+	maxKeyLen += 2
+	maxOrgLen += 2
+
+	// Print header
+	fmt.Printf("  %-*s %-*s %-*s\n", maxIDLen-2, "ID", maxKeyLen, "Key", maxOrgLen, "Organization")
+	fmt.Println("  " + strings.Repeat("-", maxIDLen+maxKeyLen+maxOrgLen-1))
+
+	// Print profiles
+	for id, profile := range pm.config.Profiles {
+		isCurrent := id == pm.config.Current
+
+		// Get masked key
+		maskedKey := pm.GetMaskedAPIKey(profile.APIKey)
+
+		if isCurrent {
+			fmt.Print("\033[32m→ ") // Color the arrow and space
+			fmt.Printf("\033[32m%-*s\033[0m %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.GetOrgName())
+		} else {
+			fmt.Printf("  %-*s %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.GetOrgName())
+		}
+	}
+}
+
 // Add adds a new profile
 func (pm *ProfileManager) Add(id, org, key, baseURL string) error {
 	// Determine base URL with priority: provided baseURL > config default
