@@ -111,16 +111,8 @@ var profileUseCmd = &cobra.Command{
 				return fmt.Errorf("no profiles available, please add a profile first")
 			}
 
-			fmt.Println("Available Profiles:")
-			fmt.Println("------------------")
-			currentProfile := pm.GetCurrent()
-			for id, profile := range profiles {
-				current := ""
-				if currentProfile != nil && id == pm.GetCurrentProfileID() {
-					current = " (*)"
-				}
-				fmt.Printf("%s. %s%s\n", id, profile.GetOrgName(), current)
-			}
+			// Use the same table format as profile list
+			pm.ListTableForSelection()
 			fmt.Print("\nPlease select a profile (enter ID): ")
 
 			fmt.Scanln(&profileID)
