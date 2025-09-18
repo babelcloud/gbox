@@ -4,8 +4,10 @@ import styles from './ControlButtons.module.css';
 interface ControlButtonsProps {
   onAction: (action: string) => void;
   onIMESwitch?: () => void;
+  onDisconnect?: () => void;
   isVisible?: boolean;
   onToggleVisibility?: () => void;
+  showDisconnect?: boolean;
 }
 
 export const ControlButtons: React.FC<ControlButtonsProps> = ({ onAction, onIMESwitch, isVisible = true, onToggleVisibility }) => {

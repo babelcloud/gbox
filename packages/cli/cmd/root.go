@@ -17,7 +17,7 @@ var (
 	aliasMap = map[string]string{}
 
 	scriptDir string
-	
+
 	// Global verbose flag
 	verbose bool
 

@@ -24,21 +24,29 @@ export const useDeviceManager = ({
 
   // Load devices
   const loadDevices = useCallback(async () => {
+    console.log('[useDeviceManager] Loading devices from:', `${apiUrl}/devices`);
     setLoading(true);
     try {
       const response = await fetch(`${apiUrl}/devices`);
+      console.log('[useDeviceManager] Response status:', response.status);
       const data = await response.json();
+      console.log('[useDeviceManager] Raw response data:', data);
+      console.log('[useDeviceManager] Raw devices array:', data.devices);
+      if (data.devices && data.devices.length > 0) {
+        console.log('[useDeviceManager] First raw device:', data.devices[0]);
+      }
       // Transform device data to match our interface
       // The API returns 'id' but we use 'serial' internally
       const transformedDevices = (data.devices || []).map((device: any) => ({
         serial: device.id || device.serial || device.udid,
-        state: device.state,
+        state: device.status || device.state, // API returns 'status', frontend expects 'state'
         model: device['ro.product.model'] || device.model || 'Unknown',
         connected: device.connected,
       }));
+      console.log('[useDeviceManager] Transformed devices:', transformedDevices);
       setDevices(transformedDevices);
     } catch (error) {
-      console.error('Failed to load devices:', error);
+      console.error('[useDeviceManager] Failed to load devices:', error);
       onError?.(error as Error);
     } finally {
       setLoading(false);

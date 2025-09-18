@@ -8,3 +8,4 @@ gbox
 gbox-test
 
 assets/scrcpy-server*.jar
+internal/server/static/live-view/

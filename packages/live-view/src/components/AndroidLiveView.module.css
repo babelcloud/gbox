@@ -1,25 +1,124 @@
 .container {
   display: flex;
   height: 100vh;
+  max-height: 100vh;
+  width: 100vw;
+  max-width: 100vw;
   background: #1a1a1a;
   color: #ffffff;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  flex-direction: column;
+  position: relative;
+  border-radius: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* Mode Switcher */
+.modeSwitcher {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-sizing: border-box;
+}
+
+.modeSwitcherTitle {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.modeButtonGroup {
+  display: flex;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+
+.modeBtn {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  text-align: center;
+  position: relative;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.modeBtn:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 60%;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.modeBtn:first-child {
+  border-top-left-radius: 7px;
+  border-bottom-left-radius: 7px;
+}
+
+.modeBtn:last-child {
+  border-top-right-radius: 7px;
+  border-bottom-right-radius: 7px;
+}
+
+.modeBtn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.modeBtn.active {
+  background: #667eea;
+  color: #fff;
+}
+
+.modeBtn.active:not(:last-child)::after {
+  display: none;
+}
+
+.contentWrapper {
+  display: flex;
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
 }
 
 .sidebar {
-  width: 300px;
+  width: 320px;
+  min-width: 300px;
+  max-width: 320px;
   background: #2d2d2d;
-  padding: 20px;
+  padding: 16px;
   overflow-y: auto;
+  overflow-x: hidden;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .mainContent {
   flex: 1;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   background: #000;
-  overflow: visible;
+  overflow: hidden;
   position: relative;
+  height: 100%;
+  min-height: 0;
 }
 
 .videoContainer {
@@ -27,11 +126,33 @@
   position: relative;
   background: #000;
   display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.videoContent {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.videoMainArea {
+  flex: 1;
+  position: relative;
+  display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   min-height: 0;
-  padding: 20px 20px 80px 20px;
+  min-width: 0;
+  padding: 8px;
+  box-sizing: border-box;
 }
 
 .videoWrapper {
@@ -43,14 +164,17 @@
   height: 100%;
   max-width: 100%;
   max-height: 100%;
+  overflow: hidden;
+  min-height: 0;
+  min-width: 0;
 }
 
 
 .video {
   object-fit: contain;
   display: block;
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: auto;
   max-width: 100%;
   max-height: 100%;
   cursor: pointer;
@@ -58,6 +182,7 @@
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
+  transition: width 0.2s ease, height 0.2s ease;
 }
 
 .video.dragging {
@@ -90,35 +215,49 @@
 }
 
 .controlsArea {
-  width: 100px;
+  position: relative;
+  right: 0;
+  top: 0;
+  transform: none;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.9);
+  pointer-events: auto;
+  width: 120px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  position: relative;
 }
 
 .statsArea {
-  position: absolute;
+  position: relative;
   bottom: 0;
-  right: 0;
   left: 0;
-  height: 60px;
+  right: 0;
+  height: 24px;
   display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-  padding: 10px 20px;
+  align-items: center;
+  justify-content: center;
   pointer-events: none;
   z-index: 10;
+  background: rgba(0, 0, 0, 0.9);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+  font-weight: bolder;
 }
 
 .stats {
-  background: rgba(0, 0, 0, 0.7);
-  padding: 8px 12px;
-  border-radius: 5px;
-  font-size: 12px;
-  color: #ccc;
+  background: transparent;
+  padding: 4px 12px;
+  border-radius: 0;
+  font-size: 11px;
+  color: #888;
   pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  backdrop-filter: none;
+  border: none;
 }
 
 .toggleButton {
@@ -152,4 +291,64 @@
 .toggleButton:active {
   background: rgba(255, 255, 255, 0.3);
   transform: translateY(-50%) scale(0.95);
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+  .sidebar {
+    width: 300px;
+    min-width: 280px;
+  }
+
+  .videoContainer {
+    padding: 8px;
+  }
+}
+
+/* Ensure video fits properly on smaller screens */
+@media (max-height: 800px) {
+  .videoContainer {
+    padding: 12px;
+  }
+}
+
+@media (max-height: 600px) {
+  .videoContainer {
+    padding: 8px;
+  }
+}
+
+@media (max-width: 768px) {
+  .contentWrapper {
+    flex-direction: column;
+  }
+  
+  .sidebar {
+    width: 100%;
+    height: 220px;
+    min-width: unset;
+    order: 2;
+    overflow-y: auto;
+    padding: 16px;
+  }
+  
+  .mainContent {
+    order: 1;
+    height: calc(100% - 220px);
+  }
+  
+  .videoContainer {
+    padding: 8px;
+  }
+  
+  .modeSwitcher {
+    margin-bottom: 12px;
+    padding: 10px;
+  }
+  
+  .modeBtn {
+    padding: 6px 10px;
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
 }

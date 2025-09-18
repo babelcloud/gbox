@@ -59,9 +59,16 @@ clean: ## Clean the build directory
 # Build dependencies (live-view and scrcpy-server)
 build-deps: build-live-view download-scrcpy-server ## Build all dependencies
 
-# Build live-view static files
+# Build live-view static files and copy to CLI static directory
 build-live-view: ## Build live-view static files
+	@echo "Building live-view static files..."
 	@$(MAKE) -C ../live-view build
+	@echo "Cleaning old live-view static files..."
+	@rm -rf internal/server/static/live-view
+	@echo "Copying live-view static files to CLI..."
+	@mkdir -p internal/server/static/live-view
+	@cp -r ../live-view/static/* internal/server/static/live-view/
+	@echo "✅ Live-view static files ready for embedding"
 
 # Download scrcpy-server.jar
 download-scrcpy-server: ## Download scrcpy-server.jar
