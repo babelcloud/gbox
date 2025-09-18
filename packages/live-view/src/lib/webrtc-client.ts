@@ -12,6 +12,13 @@ export class WebRTCClient {
   private videoElement: HTMLVideoElement | null = null;
   private audioElement: HTMLAudioElement | null = null;
 
+  // Control message queue for early messages before DataChannel is ready
+  private pendingControlMessages: ControlMessage[] = [];
+
+  // Video reset throttling to prevent server overload
+  private lastKeyframeRequest: number = 0;
+  private readonly KEYFRAME_THROTTLE_MS = 2000; // Minimum 2 seconds between keyframe requests
+
   // Reconnection state
   private isReconnecting: boolean = false;
   private reconnectAttempts: number = 0;
@@ -71,11 +78,11 @@ export class WebRTCClient {
     this.lastConnectedDevice = deviceSerial;
     this.isReconnecting = false;
     this.reconnectAttempts = 0;
-    this.onConnectionStateChange?.("connecting", "正在连接设备...");
+    this.onConnectionStateChange?.("connecting", "Connecting to device...");
 
     try {
       console.log("[WebRTC] Starting WebRTC connection establishment");
-      await this.establishWebRTCConnection(deviceSerial, wsUrl);
+      await this.establishWebRTCConnection(deviceSerial, wsUrl, false);
     } catch (error) {
       console.error("[WebRTC] Connection failed:", error);
 
@@ -90,24 +97,27 @@ export class WebRTCClient {
         );
         this.onConnectionStateChange?.(
           "disconnected",
-          "连接已关闭，正在重连..."
+          "Connection closed, reconnecting..."
         );
         return; // Don't throw error, let automatic reconnection handle it
       }
 
       this.onError?.(error as Error);
-      this.onConnectionStateChange?.("error", "连接失败");
+      this.onConnectionStateChange?.("error", "Connection failed");
       throw error;
     }
   }
 
   private async establishWebRTCConnection(
     deviceSerial: string,
-    wsUrl: string
+    wsUrl: string,
+    isReconnection: boolean = false
   ): Promise<void> {
-    const fullWsUrl = `${wsUrl}?device=${deviceSerial}`;
-    console.log(`[WebRTC] Creating WebSocket connection to: ${fullWsUrl}`);
-    this.ws = new WebSocket(fullWsUrl);
+    // Use /api/stream/control/ endpoint for WebRTC signaling instead of generic /ws
+    const baseUrl = wsUrl.replace(/\/ws$/, '');  // Remove /ws suffix if present
+    const controlWsUrl = `${baseUrl}/api/stream/control/${deviceSerial}`.replace(/^http/, 'ws');
+    console.log(`[WebRTC] Creating WebSocket connection to: ${controlWsUrl}`);
+    this.ws = new WebSocket(controlWsUrl);
 
     // Create WebRTC peer connection with balanced low-latency settings
     this.pc = new RTCPeerConnection({
@@ -132,6 +142,10 @@ export class WebRTCClient {
     const audioTransceiver = this.pc.addTransceiver("audio", {
       direction: "recvonly",
     });
+
+    console.log("[WebRTC] Created transceivers - Video mid:", videoTransceiver.mid, "Audio mid:", audioTransceiver.mid);
+    console.log("[WebRTC] Video transceiver direction:", videoTransceiver.direction);
+    console.log("[WebRTC] Audio transceiver direction:", audioTransceiver.direction);
 
     // Set reasonable low latency hints (not ultra-aggressive)
     if ("playoutDelayHint" in videoTransceiver.receiver) {
@@ -160,8 +174,14 @@ export class WebRTCClient {
         console.log("[WebRTC] WebSocket connected, creating offer");
 
         try {
-          // Create and send offer
-          const offer = await this.pc!.createOffer();
+          // Create and send offer with ICE restart if this is a reconnection
+          const offerOptions: RTCOfferOptions = {};
+          if (isReconnection) {
+            console.log("[WebRTC] Adding ICE restart to offer for reconnection");
+            offerOptions.iceRestart = true;
+          }
+          const offer = await this.pc!.createOffer(offerOptions);
+          console.log("[WebRTC] Offer SDP preview:", offer.sdp?.substring(0, 200) + "...");
           await this.pc!.setLocalDescription(offer);
 
           // Send offer with deviceSerial and proper structure
@@ -243,14 +263,22 @@ export class WebRTCClient {
     };
 
     this.pc.onicecandidate = (event) => {
-      if (event.candidate && this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(
-          JSON.stringify({
-            type: "ice-candidate",
-            deviceSerial: this.currentDevice,
-            candidate: event.candidate,
-          })
-        );
+      if (event.candidate) {
+        console.log("[WebRTC] ICE candidate generated:", event.candidate.candidate.substring(0, 50) + "...");
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(
+            JSON.stringify({
+              type: "ice-candidate",
+              deviceSerial: this.currentDevice,
+              candidate: event.candidate,
+            })
+          );
+          console.log("[WebRTC] ICE candidate sent to server");
+        } else {
+          console.warn("[WebRTC] Cannot send ICE candidate - WebSocket not ready", this.ws?.readyState);
+        }
+      } else {
+        console.log("[WebRTC] ICE candidate gathering finished");
       }
     };
 
@@ -264,6 +292,25 @@ export class WebRTCClient {
         this.dataChannel = event.channel;
         this.setupDataChannel();
       }
+    };
+
+    this.pc.oniceconnectionstatechange = () => {
+      if (!this.pc) return;
+      console.log("[WebRTC] ICE Connection state changed:", this.pc.iceConnectionState);
+
+      // Handle ICE connection failures
+      if (this.pc.iceConnectionState === "failed") {
+        console.log("[WebRTC] ICE connection failed - attempting restart");
+        // Try to restart ICE
+        this.pc.restartIce();
+      } else if (this.pc.iceConnectionState === "disconnected") {
+        console.log("[WebRTC] ICE connection disconnected");
+      }
+    };
+
+    this.pc.onicegatheringstatechange = () => {
+      if (!this.pc) return;
+      console.log("[WebRTC] ICE Gathering state:", this.pc.iceGatheringState);
     };
 
     this.pc.onconnectionstatechange = () => {
@@ -321,7 +368,7 @@ export class WebRTCClient {
 
     this.audioElement.play().catch((e) => {
       console.error("Audio playback failed:", e);
-      this.onError?.(new Error("音频播放失败，点击页面启用音频"));
+      this.onError?.(new Error("Audio playback failed, click page to enable audio"));
     });
   }
 
@@ -379,6 +426,9 @@ export class WebRTCClient {
 
         // Handle both formats: direct sdp or nested in answer object
         const sdp = message.sdp || (message as any).answer?.sdp;
+        if (sdp) {
+          console.log("[WebRTC] Answer SDP preview:", sdp.substring(0, 200) + "...");
+        }
         if (!sdp) {
           console.error(
             "[WebRTC] Answer missing SDP field, full message:",
@@ -398,7 +448,13 @@ export class WebRTCClient {
       case "ice-candidate":
         if (message.candidate) {
           console.log("[WebRTC] Adding ICE candidate");
-          await this.pc.addIceCandidate(new RTCIceCandidate(message.candidate));
+          try {
+            await this.pc.addIceCandidate(new RTCIceCandidate(message.candidate));
+            console.log("[WebRTC] ICE candidate added successfully");
+          } catch (error) {
+            console.error("[WebRTC] Failed to add ICE candidate:", error);
+            console.log("[WebRTC] Candidate that failed:", message.candidate);
+          }
         }
         break;
 
@@ -443,10 +499,10 @@ export class WebRTCClient {
               "Connection error, reconnecting..."
             );
 
-            // Wait a bit before reconnecting to allow server to clean up
+            // Wait longer before reconnecting to allow server to clean up
             setTimeout(() => {
               this.startReconnection();
-            }, 500);
+            }, 1000);
           }
 
           // Don't trigger error callback for recoverable errors
@@ -473,6 +529,20 @@ export class WebRTCClient {
 
     this.dataChannel.onopen = () => {
       console.log("[WebRTC] Data channel opened");
+
+      // Process any pending control messages (filter out reset_video to avoid duplicates)
+      if (this.pendingControlMessages.length > 0) {
+        const filteredMessages = this.pendingControlMessages.filter(msg => msg.type !== "reset_video");
+        if (filteredMessages.length > 0) {
+          console.log(`[WebRTC] Processing ${filteredMessages.length} pending control messages`);
+          filteredMessages.forEach(message => {
+            this.sendControlMessageDirect(message);
+          });
+        }
+        this.pendingControlMessages = [];
+      }
+
+      // Request keyframe only once after DataChannel is ready
       setTimeout(() => this.requestKeyframe(), 500);
     };
 
@@ -564,15 +634,23 @@ export class WebRTCClient {
 
   sendControlMessage(message: ControlMessage): void {
     if (!this.dataChannel) {
-      console.warn("[WebRTC] Data channel not available");
+      // Queue message for when DataChannel becomes available
+      this.pendingControlMessages.push(message);
       return;
     }
 
     if (this.dataChannel.readyState !== "open") {
-      console.warn(
-        "[WebRTC] Data channel not open, state:",
-        this.dataChannel.readyState
-      );
+      // Queue message for when DataChannel opens
+      this.pendingControlMessages.push(message);
+      return;
+    }
+
+    // Send message directly
+    this.sendControlMessageDirect(message);
+  }
+
+  private sendControlMessageDirect(message: ControlMessage): void {
+    if (!this.dataChannel || this.dataChannel.readyState !== "open") {
       return;
     }
 
@@ -598,18 +676,22 @@ export class WebRTCClient {
       console.log("[WebRTC] Sending control message:", msgWithTimestamp);
     }
 
-    // Handle clipboard messages with binary data specially
-    if (typeof message.type === "number" && message.data) {
-      // For clipboard messages, send as binary data
-      const binaryMessage = {
-        type: message.type,
-        data: Array.from(message.data), // Convert Uint8Array to regular array for JSON
-        timestamp: Date.now(),
-      };
-      this.dataChannel.send(JSON.stringify(binaryMessage));
-    } else {
-      // For regular messages, send as JSON
-      this.dataChannel.send(JSON.stringify(msgWithTimestamp));
+    try {
+      // Handle clipboard messages with binary data specially
+      if (typeof message.type === "number" && message.data) {
+        // For clipboard messages, send as binary data
+        const binaryMessage = {
+          type: message.type,
+          data: Array.from(message.data), // Convert Uint8Array to regular array for JSON
+          timestamp: Date.now(),
+        };
+        this.dataChannel.send(JSON.stringify(binaryMessage));
+      } else {
+        // For regular messages, send as JSON
+        this.dataChannel.send(JSON.stringify(msgWithTimestamp));
+      }
+    } catch (error) {
+      console.error("[WebRTC] Failed to send control message:", error);
     }
   }
 
@@ -871,6 +953,16 @@ export class WebRTCClient {
   }
 
   requestKeyframe(): void {
+    const now = Date.now();
+
+    // Throttle keyframe requests to prevent server overload
+    if (now - this.lastKeyframeRequest < this.KEYFRAME_THROTTLE_MS) {
+      console.log(`[WebRTC] Keyframe request throttled (last: ${now - this.lastKeyframeRequest}ms ago)`);
+      return;
+    }
+
+    this.lastKeyframeRequest = now;
+    console.log("[WebRTC] Requesting keyframe");
     this.sendControlMessage({ type: "reset_video" });
   }
 
@@ -1004,8 +1096,8 @@ export class WebRTCClient {
     if (!this.isReconnecting || !this.lastConnectedDevice) return;
 
     this.reconnectAttempts++;
-    // Use shorter delays for faster reconnection: 1s, 2s, 3s, 5s, then 5s repeatedly
-    const delays = [1000, 2000, 3000, 5000];
+    // Use longer delays that give backend time to cleanup ICE connections: 3s, 5s, 7s, 10s, then 10s repeatedly
+    const delays = [3000, 5000, 7000, 10000];
     const delay =
       delays[Math.min(this.reconnectAttempts - 1, delays.length - 1)];
 
@@ -1026,15 +1118,22 @@ export class WebRTCClient {
 
     // Actually attempt to reconnect
     try {
-      // Extract base WebSocket URL
-      const baseUrl = this.ws?.url?.split("?")[0] || "ws://localhost:29888/ws";
+      // Extract base URL from current WebSocket URL (remove device-specific parts)
+      let baseUrl = "ws://localhost:29888";
+      if (this.ws?.url) {
+        // Remove /api/stream/control/{device} to get base URL
+        baseUrl = this.ws.url.replace(/\/api\/stream\/control\/[^\/]+$/, '');
+      }
 
       console.log(
         `[WebRTC] Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`
       );
 
-      // Try to reconnect
-      await this.connect(this.lastConnectedDevice, baseUrl);
+      // Set up state for reconnection
+      this.currentDevice = this.lastConnectedDevice;
+
+      // Try to reconnect with ICE restart enabled
+      await this.establishWebRTCConnection(this.lastConnectedDevice, `${baseUrl}/ws`, true);
 
       // If successful, reset counters
       this.isReconnecting = false;
@@ -1073,30 +1172,55 @@ export class WebRTCClient {
     this.stopStallDetection();
     this.stopPingMeasurement();
 
-    // Close data channel
+    // Clear pending control messages and reset throttling
+    this.pendingControlMessages = [];
+    this.lastKeyframeRequest = 0;
+
+    // Close data channel with more aggressive cleanup
     if (this.dataChannel) {
       try {
-        this.dataChannel.close();
+        if (this.dataChannel.readyState === "open" || this.dataChannel.readyState === "connecting") {
+          this.dataChannel.close();
+        }
       } catch (e) {
         console.warn("[WebRTC] Error closing data channel:", e);
       }
       this.dataChannel = null;
     }
 
-    // Close peer connection
+    // Close peer connection with more aggressive cleanup
     if (this.pc) {
       try {
+        // Force close all transceivers first
+        this.pc.getTransceivers().forEach(transceiver => {
+          try {
+            transceiver.stop();
+          } catch (e) {
+            console.warn("[WebRTC] Error stopping transceiver:", e);
+          }
+        });
+
+        // Close the peer connection
         this.pc.close();
+
+        // Wait a bit for cleanup
+        await new Promise(resolve => setTimeout(resolve, 100));
       } catch (e) {
         console.warn("[WebRTC] Error closing peer connection:", e);
       }
       this.pc = null;
     }
 
-    // Close WebSocket
+    // Close WebSocket gracefully
     if (this.ws) {
       try {
-        this.ws.close();
+        if (this.ws.readyState === WebSocket.OPEN) {
+          // Send close frame with normal closure code
+          this.ws.close(1000, "Client disconnecting");
+        } else if (this.ws.readyState === WebSocket.CONNECTING) {
+          // Force close if still connecting
+          this.ws.close();
+        }
       } catch (e) {
         console.warn("[WebRTC] Error closing WebSocket:", e);
       }

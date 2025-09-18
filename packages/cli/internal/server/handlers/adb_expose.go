@@ -1,4 +1,4 @@
-package server
+package handlers
 
 import (
 	"encoding/json"
@@ -13,10 +13,10 @@ import (
 	"github.com/babelcloud/gbox/packages/cli/internal/profile"
 )
 
-// ADBExposeService manages ADB port expose for remote boxes
-type ADBExposeService struct {
-	mu      sync.RWMutex
-	running bool
+// ADBExposeHandlers contains handlers for ADB expose functionality
+type ADBExposeHandlers struct {
+	portManager   *PortManager
+	connectionPool *ConnectionPool
 }
 
 // BoxPortForward represents an active port forward for a remote box
@@ -29,90 +29,64 @@ type BoxPortForward struct {
 	Error       string    `json:"error,omitempty"`
 }
 
-// NewADBExposeService creates a new ADB expose service
-func NewADBExposeService() *ADBExposeService {
-	return &ADBExposeService{}
+// PortForward manages a single port forwarding session
+type PortForward struct {
+	BoxID       string                         `json:"box_id"`
+	LocalPorts  []int                         `json:"local_ports"`
+	RemotePorts []int                         `json:"remote_ports"`
+	StartedAt   time.Time                     `json:"started_at"`
+	Status      string                        `json:"status"`
+	Error       string                        `json:"error,omitempty"`
+	client      *adb_expose.MultiplexClient
+	listeners   []net.Listener
+	mu          sync.RWMutex
 }
 
-// Start starts the ADB expose service
-func (s *ADBExposeService) Start() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// Stop stops the port forward
+func (pf *PortForward) Stop() {
+	pf.mu.Lock()
+	defer pf.mu.Unlock()
 
-	s.running = true
-	log.Println("ADB Expose service started")
-	return nil
-}
-
-// Stop stops the ADB expose service
-func (s *ADBExposeService) Stop() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.running = false
-	log.Println("ADB Expose service stopped")
-	return nil
-}
-
-// Close closes the service
-func (s *ADBExposeService) Close() error {
-	return s.Stop()
-}
-
-// IsRunning returns whether the service is running
-func (s *ADBExposeService) IsRunning() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.running
-}
-
-// StartBoxPortForward starts ADB port expose for a remote box
-func (s *ADBExposeService) StartBoxPortForward(boxID string, localPorts, remotePorts []int) error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if !s.running {
-		return fmt.Errorf("service not running")
+	pf.Status = "stopped"
+	for _, listener := range pf.listeners {
+		listener.Close()
 	}
-
-	// ADB expose is now handled by the main server's HTTP handlers
-	// This method is kept for compatibility but the actual work is done
-	// by the HTTP handlers that call the new ADB expose implementation
-
-	log.Printf("ADB port expose request for box %s: local ports %v -> remote ports %v", boxID, localPorts, remotePorts)
-	return nil
 }
 
-// StopBoxPortForward stops ADB port expose for a remote box
-func (s *ADBExposeService) StopBoxPortForward(boxID string) error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// PortManager manages multiple port forwards
+type PortManager struct {
+	forwards map[string]*PortForward
+	mu       sync.RWMutex
+}
 
-	if !s.running {
-		return fmt.Errorf("service not running")
+// ConnectionPool manages WebSocket connections
+type ConnectionPool struct {
+	connections map[string]*adb_expose.MultiplexClient
+	mu          sync.RWMutex
+}
+
+// StartRequest represents a start port forward request
+type StartRequest struct {
+	BoxID       string            `json:"box_id"`
+	LocalPorts  []int             `json:"local_ports"`
+	RemotePorts []int             `json:"remote_ports"`
+	Config      adb_expose.Config `json:"config"`
+}
+
+// NewADBExposeHandlers creates a new ADB expose handlers instance
+func NewADBExposeHandlers() *ADBExposeHandlers {
+	return &ADBExposeHandlers{
+		portManager: &PortManager{
+			forwards: make(map[string]*PortForward),
+		},
+		connectionPool: &ConnectionPool{
+			connections: make(map[string]*adb_expose.MultiplexClient),
+		},
 	}
-
-	log.Printf("ADB port expose stop request for box %s", boxID)
-	return nil
 }
 
-// ListBoxPortForwards returns all active box port forwards
-func (s *ADBExposeService) ListBoxPortForwards() ([]*BoxPortForward, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if !s.running {
-		return nil, fmt.Errorf("service not running")
-	}
-
-	// ADB expose is now handled by the main server's HTTP handlers
-	// Return empty list for compatibility
-	return make([]*BoxPortForward, 0), nil
-}
-
-// HTTP Handlers for ADB Expose
-
-func (s *GBoxServer) handleADBExposeStart(w http.ResponseWriter, r *http.Request) {
+// HandleADBExposeStart handles ADB expose start requests
+func (h *ADBExposeHandlers) HandleADBExposeStart(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -125,7 +99,7 @@ func (s *GBoxServer) handleADBExposeStart(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{
+		RespondJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "Invalid request body",
 		})
 		return
@@ -133,21 +107,21 @@ func (s *GBoxServer) handleADBExposeStart(w http.ResponseWriter, r *http.Request
 
 	// Validate request
 	if req.BoxID == "" {
-		respondJSON(w, http.StatusBadRequest, map[string]string{
+		RespondJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "box_id is required",
 		})
 		return
 	}
 
 	if len(req.LocalPorts) == 0 || len(req.RemotePorts) == 0 {
-		respondJSON(w, http.StatusBadRequest, map[string]string{
+		RespondJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "local_ports and remote_ports are required",
 		})
 		return
 	}
 
 	if len(req.LocalPorts) != len(req.RemotePorts) {
-		respondJSON(w, http.StatusBadRequest, map[string]string{
+		RespondJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "local_ports and remote_ports must have the same length",
 		})
 		return
@@ -164,7 +138,7 @@ func (s *GBoxServer) handleADBExposeStart(w http.ResponseWriter, r *http.Request
 	// We need to get the configuration first
 	pm := profile.NewProfileManager()
 	if err := pm.Load(); err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]string{
+		RespondJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "Failed to load profile manager: " + err.Error(),
 		})
 		return
@@ -176,7 +150,7 @@ func (s *GBoxServer) handleADBExposeStart(w http.ResponseWriter, r *http.Request
 		// Try to use the first available profile
 		profiles := pm.GetProfiles()
 		if len(profiles) == 0 {
-			respondJSON(w, http.StatusInternalServerError, map[string]string{
+			RespondJSON(w, http.StatusInternalServerError, map[string]string{
 				"error": "No profiles available. Please run 'gbox profile add' to add a profile first",
 			})
 			return
@@ -189,7 +163,7 @@ func (s *GBoxServer) handleADBExposeStart(w http.ResponseWriter, r *http.Request
 		}
 
 		if err := pm.Use(firstProfileID); err != nil {
-			respondJSON(w, http.StatusInternalServerError, map[string]string{
+			RespondJSON(w, http.StatusInternalServerError, map[string]string{
 				"error": "Failed to set profile: " + err.Error(),
 			})
 			return
@@ -197,7 +171,7 @@ func (s *GBoxServer) handleADBExposeStart(w http.ResponseWriter, r *http.Request
 
 		apiKey, err = pm.GetCurrentAPIKey()
 		if err != nil {
-			respondJSON(w, http.StatusInternalServerError, map[string]string{
+			RespondJSON(w, http.StatusInternalServerError, map[string]string{
 				"error": "Failed to get API key: " + err.Error(),
 			})
 			return
@@ -206,7 +180,7 @@ func (s *GBoxServer) handleADBExposeStart(w http.ResponseWriter, r *http.Request
 
 	gboxURL := profile.Default.GetEffectiveBaseURL()
 	if gboxURL == "" {
-		respondJSON(w, http.StatusInternalServerError, map[string]string{
+		RespondJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "GBOX base URL not configured",
 		})
 		return
@@ -223,24 +197,25 @@ func (s *GBoxServer) handleADBExposeStart(w http.ResponseWriter, r *http.Request
 
 	// Start port forwarding directly
 	log.Printf("Starting ADB port forward for box %s", req.BoxID)
-	forward, err := s.startPortForward(adbReq)
+	forward, err := h.startPortForward(adbReq)
 	if err != nil {
 		log.Printf("Failed to start ADB port forward: %v", err)
-		respondJSON(w, http.StatusInternalServerError, map[string]string{
+		RespondJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "Failed to start ADB port expose: " + err.Error(),
 		})
 		return
 	}
 	log.Printf("ADB port forward started successfully for box %s", req.BoxID)
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	RespondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"message": fmt.Sprintf("ADB port exposed for box %s: %v -> %v", req.BoxID, req.LocalPorts, req.RemotePorts),
 		"data":    forward,
 	})
 }
 
-func (s *GBoxServer) handleADBExposeStop(w http.ResponseWriter, r *http.Request) {
+// HandleADBExposeStop handles ADB expose stop requests
+func (h *ADBExposeHandlers) HandleADBExposeStop(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -252,7 +227,7 @@ func (s *GBoxServer) handleADBExposeStop(w http.ResponseWriter, r *http.Request)
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		// If no body, stop all forwards
-		respondJSON(w, http.StatusBadRequest, map[string]string{
+		RespondJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "box_id is required",
 		})
 		return
@@ -260,7 +235,7 @@ func (s *GBoxServer) handleADBExposeStop(w http.ResponseWriter, r *http.Request)
 
 	// Validate request
 	if req.BoxID == "" {
-		respondJSON(w, http.StatusBadRequest, map[string]string{
+		RespondJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "box_id is required",
 		})
 		return
@@ -268,55 +243,49 @@ func (s *GBoxServer) handleADBExposeStop(w http.ResponseWriter, r *http.Request)
 
 	// Stop port forwarding for the specific box
 	log.Printf("Stopping ADB port forward for box %s", req.BoxID)
-	if err := s.stopPortForward(req.BoxID); err != nil {
+	if err := h.stopPortForward(req.BoxID); err != nil {
 		log.Printf("Failed to stop ADB port forward: %v", err)
-		respondJSON(w, http.StatusInternalServerError, map[string]string{
+		RespondJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "Failed to stop ADB port expose: " + err.Error(),
 		})
 		return
 	}
 	log.Printf("ADB port forward stopped for box %s", req.BoxID)
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	RespondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"message": fmt.Sprintf("ADB port expose stopped for box %s", req.BoxID),
 	})
 }
 
-func (s *GBoxServer) handleADBExposeStatus(w http.ResponseWriter, r *http.Request) {
+// HandleADBExposeStatus handles ADB expose status requests
+func (h *ADBExposeHandlers) HandleADBExposeStatus(w http.ResponseWriter, r *http.Request) {
 	status := map[string]interface{}{
-		"running": s.adbExpose.IsRunning(),
+		"running": true, // Always running as part of main server
 	}
 
-	// Get box port forwards if service is running
-	if s.adbExpose.IsRunning() {
-		forwards, err := s.adbExpose.ListBoxPortForwards()
-		if err != nil {
-			status["error"] = err.Error()
-		} else {
-			status["forwards"] = forwards
-		}
-	} else {
-		status["forwards"] = []*BoxPortForward{}
-	}
+	// Get box port forwards
+	forwards := h.listPortForwards()
+	status["forwards"] = forwards
 
-	respondJSON(w, http.StatusOK, status)
+	RespondJSON(w, http.StatusOK, status)
 }
 
-func (s *GBoxServer) handleADBExposeList(w http.ResponseWriter, r *http.Request) {
+// HandleADBExposeList handles ADB expose list requests
+func (h *ADBExposeHandlers) HandleADBExposeList(w http.ResponseWriter, r *http.Request) {
 	// Get port forwards directly from port manager
-	forwards := s.listPortForwards()
+	forwards := h.listPortForwards()
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	RespondJSON(w, http.StatusOK, map[string]interface{}{
 		"forwards": forwards,
 		"count":    len(forwards),
 	})
 }
 
 // startPortForward starts port forwarding for a box
-func (s *GBoxServer) startPortForward(req StartRequest) (*PortForward, error) {
+func (h *ADBExposeHandlers) startPortForward(req StartRequest) (*PortForward, error) {
 	// Get or create WebSocket connection
-	client, err := s.getOrCreateConnection(req.BoxID, req.Config)
+	client, err := h.getOrCreateConnection(req.BoxID, req.Config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connection: %v", err)
 	}
@@ -332,14 +301,14 @@ func (s *GBoxServer) startPortForward(req StartRequest) (*PortForward, error) {
 	}
 
 	// Store the port forward in the manager
-	s.portManager.mu.Lock()
-	s.portManager.forwards[req.BoxID] = forward
-	s.portManager.mu.Unlock()
+	h.portManager.mu.Lock()
+	h.portManager.forwards[req.BoxID] = forward
+	h.portManager.mu.Unlock()
 
 	// Start local listeners for each port
 	for i, localPort := range req.LocalPorts {
 		remotePort := req.RemotePorts[i]
-		go s.startLocalListener(forward, localPort, remotePort)
+		go h.startLocalListener(forward, localPort, remotePort)
 	}
 
 	forward.Status = "running"
@@ -347,11 +316,11 @@ func (s *GBoxServer) startPortForward(req StartRequest) (*PortForward, error) {
 }
 
 // stopPortForward stops port forwarding for a box
-func (s *GBoxServer) stopPortForward(boxID string) error {
-	s.portManager.mu.Lock()
-	defer s.portManager.mu.Unlock()
+func (h *ADBExposeHandlers) stopPortForward(boxID string) error {
+	h.portManager.mu.Lock()
+	defer h.portManager.mu.Unlock()
 
-	forward, exists := s.portManager.forwards[boxID]
+	forward, exists := h.portManager.forwards[boxID]
 	if !exists {
 		return fmt.Errorf("port forward not found for box %s", boxID)
 	}
@@ -365,18 +334,18 @@ func (s *GBoxServer) stopPortForward(boxID string) error {
 	}
 
 	// Remove from manager
-	delete(s.portManager.forwards, boxID)
+	delete(h.portManager.forwards, boxID)
 
 	return nil
 }
 
 // listPortForwards returns all active port forwards
-func (s *GBoxServer) listPortForwards() []*BoxPortForward {
-	s.portManager.mu.RLock()
-	defer s.portManager.mu.RUnlock()
+func (h *ADBExposeHandlers) listPortForwards() []*BoxPortForward {
+	h.portManager.mu.RLock()
+	defer h.portManager.mu.RUnlock()
 
-	boxForwards := make([]*BoxPortForward, 0, len(s.portManager.forwards))
-	for _, forward := range s.portManager.forwards {
+	boxForwards := make([]*BoxPortForward, 0, len(h.portManager.forwards))
+	for _, forward := range h.portManager.forwards {
 		boxForward := &BoxPortForward{
 			BoxID:       forward.BoxID,
 			LocalPorts:  forward.LocalPorts,
@@ -392,12 +361,12 @@ func (s *GBoxServer) listPortForwards() []*BoxPortForward {
 }
 
 // getOrCreateConnection gets or creates a WebSocket connection for a box
-func (s *GBoxServer) getOrCreateConnection(boxID string, config adb_expose.Config) (*adb_expose.MultiplexClient, error) {
-	s.connectionPool.mu.Lock()
-	defer s.connectionPool.mu.Unlock()
+func (h *ADBExposeHandlers) getOrCreateConnection(boxID string, config adb_expose.Config) (*adb_expose.MultiplexClient, error) {
+	h.connectionPool.mu.Lock()
+	defer h.connectionPool.mu.Unlock()
 
 	// Check if connection already exists
-	if client, exists := s.connectionPool.connections[boxID]; exists {
+	if client, exists := h.connectionPool.connections[boxID]; exists {
 		return client, nil
 	}
 
@@ -413,17 +382,17 @@ func (s *GBoxServer) getOrCreateConnection(boxID string, config adb_expose.Confi
 			log.Printf("WebSocket connection closed for box %s: %v", boxID, err)
 		}
 		// Remove from connection pool on error
-		s.connectionPool.mu.Lock()
-		delete(s.connectionPool.connections, boxID)
-		s.connectionPool.mu.Unlock()
+		h.connectionPool.mu.Lock()
+		delete(h.connectionPool.connections, boxID)
+		h.connectionPool.mu.Unlock()
 	}()
 
-	s.connectionPool.connections[boxID] = client
+	h.connectionPool.connections[boxID] = client
 	return client, nil
 }
 
 // startLocalListener starts a local listener for port forwarding
-func (s *GBoxServer) startLocalListener(forward *PortForward, localPort, remotePort int) {
+func (h *ADBExposeHandlers) startLocalListener(forward *PortForward, localPort, remotePort int) {
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", localPort))
 	if err != nil {
 		forward.mu.Lock()
@@ -433,6 +402,11 @@ func (s *GBoxServer) startLocalListener(forward *PortForward, localPort, remoteP
 		return
 	}
 	defer listener.Close()
+
+	// Store listener for cleanup
+	forward.mu.Lock()
+	forward.listeners = append(forward.listeners, listener)
+	forward.mu.Unlock()
 
 	log.Printf("Listening on port %d for box %s", localPort, forward.BoxID)
 

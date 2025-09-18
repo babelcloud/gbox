@@ -67,7 +67,7 @@ func (s *Server) handleDeviceAction(w http.ResponseWriter, r *http.Request) {
 // handleDeviceConnect handles POST /api/devices/{id}/connect
 func (s *Server) handleDeviceConnect(w http.ResponseWriter, r *http.Request, deviceID string) {
 	// Create WebRTC bridge for the device
-	bridge, err := s.webrtcManager.CreateBridge(deviceID)
+	bridge, err := s.bridgeManager.CreateBridge(deviceID)
 	if err != nil {
 		log.Printf("Failed to create bridge for device %s: %v", deviceID, err)
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -91,7 +91,7 @@ func (s *Server) handleDeviceConnect(w http.ResponseWriter, r *http.Request, dev
 // handleDeviceDisconnect handles DELETE /api/devices/{id}/disconnect
 func (s *Server) handleDeviceDisconnect(w http.ResponseWriter, r *http.Request, deviceID string) {
 	// Remove WebRTC bridge
-	s.webrtcManager.RemoveBridge(deviceID)
+	s.bridgeManager.RemoveBridge(deviceID)
 	
 	// Mark device as unregistered
 	s.deviceManager.UnregisterDevice(deviceID)
@@ -122,7 +122,7 @@ func (s *Server) handleRegisterDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bridge, err := s.webrtcManager.CreateBridge(req.DeviceID)
+	bridge, err := s.bridgeManager.CreateBridge(req.DeviceID)
 	if err != nil {
 		log.Printf("Failed to create bridge for device %s: %v", req.DeviceID, err)
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -161,7 +161,7 @@ func (s *Server) handleUnregisterDevice(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	s.webrtcManager.RemoveBridge(req.DeviceID)
+	s.bridgeManager.RemoveBridge(req.DeviceID)
 	s.deviceManager.UnregisterDevice(req.DeviceID)
 
 	log.Printf("Successfully unregistered device %s", req.DeviceID)

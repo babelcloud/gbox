@@ -10,6 +10,7 @@ export interface Device {
 export interface LiveViewProps {
   apiUrl?: string;
   wsUrl?: string;
+  mode?: 'webrtc' | 'stream';
   autoConnect?: boolean;
   showControls?: boolean;
   showDeviceList?: boolean;

@@ -36,7 +36,7 @@
 }
 
 .deviceItem {
-  padding: 10px;
+  padding: 12px;
   margin: 5px 0;
   background: #3d3d3d;
   border-radius: 5px;
@@ -46,6 +46,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
 }
 
 .deviceItem:hover {
@@ -59,6 +60,8 @@
 
 .deviceInfo {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .deviceSerial {
@@ -89,12 +92,16 @@
   background: #cc0000;
   color: white;
   border: none;
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
   transition: all 0.2s;
   margin-left: 10px;
   opacity: 0.7;
+  min-width: 45px;
+  white-space: nowrap;
+  text-align: center;
 }
 
 .deviceItem.connected:hover .disconnectBtn {

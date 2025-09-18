@@ -29,20 +29,21 @@ export const DeviceList: React.FC<DeviceListProps> = ({
     }
     if (device.connected || (currentDevice === device.serial && isConnected)) {
       return device.videoWidth && device.videoHeight
-        ? `已连接 - ${device.videoWidth}x${device.videoHeight}`
-        : '已连接';
+        ? `Connected - ${device.videoWidth}x${device.videoHeight}`
+        : 'Connected';
     }
     return device.state;
   };
 
   const getStatusClass = (device: Device): string => {
     if (currentDevice === device.serial && connectionStatus) {
-      if (connectionStatus.includes('正在连接') || 
-          connectionStatus.includes('重连中') || 
-          connectionStatus.includes('秒后重试')) {
+      if (connectionStatus.includes('Connecting') ||
+          connectionStatus.includes('reconnecting') ||
+          connectionStatus.includes('Reconnecting')) {
         return styles.connecting;
-      } else if (connectionStatus.includes('失败') || 
-                 connectionStatus.includes('断开')) {
+      } else if (connectionStatus.includes('failed') ||
+                 connectionStatus.includes('Failed') ||
+                 connectionStatus.includes('disconnected')) {
         return styles.error;
       }
     }
@@ -51,17 +52,17 @@ export const DeviceList: React.FC<DeviceListProps> = ({
 
   return (
     <div className={styles.deviceList}>
-      <h2>设备列表</h2>
+      <h2>Device List</h2>
       
       {loading && (
         <div className={styles.loading}>
           <div className={styles.spinner} />
-          正在加载设备...
+          Loading devices...
         </div>
       )}
 
       {!loading && devices.length === 0 && (
-        <div className={styles.empty}>没有找到设备</div>
+        <div className={styles.empty}>No devices found</div>
       )}
 
       {devices.map((device) => {
@@ -73,8 +74,17 @@ export const DeviceList: React.FC<DeviceListProps> = ({
             key={device.serial}
             className={`${styles.deviceItem} ${isDeviceConnected ? styles.connected : ''}`}
             onClick={() => {
+              console.log('[DeviceList] Device clicked:', {
+                serial: device.serial,
+                state: device.state,
+                isDeviceConnected,
+                canConnect: !isDeviceConnected && device.state === 'device'
+              });
               if (!isDeviceConnected && device.state === 'device') {
+                console.log('[DeviceList] Calling onConnect for device:', device.serial);
                 onConnect(device.serial);
+              } else {
+                console.log('[DeviceList] Cannot connect to device - conditions not met');
               }
             }}
           >
@@ -94,7 +104,7 @@ export const DeviceList: React.FC<DeviceListProps> = ({
                   onDisconnect();
                 }}
               >
-                断开
+                Stop
               </button>
             )}
           </div>

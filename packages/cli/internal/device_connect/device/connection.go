@@ -8,23 +8,32 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	"github.com/babelcloud/gbox/packages/cli/internal/util"
 )
 
 // Note: assets will be embedded at build time using a different approach
 
 // ScrcpyConnection handles the actual scrcpy server connection
 type ScrcpyConnection struct {
-	deviceSerial string
-	scid         uint32
-	adbPath      string
-	serverPath   string
-	conn         net.Conn
-	Listener     net.Listener // Made public to match scrcpy-proxy
-	serverCmd    *exec.Cmd
+	deviceSerial  string
+	scid          uint32
+	adbPath       string
+	serverPath    string
+	conn          net.Conn
+	Listener      net.Listener // Made public to match scrcpy-proxy
+	serverCmd     *exec.Cmd
+	videoEncoder  string // Video encoder preference
+	streamingMode string // Streaming mode (h264, webrtc, mse)
 }
 
 // NewScrcpyConnection creates a new scrcpy connection handler
 func NewScrcpyConnection(deviceSerial string, scid uint32) *ScrcpyConnection {
+	return NewScrcpyConnectionWithMode(deviceSerial, scid, "webrtc") // Default mode
+}
+
+// NewScrcpyConnectionWithMode creates a new scrcpy connection handler with specific streaming mode
+func NewScrcpyConnectionWithMode(deviceSerial string, scid uint32, streamingMode string) *ScrcpyConnection {
 	// Find adb path
 	adbPath, err := exec.LookPath("adb")
 	if err != nil {
@@ -38,11 +47,32 @@ func NewScrcpyConnection(deviceSerial string, scid uint32) *ScrcpyConnection {
 		serverPath = "/data/local/tmp/scrcpy-server.jar"
 	}
 
+	// Select optimal encoder based on streaming mode
+	videoEncoder := selectVideoEncoder(streamingMode)
+
 	return &ScrcpyConnection{
-		deviceSerial: deviceSerial,
-		scid:         scid,
-		adbPath:      adbPath,
-		serverPath:   serverPath,
+		deviceSerial:  deviceSerial,
+		scid:          scid,
+		adbPath:       adbPath,
+		serverPath:    serverPath,
+		videoEncoder:  videoEncoder,
+		streamingMode: streamingMode,
+	}
+}
+
+// selectVideoEncoder chooses the optimal video encoder based on streaming mode
+func selectVideoEncoder(streamingMode string) string {
+	switch streamingMode {
+	case "h264":
+		// H.264 WebCodecs mode: Use software encoder for maximum compatibility
+		// OMX.google.h264.encoder is the most reliable software encoder
+		return "OMX.google.h264.encoder"
+	case "webrtc", "mse":
+		// WebRTC and MSE modes: use hardware encoder for better performance
+		return "c2.qti.avc.encoder"
+	default:
+		// Default: use hardware encoder
+		return "c2.qti.avc.encoder"
 	}
 }
 
@@ -61,11 +91,31 @@ func (sc *ScrcpyConnection) Connect() (net.Conn, error) {
 	}
 
 	// 3. Start listener for scrcpy server connection
-	listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", sc.scid))
-	if err != nil {
-		return nil, fmt.Errorf("failed to start listener on port %d: %w", sc.scid, err)
+	// Try to find an available port starting from scid
+	port := sc.scid
+	maxAttempts := 100 // Try up to 100 different ports
+	var listener net.Listener
+	var err error
+
+	for i := 0; i < maxAttempts; i++ {
+		listener, err = net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
+		if err == nil {
+			// Port is available, update scid to match the actual port used
+			if port != sc.scid {
+				log.Printf("Port %d was busy, using port %d instead", sc.scid, port)
+				sc.scid = port
+			}
+			sc.Listener = listener
+			break
+		}
+
+		// Port is busy, try next one
+		port++
 	}
-	sc.Listener = listener
+
+	if sc.Listener == nil {
+		return nil, fmt.Errorf("failed to find available port after %d attempts, starting from port %d", maxAttempts, sc.scid)
+	}
 
 	// 4. Start scrcpy server on device
 	if err := sc.startScrcpyServer(); err != nil {
@@ -152,23 +202,25 @@ func (sc *ScrcpyConnection) startScrcpyServer() error {
 	// Build scrcpy server command
 	scidHex := fmt.Sprintf("%08x", sc.scid)
 
-	cmd := exec.Command(sc.adbPath, "-s", sc.deviceSerial, "shell",
+	// Build command arguments with optimized settings for WebCodecs
+	args := []string{
+		"-s", sc.deviceSerial, "shell",
 		"CLASSPATH=/data/local/tmp/scrcpy-server.jar",
 		"app_process", "/", "com.genymobile.scrcpy.Server",
 		"3.3.1", // Server version - must match the downloaded jar
 		fmt.Sprintf("scid=%s", scidHex),
 		"video=true",
-		"audio=true",
+		"audio=true", // Re-enable audio
 		"control=true",
 		"cleanup=true",
-		"log_level=verbose",                      // Enable verbose logging to debug scroll issues
-		"video_codec_options=i-frame-interval=1", // Force keyframe every 1 second to prevent video freezing
-		"video_bit_rate=12000000",                // 12 Mbps for better quality
-		"max_fps=60",                             // 60 FPS for smoother video
-		"video_encoder=OMX.qcom.video.encoder.avc", // Use Qualcomm hardware encoder (more compatible)
-		"audio_codec=opus",                         // Use Opus for better audio quality
-		"audio_bit_rate=128000",                    // 128 kbps audio
-	)
+		"log_level=verbose", // Enable verbose logging to debug scroll issues
+		"video_codec_options=i-frame-interval=1",
+	}
+
+	// Use default video encoder for all modes
+	log.Printf("Using default video encoder for %s mode", sc.streamingMode)
+
+	cmd := exec.Command(sc.adbPath, args...)
 
 	log.Printf("Starting scrcpy server with command: %s", cmd.String())
 
@@ -176,8 +228,8 @@ func (sc *ScrcpyConnection) startScrcpyServer() error {
 	sc.serverCmd = cmd
 
 	// Capture output for debugging
-	cmd.Stdout = &logWriter{prefix: "[scrcpy-out]"}
-	cmd.Stderr = &logWriter{prefix: "[scrcpy-err]"}
+	cmd.Stdout = util.NewPrefixLogWriter("[scrcpy-out]")
+	cmd.Stderr = util.NewPrefixLogWriter("[scrcpy-err]")
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start scrcpy server: %w", err)
@@ -255,13 +307,3 @@ func findScrcpyServerJar() string {
 }
 
 // Note: embedded server extraction removed - using external files only
-
-// logWriter implements io.Writer for logging
-type logWriter struct {
-	prefix string
-}
-
-func (w *logWriter) Write(p []byte) (n int, err error) {
-	log.Printf("%s %s", w.prefix, string(p))
-	return len(p), nil
-}

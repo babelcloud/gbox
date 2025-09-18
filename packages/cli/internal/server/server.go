@@ -15,60 +15,16 @@ import (
 	"sync"
 	"time"
 
-	adb_expose "github.com/babelcloud/gbox/packages/cli/internal/adb_expose"
 	client "github.com/babelcloud/gbox/packages/cli/internal/client"
-	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/webrtc"
+	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/webrtc"
+	"github.com/babelcloud/gbox/packages/cli/internal/server/handlers"
+	"github.com/babelcloud/gbox/packages/cli/internal/server/router"
 )
 
 //go:embed all:static
 var staticFiles embed.FS
 
-// PortManager manages all port forwarding instances
-type PortManager struct {
-	forwards map[string]*PortForward // key: boxID
-	mu       sync.RWMutex
-}
 
-// PortForward represents a port forwarding instance
-type PortForward struct {
-	BoxID       string    `json:"boxid"`
-	LocalPorts  []int     `json:"localports"`
-	RemotePorts []int     `json:"remoteports"`
-	StartedAt   time.Time `json:"started_at"`
-	Status      string    `json:"status"` // "running", "stopped", "error"
-	Error       string    `json:"error,omitempty"`
-	client      *adb_expose.MultiplexClient
-	mu          sync.RWMutex
-}
-
-// ConnectionPool manages WebSocket connections to remote servers
-type ConnectionPool struct {
-	connections map[string]*adb_expose.MultiplexClient // key: boxID
-	mu          sync.RWMutex
-}
-
-// StartRequest represents a request to start port forwarding
-type StartRequest struct {
-	BoxID       string            `json:"boxid"`
-	LocalPorts  []int             `json:"localports"`
-	RemotePorts []int             `json:"remoteports"`
-	Config      adb_expose.Config `json:"config"`
-}
-
-// Stop stops the port forward
-func (pf *PortForward) Stop() {
-	pf.mu.Lock()
-	defer pf.mu.Unlock()
-
-	if pf.Status == "stopped" {
-		return
-	}
-
-	pf.Status = "stopped"
-	if pf.client != nil {
-		pf.client.Close()
-	}
-}
 
 // GBoxServer is the unified server for all gbox services
 type GBoxServer struct {
@@ -77,12 +33,7 @@ type GBoxServer struct {
 	mux        *http.ServeMux
 
 	// Services
-	webrtcManager *webrtc.Manager
-	adbExpose     *ADBExposeService
-
-	// ADB Expose functionality integrated directly
-	portManager    *PortManager
-	connectionPool *ConnectionPool
+	bridgeManager *webrtc.Manager
 
 	// State
 	mu        sync.RWMutex
@@ -98,14 +49,11 @@ func NewGBoxServer(port int) *GBoxServer {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &GBoxServer{
-		port:           port,
-		mux:            http.NewServeMux(),
-		webrtcManager:  webrtc.NewManager("adb"),
-		adbExpose:      NewADBExposeService(),
-		portManager:    &PortManager{forwards: make(map[string]*PortForward)},
-		connectionPool: &ConnectionPool{connections: make(map[string]*adb_expose.MultiplexClient)},
-		ctx:            ctx,
-		cancel:         cancel,
+		port:          port,
+		mux:           http.NewServeMux(),
+		bridgeManager: webrtc.NewManager("adb"),
+		ctx:           ctx,
+		cancel:        cancel,
 	}
 }
 
@@ -156,33 +104,21 @@ func (s *GBoxServer) Stop() error {
 
 	s.cancel()
 
-	// Shutdown HTTP server
+	// Shutdown HTTP server with longer timeout
 	if s.httpServer != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		if err := s.httpServer.Shutdown(ctx); err != nil {
 			log.Printf("HTTP server shutdown error: %v", err)
+			// Force close if graceful shutdown fails
+			if err := s.httpServer.Close(); err != nil {
+				log.Printf("HTTP server force close error: %v", err)
+			}
 		}
 	}
 
 	// Cleanup services
-	s.webrtcManager.Close()
-	s.adbExpose.Close()
-
-	// Cleanup ADB expose functionality
-	s.portManager.mu.Lock()
-	for _, forward := range s.portManager.forwards {
-		forward.Stop()
-	}
-	s.portManager.forwards = make(map[string]*PortForward)
-	s.portManager.mu.Unlock()
-
-	s.connectionPool.mu.Lock()
-	for _, client := range s.connectionPool.connections {
-		client.Close()
-	}
-	s.connectionPool.connections = make(map[string]*adb_expose.MultiplexClient)
-	s.connectionPool.mu.Unlock()
+	s.bridgeManager.Close()
 
 	s.running = false
 	log.Println("GBox server stopped")
@@ -196,56 +132,31 @@ func (s *GBoxServer) IsRunning() bool {
 	return s.running
 }
 
-// setupRoutes sets up all HTTP routes
+// setupRoutes sets up all HTTP routes using the new router system
 func (s *GBoxServer) setupRoutes() {
-	// Health check and status
-	s.mux.HandleFunc("/health", s.handleStatus)
-	s.mux.HandleFunc("/api/status", s.handleStatus)
+	// Register routers in order of specificity (most specific first)
+	routers := []router.Router{
+		&router.APIRouter{},
+		&router.StreamingRouter{},
+		&router.ADBRouter{},
+		&router.AssetsRouter{},
+		&router.PagesRouter{}, // Must be last as it includes root handler
+	}
 
-	// Device Connect API (scrcpy/WebRTC)
-	s.mux.HandleFunc("/api/devices", s.handleDevices)
-	s.mux.HandleFunc("/api/devices/", s.handleDeviceAction) // Handles /api/devices/{id}/connect and /api/devices/{id}/disconnect
-	s.mux.HandleFunc("/api/devices/register", s.handleRegisterDevice)
-	s.mux.HandleFunc("/api/devices/unregister", s.handleUnregisterDevice)
-	s.mux.HandleFunc("/ws", s.handleWebSocket)
+	// Register all routes
+	for _, r := range routers {
+		r.RegisterRoutes(s.mux, s)
+	}
 
-	// Box API
-	s.mux.HandleFunc("/api/boxes", s.handleBoxList)
-
-	// ADB Expose API
-	s.mux.HandleFunc("/api/adb-expose/start", s.handleADBExposeStart)
-	s.mux.HandleFunc("/api/adb-expose/stop", s.handleADBExposeStop)
-	s.mux.HandleFunc("/api/adb-expose/status", s.handleADBExposeStatus)
-	s.mux.HandleFunc("/api/adb-expose/list", s.handleADBExposeList)
-
-	// Server management API
-	s.mux.HandleFunc("/api/server/shutdown", s.handleShutdown)
-	s.mux.HandleFunc("/api/server/info", s.handleServerInfo)
-
-	// Live-view assets - serve from live-view static directory
-	s.mux.HandleFunc("/assets/", s.handleLiveViewAssets)
-
-	// Sub-applications - handle both with and without trailing slash
-	s.mux.HandleFunc("/live-view", s.handleLiveView)
-	s.mux.HandleFunc("/live-view/", s.handleLiveView)
-	s.mux.HandleFunc("/live-view.html", s.handleLiveViewHTML)
-	s.mux.HandleFunc("/adb-expose", s.handleAdbExposeUI)
-	s.mux.HandleFunc("/adb-expose/", s.handleAdbExposeUI)
-
-	// Static files and web UI routes - must be last
+	// Setup static files as fallback (must be last)
 	s.setupStaticFiles()
 }
 
 // setupStaticFiles sets up static file serving
+// Note: Root path is now handled by PagesRouter
 func (s *GBoxServer) setupStaticFiles() {
-	// Try embedded server static files
-	staticFS, err := fs.Sub(staticFiles, "static")
-	if err == nil {
-		s.mux.Handle("/", http.FileServer(http.FS(staticFS)))
-	} else {
-		// Fallback to a simple status page
-		s.mux.HandleFunc("/", s.handleRoot)
-	}
+	// Root path is handled by PagesRouter, no additional setup needed
+	// This function is kept for potential future static file setup
 }
 
 // serveStaticWithMIME wraps a file server to set correct MIME types
@@ -263,38 +174,6 @@ func (s *GBoxServer) serveStaticWithMIME(fs http.FileSystem) http.Handler {
 	})
 }
 
-// findLiveViewStaticPath finds the live-view build output
-func (s *GBoxServer) findLiveViewStaticPath() string {
-	// Note: embedded files removed - using external files only
-
-	// Fallback to external files for development
-	possiblePaths := []string{
-		// Relative to gbox binary location
-		"../../live-view/static",
-		"../live-view/static",
-		"packages/live-view/static",
-		// In user's home directory
-		filepath.Join(os.Getenv("HOME"), ".gbox", "live-view-static"),
-		// Development paths
-		"./packages/live-view/static",
-		"../../../gbox/packages/live-view/static",
-	}
-
-	for _, path := range possiblePaths {
-		absPath, err := filepath.Abs(path)
-		if err != nil {
-			continue
-		}
-		if info, err := os.Stat(absPath); err == nil && info.IsDir() {
-			if _, err := os.Stat(filepath.Join(absPath, "index.html")); err == nil {
-				return absPath
-			}
-		}
-	}
-
-	log.Printf("Warning: Live-view static files not found, using default status page")
-	return ""
-}
 
 // findStaticPath finds the server static files directory
 func (s *GBoxServer) findStaticPath() string {
@@ -358,7 +237,7 @@ func (s *GBoxServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"uptime":  uptime.String(),
 		"services": map[string]interface{}{
 			"device_connect": true,
-			"adb_expose":     s.adbExpose.IsRunning(),
+			"adb_expose":     true, // Always available through handlers
 		},
 		"version":  BuildInfo.Version,
 		"build_id": GetBuildID(),
@@ -505,6 +384,95 @@ func (s *GBoxServer) handleBoxList(w http.ResponseWriter, r *http.Request) {
 			"type": typeFilter,
 		},
 	})
+}
+
+// ServerService interface implementations for handlers
+
+// GetPort returns the server port
+func (s *GBoxServer) GetPort() int {
+	return s.port
+}
+
+// GetUptime returns server uptime
+func (s *GBoxServer) GetUptime() time.Duration {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return time.Since(s.startTime)
+}
+
+// GetBuildID returns build ID
+func (s *GBoxServer) GetBuildID() string {
+	return s.buildID
+}
+
+// GetVersion returns version info
+func (s *GBoxServer) GetVersion() string {
+	return BuildInfo.Version
+}
+
+// IsADBExposeRunning returns ADB expose status
+func (s *GBoxServer) IsADBExposeRunning() bool {
+	return true // Always available through handlers
+}
+
+// ListBridges returns list of bridge device serials
+func (s *GBoxServer) ListBridges() []string {
+	return s.bridgeManager.ListBridges()
+}
+
+// CreateBridge creates a bridge for device
+func (s *GBoxServer) CreateBridge(deviceSerial string) error {
+	_, err := s.bridgeManager.CreateBridge(deviceSerial)
+	return err
+}
+
+// RemoveBridge removes a bridge
+func (s *GBoxServer) RemoveBridge(deviceSerial string) {
+	s.bridgeManager.RemoveBridge(deviceSerial)
+}
+
+// GetBridge gets a bridge by device serial
+func (s *GBoxServer) GetBridge(deviceSerial string) (handlers.Bridge, bool) {
+	bridge, exists := s.bridgeManager.GetBridge(deviceSerial)
+	return bridge, exists
+}
+
+// GetStaticFS returns static file system
+func (s *GBoxServer) GetStaticFS() fs.FS {
+	return staticFiles
+}
+
+// FindLiveViewStaticPath returns live view static path (deprecated - now embedded)
+func (s *GBoxServer) FindLiveViewStaticPath() string {
+	return "" // Live-view files are now embedded, not external
+}
+
+// FindStaticPath returns static path
+func (s *GBoxServer) FindStaticPath() string {
+	return s.findStaticPath()
+}
+
+// StartPortForward starts port forwarding for ADB expose
+// This method is kept for ServerService interface compatibility
+// but ADB functionality is now handled by ADBExposeHandlers
+func (s *GBoxServer) StartPortForward(boxID string, localPorts, remotePorts []int) error {
+	return fmt.Errorf("ADB port forwarding is now handled through API endpoints")
+}
+
+// StopPortForward stops port forwarding for ADB expose
+// This method is kept for ServerService interface compatibility
+func (s *GBoxServer) StopPortForward(boxID string) error {
+	return fmt.Errorf("ADB port forwarding is now handled through API endpoints")
+}
+
+// ListPortForwards lists all active port forwards
+// This method is kept for ServerService interface compatibility
+func (s *GBoxServer) ListPortForwards() interface{} {
+	return map[string]interface{}{
+		"forwards": []interface{}{},
+		"count":    0,
+		"message":  "ADB port forwarding is now handled through API endpoints",
+	}
 }
 
 // Helper function to send JSON responses

@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"encoding/binary"
-	"fmt"
 )
 
 // Control message type aliases for compatibility
@@ -211,29 +210,8 @@ func EncodeScrollEvent(event ScrollEvent, screenWidth, screenHeight int) []byte 
 	// Buttons (none)
 	binary.BigEndian.PutUint32(buf[16:20], 0)
 
-	// Debug logging
-	fmt.Printf("EncodeScrollEvent: input=(%.2f, %.2f, %.2f, %.2f), screen=%dx%d\n",
-		event.X, event.Y, event.HScroll, event.VScroll, screenWidth, screenHeight)
-	fmt.Printf("EncodeScrollEvent: calculated position=(%d, %d), screen_size=(%d, %d)\n",
-		screenX, screenY, screenWidth, screenHeight)
-	fmt.Printf("EncodeScrollEvent: normalized=(%.2f, %.2f), int32=(%d, %d), int16=(%d, %d)\n",
-		hScrollNorm, vScrollNorm, hScrollInt32, vScrollInt32, hScroll, vScroll)
-	fmt.Printf("EncodeScrollEvent: uint16_values=(%d, %d), encoded buffer: %v\n",
-		hScrollUint16, vScrollUint16, buf)
-
-	// Detailed buffer analysis
-	fmt.Printf("EncodeScrollEvent: buffer breakdown:\n")
-	fmt.Printf("  [0:4] = %v (x=%d)\n", buf[0:4], binary.BigEndian.Uint32(buf[0:4]))
-	fmt.Printf("  [4:8] = %v (y=%d)\n", buf[4:8], binary.BigEndian.Uint32(buf[4:8]))
-	fmt.Printf("  [8:10] = %v (width=%d)\n", buf[8:10], binary.BigEndian.Uint16(buf[8:10]))
-	fmt.Printf("  [10:12] = %v (height=%d)\n", buf[10:12], binary.BigEndian.Uint16(buf[10:12]))
-	fmt.Printf("  [12:14] = %v (hScroll=%d)\n", buf[12:14], binary.BigEndian.Uint16(buf[12:14]))
-	fmt.Printf("  [14:16] = %v (vScroll=%d)\n", buf[14:16], binary.BigEndian.Uint16(buf[14:16]))
-	fmt.Printf("  [16:20] = %v (buttons=%d)\n", buf[16:20], binary.BigEndian.Uint32(buf[16:20]))
-
-	// Compare with scrcpy test case format
-	fmt.Printf("EncodeScrollEvent: scrcpy test comparison - expecting position=(%d, %d), screen=(%d, %d)\n",
-		screenX, screenY, screenWidth, screenHeight)
+	// Debug logging (uncomment for debugging scroll issues)
+	// log.Printf("Scroll event encoded: x=%d, y=%d, hScroll=%d, vScroll=%d", screenX, screenY, hScroll, vScroll)
 
 	return buf
 }

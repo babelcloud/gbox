@@ -15,11 +15,18 @@
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #1a1a1a;
       color: #ffffff;
-      overflow: hidden;
+      overflow: auto;
+      min-height: 100vh;
     }
     #root {
-      width: 100vw;
+      width: 100%;
       height: 100vh;
+      margin: 0;
+      padding: 0;
+      border-radius: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
   </style>
 </head>

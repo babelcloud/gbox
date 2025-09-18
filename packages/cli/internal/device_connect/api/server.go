@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/device"
-	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/webrtc"
+	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/webrtc"
 )
 
 // Server handles HTTP API and WebSocket connections
@@ -18,22 +18,22 @@ type Server struct {
 	port          int
 	server        *http.Server
 	deviceManager *device.Manager
-	webrtcManager *webrtc.Manager
+	bridgeManager *webrtc.Manager
 	isRunning     bool
 }
 
 // NewServer creates a new API server
 func NewServer(port int) *Server {
 	deviceManager := device.NewManager()
-	
-	// Get ADB path for WebRTC manager
+
+	// Get ADB path for bridge manager
 	adbPath := "adb"
-	webrtcManager := webrtc.NewManager(adbPath)
-	
+	bridgeManager := webrtc.NewManager(adbPath)
+
 	return &Server{
 		port:          port,
 		deviceManager: deviceManager,
-		webrtcManager: webrtcManager,
+		bridgeManager: bridgeManager,
 	}
 }
 
@@ -45,16 +45,16 @@ func (s *Server) Start() error {
 
 	// Setup routes
 	mux := http.NewServeMux()
-	
+
 	// API routes
 	mux.HandleFunc("/api/devices", s.handleDevices)
 	mux.HandleFunc("/api/devices/", s.handleDeviceAction)
 	mux.HandleFunc("/api/register-device", s.handleRegisterDevice)
 	mux.HandleFunc("/api/unregister-device", s.handleUnregisterDevice)
-	
+
 	// WebSocket route
 	mux.HandleFunc("/ws", s.handleWebSocket)
-	
+
 	// Static files
 	staticPath := s.findLiveViewStaticPath()
 	if staticPath != "" {
@@ -80,7 +80,7 @@ func (s *Server) Start() error {
 	// Start server
 	log.Printf("Starting API server on port %d", s.port)
 	s.isRunning = true
-	
+
 	go func() {
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("Server error: %v", err)
@@ -90,7 +90,7 @@ func (s *Server) Start() error {
 
 	// Wait for server to start
 	time.Sleep(100 * time.Millisecond)
-	
+
 	// Test if server is accessible
 	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/api/devices", s.port))
 	if err != nil {
@@ -110,12 +110,12 @@ func (s *Server) Stop() error {
 	}
 
 	log.Println("Stopping API server...")
-	
-	// Close WebRTC manager
-	if s.webrtcManager != nil {
-		s.webrtcManager.Close()
+
+	// Close bridge manager
+	if s.bridgeManager != nil {
+		s.bridgeManager.Close()
 	}
-	
+
 	// Shutdown HTTP server
 	if s.server != nil {
 		if err := s.server.Close(); err != nil {
@@ -125,7 +125,7 @@ func (s *Server) Stop() error {
 
 	s.isRunning = false
 	log.Println("API server stopped")
-	
+
 	return nil
 }
 
@@ -169,7 +169,7 @@ func (s *Server) findLiveViewStaticPath() string {
 func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	
+
 	// Use json encoder to write response
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		log.Printf("Failed to encode JSON response: %v", err)

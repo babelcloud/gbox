@@ -70,10 +70,10 @@ func (s *Server) handleWebSocketConnect(conn *websocket.Conn, msg map[string]int
 		return
 	}
 
-	bridge, exists := s.webrtcManager.GetBridge(deviceSerial)
+	bridge, exists := s.bridgeManager.GetBridge(deviceSerial)
 	if !exists {
 		var err error
-		bridge, err = s.webrtcManager.CreateBridge(deviceSerial)
+		bridge, err = s.bridgeManager.CreateBridge(deviceSerial)
 		if err != nil {
 			log.Printf("Failed to create bridge: %v", err)
 			conn.WriteJSON(map[string]interface{}{
@@ -110,11 +110,11 @@ func (s *Server) handleWebSocketOffer(conn *websocket.Conn, msg map[string]inter
 	}
 
 	// Get or create bridge for the device
-	bridge, exists := s.webrtcManager.GetBridge(deviceSerial)
+	bridge, exists := s.bridgeManager.GetBridge(deviceSerial)
 	if !exists {
 		log.Printf("Bridge not found for device %s, creating new bridge", deviceSerial)
 		var err error
-		bridge, err = s.webrtcManager.CreateBridge(deviceSerial)
+		bridge, err = s.bridgeManager.CreateBridge(deviceSerial)
 		if err != nil {
 			log.Printf("Failed to create bridge: %v", err)
 			conn.WriteJSON(map[string]interface{}{
@@ -134,11 +134,11 @@ func (s *Server) handleWebSocketOffer(conn *websocket.Conn, msg map[string]inter
 	// Only recreate bridge if connection is truly closed or failed
 	if connState == webrtc.PeerConnectionStateClosed || connState == webrtc.PeerConnectionStateFailed {
 		log.Printf("WebRTC connection is %s for device %s, recreating bridge", connState, deviceSerial)
-		s.webrtcManager.RemoveBridge(deviceSerial)
+		s.bridgeManager.RemoveBridge(deviceSerial)
 
 		// Create new bridge
 		var err error
-		bridge, err = s.webrtcManager.CreateBridge(deviceSerial)
+		bridge, err = s.bridgeManager.CreateBridge(deviceSerial)
 		if err != nil {
 			log.Printf("Failed to recreate bridge: %v", err)
 			conn.WriteJSON(map[string]interface{}{
@@ -150,10 +150,10 @@ func (s *Server) handleWebSocketOffer(conn *websocket.Conn, msg map[string]inter
 	} else if signalingState == webrtc.SignalingStateClosed {
 		// Only recreate if signaling is closed but connection is still active
 		log.Printf("Signaling state is closed for device %s, recreating bridge", deviceSerial)
-		s.webrtcManager.RemoveBridge(deviceSerial)
+		s.bridgeManager.RemoveBridge(deviceSerial)
 
 		var err error
-		bridge, err = s.webrtcManager.CreateBridge(deviceSerial)
+		bridge, err = s.bridgeManager.CreateBridge(deviceSerial)
 		if err != nil {
 			log.Printf("Failed to recreate bridge: %v", err)
 			conn.WriteJSON(map[string]interface{}{
@@ -237,7 +237,7 @@ func (s *Server) handleWebSocketICECandidate(conn *websocket.Conn, msg map[strin
 		return
 	}
 
-	bridge, exists := s.webrtcManager.GetBridge(deviceSerial)
+	bridge, exists := s.bridgeManager.GetBridge(deviceSerial)
 	if !exists {
 		return
 	}
@@ -267,7 +267,7 @@ func (s *Server) handleWebSocketDisconnect(conn *websocket.Conn, msg map[string]
 		return
 	}
 
-	s.webrtcManager.RemoveBridge(deviceSerial)
+	s.bridgeManager.RemoveBridge(deviceSerial)
 
 	conn.WriteJSON(map[string]interface{}{
 		"type": "disconnected",
@@ -281,7 +281,7 @@ func (s *Server) handleWebSocketTouch(conn *websocket.Conn, msg map[string]inter
 		return
 	}
 
-	bridge, exists := s.webrtcManager.GetBridge(deviceSerial)
+	bridge, exists := s.bridgeManager.GetBridge(deviceSerial)
 	if !exists {
 		log.Printf("Bridge not found for device %s", deviceSerial)
 		return
@@ -297,7 +297,7 @@ func (s *Server) handleWebSocketKey(conn *websocket.Conn, msg map[string]interfa
 		return
 	}
 
-	bridge, exists := s.webrtcManager.GetBridge(deviceSerial)
+	bridge, exists := s.bridgeManager.GetBridge(deviceSerial)
 	if !exists {
 		log.Printf("Bridge not found for device %s", deviceSerial)
 		return
@@ -313,7 +313,7 @@ func (s *Server) handleWebSocketScroll(conn *websocket.Conn, msg map[string]inte
 		return
 	}
 
-	bridge, exists := s.webrtcManager.GetBridge(deviceSerial)
+	bridge, exists := s.bridgeManager.GetBridge(deviceSerial)
 	if !exists {
 		log.Printf("Bridge not found for device %s", deviceSerial)
 		return

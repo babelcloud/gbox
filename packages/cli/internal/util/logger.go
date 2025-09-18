@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"strings"
 )
 
 // Logger wraps slog and provides traditional log.Printf style methods
@@ -61,6 +62,50 @@ type logWriter struct {
 }
 
 func (w *logWriter) Write(p []byte) (n int, err error) {
-	w.logger.Info(string(p))
+	// Split by lines and log each non-empty line to avoid empty log entries
+	content := strings.TrimSpace(string(p))
+	if content != "" {
+		lines := strings.Split(content, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				w.logger.Info(line)
+			}
+		}
+	}
+	return len(p), nil
+}
+
+// PrefixLogWriter implements io.Writer for logging with a prefix
+type PrefixLogWriter struct {
+	prefix string
+	logger *slog.Logger
+}
+
+// NewPrefixLogWriter creates a new PrefixLogWriter
+func NewPrefixLogWriter(prefix string) *PrefixLogWriter {
+	return &PrefixLogWriter{
+		prefix: prefix,
+		logger: GetLogger(),
+	}
+}
+
+func (w *PrefixLogWriter) Write(p []byte) (n int, err error) {
+	// Split by lines and log each non-empty line
+	lines := strings.Split(strings.TrimSpace(string(p)), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			// Filter out verbose scrcpy DEBUG and VERBOSE messages
+			if w.prefix == "[scrcpy-out]" && (strings.Contains(line, "DEBUG:") || strings.Contains(line, "VERBOSE:")) {
+				// Log DEBUG/VERBOSE messages at debug level instead of info
+				if IsVerbose() {
+					w.logger.Debug(w.prefix+" "+line)
+				}
+			} else {
+				w.logger.Info(w.prefix+" "+line)
+			}
+		}
+	}
 	return len(p), nil
 }
