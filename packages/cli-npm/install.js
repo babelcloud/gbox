@@ -4,7 +4,7 @@ const axios = require('axios');
 const tar = require('tar');
 
 const packageJson = require('./package.json');
-const releaseVersion = '0.1.13';
+const releaseVersion = '0.1.14';
 
 async function install() {
   const repo = packageJson.repository.url.match(/github\.com\/(.*)\.git/)[1];
