@@ -10,7 +10,14 @@ interface ControlButtonsProps {
   showDisconnect?: boolean;
 }
 
-export const ControlButtons: React.FC<ControlButtonsProps> = ({ onAction, onIMESwitch, isVisible = true, onToggleVisibility }) => {
+export const ControlButtons: React.FC<ControlButtonsProps> = ({
+  onAction,
+  onIMESwitch,
+  onDisconnect,
+  isVisible = true,
+  onToggleVisibility,
+  showDisconnect = false
+}) => {
   const buttons = [
     { id: 'power', title: 'Power', icon: PowerIcon },
     { id: 'volume_up', title: 'Volume Up', icon: VolumeUpIcon },
@@ -21,6 +28,10 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({ onAction, onIMES
     { id: 'app_switch', title: 'Recent Apps', icon: RecentIcon },
     { id: 'separator2', isSeparator: true },
     { id: 'ime_switch', title: 'Switch Input Method', icon: IMESwitchIcon, isIMESwitch: true },
+    ...(showDisconnect ? [
+      { id: 'separator3', isSeparator: true },
+      { id: 'disconnect', title: 'Disconnect', icon: DisconnectIcon, isDisconnect: true }
+    ] : []),
   ];
 
   return (
@@ -34,6 +45,8 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({ onAction, onIMES
         const handleClick = () => {
           if (button.isIMESwitch && onIMESwitch) {
             onIMESwitch();
+          } else if (button.isDisconnect && onDisconnect) {
+            onDisconnect();
           } else if (button.isToggle && onToggleVisibility) {
             onToggleVisibility();
           } else {
@@ -136,5 +149,13 @@ const ShowIcon = () => (
     <path d="M24 8c-4 0-8 2-12 6l2 2c3-3 6-4 10-4s7 1 10 4l2-2c-4-4-8-6-12-6z" fill="currentColor"/>
     <path d="M24 32c4 0 8-2 12-6l-2-2c-3 3-6 4-10 4s-7-1-10-4l-2 2c4 4 8 6 12 6z" fill="currentColor"/>
     <path d="M20 24c0-2 2-4 4-4s4 2 4 4-2 4-4 4-4-2-4-4z" fill="currentColor"/>
+  </svg>
+);
+
+const DisconnectIcon = () => (
+  <svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+    <rect x="0" y="0" width="48" height="48" fill="none"/>
+    {/* Disconnect/Stop symbol - square stop button */}
+    <rect x="14" y="14" width="20" height="20" rx="2" ry="2" fill="currentColor"/>
   </svg>
 );

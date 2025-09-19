@@ -271,7 +271,7 @@ func (s *Source) handleStreamConnection(ctx context.Context, conn net.Conn) {
 
 	if s.audioConn == nil {
 		// This is the audio stream (2nd connection)
-		logger.Debug("Audio stream connected", "device", s.deviceSerial)
+		logger.Info("🎵 Audio stream connected", "device", s.deviceSerial)
 		s.audioConn = conn
 		go s.handleAudioStream(ctx, conn)
 	} else if s.controlConn == nil {
@@ -355,17 +355,18 @@ func (s *Source) handleVideoStream(ctx context.Context, conn net.Conn) {
 // handleAudioStream processes the audio stream
 func (s *Source) handleAudioStream(ctx context.Context, conn net.Conn) {
 	logger := util.GetLogger()
-	logger.Debug("Starting audio stream processing", "device", s.deviceSerial)
+	logger.Info("🎵 Starting audio stream processing", "device", s.deviceSerial)
 	defer func() {
 		conn.Close()
-		logger.Info("Audio stream processing stopped", "device", s.deviceSerial)
+		logger.Info("🎵 Audio stream processing stopped", "device", s.deviceSerial)
 	}()
 
 	// Read audio metadata
 	if err := s.readAudioMetadata(conn); err != nil {
-		logger.Error("Failed to read audio metadata", "device", s.deviceSerial, "error", err)
+		logger.Error("❌ Failed to read audio metadata", "device", s.deviceSerial, "error", err)
 		return
 	}
+	logger.Info("✅ Audio metadata read successfully", "device", s.deviceSerial)
 
 	// Start reading audio packets
 	for {
@@ -403,7 +404,10 @@ func (s *Source) handleAudioStream(ctx context.Context, conn net.Conn) {
 			PTS:  int64(packet.PTS),
 		}
 
-		// Audio packet processed (debug logging removed to reduce noise)
+		// Log first few audio packets
+		if len(sample.Data) > 0 {
+			logger.Debug("🎵 Audio packet received", "device", s.deviceSerial, "size", len(sample.Data), "pts", sample.PTS)
+		}
 
 		// Publish to pipeline
 		s.pipeline.PublishAudio(sample)

@@ -66,9 +66,23 @@ export const DeviceList: React.FC<DeviceListProps> = ({
       )}
 
       {devices.map((device) => {
-        const isDeviceConnected = device.connected || 
-          (currentDevice === device.serial && isConnected);
-        
+        const isDeviceConnected = device.connected ||
+          (currentDevice === device.serial && isConnected) ||
+          (currentDevice === device.serial && connectionStatus && !connectionStatus.includes('failed') && !connectionStatus.includes('disconnected'));
+
+        // Debug logging for stop button visibility issue
+        if (device.serial && (device.connected || currentDevice === device.serial)) {
+          console.log(`[DeviceList] Device ${device.serial} connection check:`, {
+            'device.connected': device.connected,
+            'currentDevice': currentDevice,
+            'isConnected': isConnected,
+            'connectionStatus': connectionStatus,
+            'isCurrentDevice': currentDevice === device.serial,
+            'isDeviceConnected': isDeviceConnected,
+            'shouldShowStopButton': isDeviceConnected
+          });
+        }
+
         return (
           <div 
             key={device.serial}
