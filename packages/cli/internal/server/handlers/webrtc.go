@@ -60,16 +60,16 @@ func (h *WebRTCHandlers) HandleWebRTCSignaling(conn *websocket.Conn, deviceSeria
 
 		switch msgType {
 		case "offer":
-			h.handleOffer(conn, msg, deviceSerial)
+			h.HandleOffer(conn, msg, deviceSerial)
 
 		case "answer":
-			h.handleAnswer(conn, msg, deviceSerial)
+			h.HandleAnswer(conn, msg, deviceSerial)
 
 		case "ice-candidate":
-			h.handleIceCandidate(conn, msg, deviceSerial)
+			h.HandleIceCandidate(conn, msg, deviceSerial)
 
 		case "ping":
-			h.handlePing(conn, msg)
+			h.HandlePing(conn, msg)
 
 		default:
 			log.Printf("Unknown WebRTC signaling message type: %s", msgType)
@@ -77,8 +77,8 @@ func (h *WebRTCHandlers) HandleWebRTCSignaling(conn *websocket.Conn, deviceSeria
 	}
 }
 
-// handleOffer processes WebRTC offer messages
-func (h *WebRTCHandlers) handleOffer(conn *websocket.Conn, msg map[string]interface{}, deviceSerial string) {
+// HandleOffer processes WebRTC offer messages
+func (h *WebRTCHandlers) HandleOffer(conn *websocket.Conn, msg map[string]interface{}, deviceSerial string) {
 	log.Printf("WebRTC offer received: device=%s", deviceSerial)
 
 	// Extract the offer SDP from the message
@@ -231,8 +231,8 @@ func (h *WebRTCHandlers) handleOffer(conn *websocket.Conn, msg map[string]interf
 	}()
 }
 
-// handleAnswer processes WebRTC answer messages
-func (h *WebRTCHandlers) handleAnswer(conn *websocket.Conn, msg map[string]interface{}, deviceSerial string) {
+// HandleAnswer processes WebRTC answer messages
+func (h *WebRTCHandlers) HandleAnswer(conn *websocket.Conn, msg map[string]interface{}, deviceSerial string) {
 	log.Printf("WebRTC answer received: device=%s", deviceSerial)
 
 	// TODO: Process WebRTC answer from client
@@ -240,8 +240,8 @@ func (h *WebRTCHandlers) handleAnswer(conn *websocket.Conn, msg map[string]inter
 	log.Printf("WebRTC answer processing not yet implemented")
 }
 
-// handleIceCandidate processes WebRTC ICE candidate messages
-func (h *WebRTCHandlers) handleIceCandidate(conn *websocket.Conn, msg map[string]interface{}, deviceSerial string) {
+// HandleIceCandidate processes WebRTC ICE candidate messages
+func (h *WebRTCHandlers) HandleIceCandidate(conn *websocket.Conn, msg map[string]interface{}, deviceSerial string) {
 	log.Printf("WebRTC ICE candidate received: device=%s", deviceSerial)
 
 	// Get WebRTC bridge for this device
@@ -309,7 +309,7 @@ func (h *WebRTCHandlers) handleIceCandidate(conn *websocket.Conn, msg map[string
 }
 
 // handlePing handles ping messages for latency measurement
-func (h *WebRTCHandlers) handlePing(conn *websocket.Conn, msg map[string]interface{}) {
+func (h *WebRTCHandlers) HandlePing(conn *websocket.Conn, msg map[string]interface{}) {
 	pongMsg := map[string]interface{}{
 		"type": "pong",
 	}

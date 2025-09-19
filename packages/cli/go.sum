@@ -1,5 +1,7 @@
 github.com/adrg/xdg v0.5.3 h1:xRnxJXne7+oWDatRhR1JLnvuccuIeCoBu2rtuLqQB78=
 github.com/adrg/xdg v0.5.3/go.mod h1:nlTsY+NNiCBGCK2tpm09vRqfVzrc2fLmXGpBLF0zlTQ=
+github.com/at-wat/ebml-go v0.17.1 h1:pWG1NOATCFu1hnlowCzrA1VR/3s8tPY6qpU+2FwW7X4=
+github.com/at-wat/ebml-go v0.17.1/go.mod h1:w1cJs7zmGsb5nnSvhWGKLCxvfu4FVx5ERvYDIalj1ww=
 github.com/babelcloud/gbox-sdk-go v0.1.0-alpha.3 h1:4cpajFHLDSAZvlQsYWOKeszZNDFzpLKP2vk37GncbDI=
 github.com/babelcloud/gbox-sdk-go v0.1.0-alpha.3/go.mod h1:Su+RubcjR8UAHVd/Wxf2roq6Y0kZCxhXHBLrA4+Dnl0=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=

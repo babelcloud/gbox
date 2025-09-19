@@ -4,7 +4,9 @@ go 1.23.7
 
 require (
 	github.com/adrg/xdg v0.5.3
+	github.com/at-wat/ebml-go v0.17.1
 	github.com/babelcloud/gbox-sdk-go v0.1.0-alpha.3
+	github.com/gorilla/mux v1.8.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/pion/webrtc/v4 v4.1.4
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
@@ -18,7 +20,7 @@ require (
 require (
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
-	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
+	github.com/pelletier/go-toml/v2 v2.2.3
 	github.com/sagikazarmark/locafero v0.7.0 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.12.0 // indirect
@@ -32,7 +34,6 @@ require (
 require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/pion/datachannel v1.5.10 // indirect

@@ -109,12 +109,18 @@ func (p *Pipeline) PublishAudio(sample core.AudioSample) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
+	if len(p.audioSubs) == 0 {
+		util.GetLogger().Debug("🎵 No audio subscribers, dropping sample", "size", len(sample.Data))
+		return
+	}
+
 	for id, ch := range p.audioSubs {
 		select {
 		case ch <- sample:
+			util.GetLogger().Debug("🎵 Audio sample sent to subscriber", "subscriber", id, "size", len(sample.Data))
 		default:
 			// Channel is full, skip
-			util.GetLogger().Debug("Audio channel full, dropping sample", "subscriber", id)
+			util.GetLogger().Warn("🎵 Audio channel full, dropping sample", "subscriber", id)
 		}
 	}
 }

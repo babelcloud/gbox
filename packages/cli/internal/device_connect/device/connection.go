@@ -124,20 +124,41 @@ func (sc *ScrcpyConnection) Connect() (net.Conn, error) {
 	}
 
 	// 5. Accept connection from scrcpy server
-	log.Printf("Waiting for scrcpy server to connect...")
+	log.Printf("Waiting for scrcpy server to connect on port %d...", sc.scid)
 
-	// Set deadline for accept
-	if err := listener.(*net.TCPListener).SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+	// Set deadline for accept (extend timeout to 20 seconds for hardware encoder)
+	timeout := 20 * time.Second
+	deadline := time.Now().Add(timeout)
+	if err := listener.(*net.TCPListener).SetDeadline(deadline); err != nil {
 		listener.Close()
 		return nil, fmt.Errorf("failed to set deadline: %w", err)
 	}
+
+	log.Printf("Listening for scrcpy server connection with %v timeout...", timeout)
 
 	conn, err := listener.Accept()
 	if err != nil {
 		listener.Close()
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			log.Printf("Timeout waiting for scrcpy server connection on port %d", sc.scid)
+			log.Printf("Debug: Check if adb reverse port forward is working...")
+
+			// Debug: Check reverse port forward status
+			checkCmd := exec.Command(sc.adbPath, "-s", sc.deviceSerial, "reverse", "--list")
+			if output, err := checkCmd.Output(); err == nil {
+				log.Printf("Debug: Current reverse port forwards:\n%s", string(output))
+			}
+
+			// Debug: Check if scrcpy server process is running
+			psCmd := exec.Command(sc.adbPath, "-s", sc.deviceSerial, "shell", "ps | grep scrcpy")
+			if output, err := psCmd.Output(); err == nil && len(output) > 0 {
+				log.Printf("Debug: Scrcpy server processes found:\n%s", string(output))
+			} else {
+				log.Printf("Debug: No scrcpy server processes found - server may have crashed")
+			}
+
 			sc.killScrcpyServer()
-			return nil, fmt.Errorf("timeout waiting for scrcpy server")
+			return nil, fmt.Errorf("timeout waiting for scrcpy server after %v", timeout)
 		}
 		return nil, fmt.Errorf("failed to accept connection: %w", err)
 	}
@@ -210,15 +231,17 @@ func (sc *ScrcpyConnection) startScrcpyServer() error {
 		"3.3.1", // Server version - must match the downloaded jar
 		fmt.Sprintf("scid=%s", scidHex),
 		"video=true",
-		"audio=true", // Re-enable audio
+		"audio=true",
 		"control=true",
 		"cleanup=true",
 		"log_level=verbose", // Enable verbose logging to debug scroll issues
 		"video_codec_options=i-frame-interval=1",
 	}
 
-	// Use default video encoder for all modes
-	log.Printf("Using default video encoder for %s mode", sc.streamingMode)
+	// Add hardware video encoder if device supports it
+	// Use hardware encoder (c2.qti.avc.encoder) for better performance on Qualcomm devices
+	args = append(args, "video_encoder=c2.qti.avc.encoder")
+	log.Printf("Using hardware video encoder (c2.qti.avc.encoder) for %s mode", sc.streamingMode)
 
 	cmd := exec.Command(sc.adbPath, args...)
 

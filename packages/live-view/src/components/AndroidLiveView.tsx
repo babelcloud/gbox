@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AndroidLiveViewProps, Stats } from '../types';
 import { WebRTCClient } from '../lib/webrtc-client';
-import { MSEClient } from '../lib/mse-client';
 import { H264Client } from '../lib/h264-client';
 import { DeviceList } from './DeviceList';
 import { ControlButtons } from './ControlButtons';
@@ -39,7 +38,7 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
   const [isConnected, setIsConnected] = useState(false);
   const [stats, setStats] = useState<Stats>({ fps: 0, resolution: '', latency: 0 });
   const [keyboardCaptureEnabled] = useState(true);
-  const [currentMode, setCurrentMode] = useState<'webrtc' | 'stream' | 'h264'>(mode as 'webrtc' | 'stream' | 'h264');
+  const [currentMode, setCurrentMode] = useState<'webrtc' | 'h264'>(mode as 'webrtc' | 'h264');
 
   // Use custom hooks for different functionalities
   const { devices, currentDevice, loading, setCurrentDevice, loadDevices } = useDeviceManager({
@@ -203,25 +202,34 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
 
 
 
+
   // Initialize client based on mode
   useEffect(() => {
     console.log('[AndroidLiveView] Initializing client for mode:', currentMode);
     console.log('[AndroidLiveView] Video ref:', videoRef.current);
+    console.log('[AndroidLiveView] Props during init - apiUrl:', apiUrl, 'wsUrl:', wsUrl);
     console.log('[AndroidLiveView] showControls:', showControls, 'showAndroidControls:', showAndroidControls);
 
     if (!videoRef.current) {
       console.error('[AndroidLiveView] Video ref is null, cannot initialize client');
       return;
     }
-    
+
     // Auto-focus video element for keyboard input
     videoRef.current.focus();
 
     const clientOptions = {
       onConnectionStateChange: (state: "connecting" | "connected" | "disconnected" | "error", message?: string) => {
+        console.log('[AndroidLiveView] Connection state change:', {
+          state,
+          message,
+          currentDevice,
+          currentMode,
+          willSetIsConnected: state === 'connected'
+        });
         setConnectionStatus(message || '');
         setIsConnected(state === 'connected');
-        
+
         if (state === 'connected' && currentDevice) {
           const device = devices.find(d => d.serial === currentDevice);
           if (device) onConnect?.(device);
@@ -230,6 +238,7 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
             videoRef.current.focus();
             console.log('[Keyboard] Video element auto-focused after connection');
           }
+          // Update audio status after connection
         } else if (state === 'disconnected') {
           onDisconnect?.();
         }
@@ -241,15 +250,14 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
       onStatsUpdate: (newStats: any) => {
         setStats(prev => ({ ...prev, ...newStats }));
       },
+      // 为 H264 模式添加音频支持
+      enableAudio: currentMode === 'h264', // H264 模式默认启用音频
+      audioCodec: 'opus' as const, // 使用 OPUS 格式
     };
 
     if (currentMode === 'webrtc') {
       if (videoRef.current) {
         clientRef.current = new WebRTCClient(videoRef.current, clientOptions);
-      }
-    } else if (currentMode === 'stream') {
-      if (videoRef.current) {
-        clientRef.current = new MSEClient(videoRef.current, clientOptions);
       }
     } else if (currentMode === 'h264') {
       // h264: use the video element's parent container to host canvas
@@ -280,6 +288,8 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
 
         try {
           clientRef.current = new H264Client(h264Container, clientOptions);
+          // 将客户端实例暴露到全局，方便调试
+          (window as any).h264Client = clientRef.current;
           console.log('[AndroidLiveView] H264 client created successfully');
         } catch (error) {
           console.error('[AndroidLiveView] Failed to create H264 client:', error);
@@ -319,13 +329,18 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
   }, [autoConnect, deviceSerial]);
 
   const handleConnect = async (serial: string) => {
-    console.log('[AndroidLiveView] handleConnect called with serial:', serial);
-    console.log('[AndroidLiveView] Current mode:', currentMode);
+    return handleConnectWithMode(serial, currentMode);
+  };
+
+  const handleConnectWithMode = async (serial: string, mode: 'webrtc' | 'h264') => {
+    console.log('[AndroidLiveView] handleConnectWithMode called with serial:', serial, 'mode:', mode);
+    console.log('[AndroidLiveView] Current mode state:', currentMode);
+    console.log('[AndroidLiveView] Props - apiUrl:', apiUrl, 'wsUrl:', wsUrl);
     console.log('[AndroidLiveView] Client ref current:', clientRef.current);
 
     if (!clientRef.current) {
       console.error('[AndroidLiveView] Client not initialized, cannot connect to device:', serial);
-      console.error('[AndroidLiveView] Current mode:', currentMode);
+      console.error('[AndroidLiveView] Requested mode:', mode);
       console.error('[AndroidLiveView] Video ref:', videoRef.current);
       return;
     }
@@ -334,18 +349,14 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
       console.log('[AndroidLiveView] Setting current device to:', serial);
       setCurrentDevice(serial);
 
-      if (currentMode === 'webrtc') {
+      if (mode === 'webrtc') {
         // WebRTC mode: connect via WebSocket
         console.log('[AndroidLiveView] Connecting via WebRTC with wsUrl:', wsUrl);
         await (clientRef.current as WebRTCClient).connect(serial, wsUrl);
-      } else if (currentMode === 'h264') {
+      } else if (mode === 'h264') {
         // H264 mode: connect via HTTP API
         console.log('[AndroidLiveView] Connecting via H264 with apiUrl:', apiUrl);
         await (clientRef.current as H264Client).connect(serial, apiUrl);
-      } else {
-        // Streaming mode: connect via HTTP API
-        console.log('[AndroidLiveView] Connecting via MSE with apiUrl:', apiUrl);
-        await (clientRef.current as MSEClient).connect(serial, apiUrl);
       }
       console.log('[AndroidLiveView] Connection attempt completed for:', serial);
     } catch (error) {
@@ -373,29 +384,98 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
 
 
 
-  const handleModeSwitch = async (newMode: 'webrtc' | 'stream' | 'h264') => {
+
+
+
+  const handleModeSwitch = async (newMode: 'webrtc' | 'h264') => {
+    // Remember current device if connected for auto-reconnect
+    // Check both isConnected state AND currentDevice existence
+    const connectedDevice = (isConnected || currentDevice) ? currentDevice : null;
+
+    console.log('[ModeSwitch] Starting mode switch:', {
+      fromMode: currentMode,
+      toMode: newMode,
+      isConnected,
+      currentDevice,
+      willAutoReconnect: !!connectedDevice
+    });
+
     if (isConnected) {
-      await handleDisconnect();
+      // For mode switch, disconnect without clearing currentDevice
+      if (clientRef.current) {
+        try {
+          await clientRef.current.disconnect();
+          // Don't call setCurrentDevice(null) during mode switch
+          console.log('[ModeSwitch] Disconnected client without clearing device info');
+        } catch (error) {
+          console.error('[ModeSwitch] Disconnect failed:', error);
+        }
+      }
       // Wait a bit for cleanup to complete
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
-    
-    // Clean up existing client
+
+    // Clean up existing client completely before mode change
     if (clientRef.current) {
+      console.log('[ModeSwitch] Cleaning up existing client...');
       clientRef.current.cleanup();
       clientRef.current = null;
+      console.log('[ModeSwitch] Client cleaned up and set to null');
     }
-    
+
+    // Set new mode - this will trigger useEffect to create new client
+    console.log('[ModeSwitch] Setting mode from', currentMode, 'to', newMode);
     setCurrentMode(newMode);
-    
+
+    // Force a small delay to ensure state update is processed
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     // Update URL to reflect current mode
     const url = new URL(window.location.href);
-    if (newMode === 'stream') {
+    if (newMode === 'h264') {
       url.searchParams.delete('mode'); // Default mode
     } else {
       url.searchParams.set('mode', newMode);
     }
     window.history.replaceState({}, '', url.toString());
+
+    // Auto-reconnect to the same device if it was connected before mode switch
+    if (connectedDevice) {
+      console.log(`[ModeSwitch] Auto-reconnecting to device ${connectedDevice} in ${newMode} mode`);
+      console.log(`[ModeSwitch] Current device after mode switch:`, currentDevice);
+      // Wait for the new client to be initialized via useEffect
+      // Use a longer timeout and check multiple times to ensure client is ready
+      const tryReconnect = (attempts = 0) => {
+        setTimeout(() => {
+          if (clientRef.current) {
+            // Double-check client type matches current mode
+            const isWebRTCClient = clientRef.current.constructor.name.includes('WebRTC') ||
+                                  clientRef.current.hasOwnProperty('ws');
+            const isH264Client = clientRef.current.constructor.name.includes('H264') ||
+                                 clientRef.current.hasOwnProperty('canvas');
+
+            console.log(`[ModeSwitch] Client ready after ${attempts + 1} attempts:`, {
+              clientType: clientRef.current.constructor.name,
+              currentMode: currentMode,
+              newMode: newMode,
+              isWebRTCClient,
+              isH264Client,
+              typeMatches: (newMode === 'webrtc' && isWebRTCClient) ||
+                          (newMode === 'h264' && isH264Client)
+            });
+
+            // Use newMode instead of currentMode to avoid state sync issues
+            handleConnectWithMode(connectedDevice, newMode);
+          } else if (attempts < 10) {
+            console.log(`[ModeSwitch] Client not ready, attempt ${attempts + 1}/10, retrying...`);
+            tryReconnect(attempts + 1);
+          } else {
+            console.error(`[ModeSwitch] Failed to initialize client after 10 attempts`);
+          }
+        }, 300);
+      };
+      tryReconnect();
+    }
   };
 
   return (
@@ -411,13 +491,7 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
                   className={`${styles.modeBtn} ${currentMode === 'h264' ? styles.active : ''}`}
                   onClick={() => handleModeSwitch('h264')}
                 >
-                  H.264
-                </button>
-                <button
-                  className={`${styles.modeBtn} ${currentMode === 'stream' ? styles.active : ''}`}
-                  onClick={() => handleModeSwitch('stream')}
-                >
-                  MSE
+                  H264+WebM+MSE
                 </button>
                 <button
                   className={`${styles.modeBtn} ${currentMode === 'webrtc' ? styles.active : ''}`}
@@ -494,6 +568,7 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
                     onToggleVisibility={() => {}}
                     showDisconnect={currentMode === 'h264'}
                   />
+
                 </div>
               )}
             </div>

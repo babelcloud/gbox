@@ -2,6 +2,7 @@ package router
 
 import (
 	"net/http"
+
 	"github.com/babelcloud/gbox/packages/cli/internal/server/handlers"
 )
 
@@ -33,9 +34,6 @@ func (r *StreamingRouter) RegisterRoutes(mux *http.ServeMux, server interface{})
 	// Audio streaming endpoints
 	mux.HandleFunc("/api/stream/audio/", r.transformer.TransformHandler(r.handlers.HandleAudioStream))
 
-	// WebSocket video streaming (consolidated from /ws/video/ and /stream/ws/)
-	mux.HandleFunc("/api/stream/video/ws/", r.transformer.TransformHandler(r.handlers.HandleVideoWebSocket))
-
 	// Device control WebSocket
 	mux.HandleFunc("/api/stream/control/", r.transformer.TransformHandler(r.handlers.HandleControlWebSocket))
 
@@ -44,6 +42,7 @@ func (r *StreamingRouter) RegisterRoutes(mux *http.ServeMux, server interface{})
 
 	// Stream info endpoint
 	mux.HandleFunc("/api/stream/info", r.transformer.TransformHandler(r.handlers.HandleStreamInfo))
+
 }
 
 // GetPathPrefix returns the path prefix for this router
