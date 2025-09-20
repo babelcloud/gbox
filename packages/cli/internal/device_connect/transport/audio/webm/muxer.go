@@ -5,8 +5,11 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/at-wat/ebml-go/webm"
 )
 
+// WebMMuxer provides a panic-safe wrapper around ebml-go webm functionality
 type WebMMuxer struct {
 	writer         io.Writer
 	logger         *slog.Logger
@@ -15,21 +18,21 @@ type WebMMuxer struct {
 	audioTimestamp time.Duration
 	closed         bool
 	mu             sync.RWMutex
-	blockWriter BlockWriteCloser
-	trackEntry  TrackEntry
+	blockWriter    webm.BlockWriteCloser
+	trackEntry     webm.TrackEntry
 }
 
-// NewWebMMuxer creates a new panic-safe WebM muxer
+// NewWebMMuxer creates a new WebM muxer with panic protection
 func NewWebMMuxer(writer io.Writer) *WebMMuxer {
 	return &WebMMuxer{
 		writer: writer,
 		logger: slog.With("component", "webm_muxer"),
-		trackEntry: TrackEntry{
+		trackEntry: webm.TrackEntry{
 			TrackNumber: 1,
 			TrackUID:    12345,
 			CodecID:     "A_OPUS",
 			TrackType:   2, // Audio track
-			Audio: &Audio{
+			Audio: &webm.Audio{
 				SamplingFrequency: 48000.0,
 				Channels:          2,
 			},
@@ -37,13 +40,14 @@ func NewWebMMuxer(writer io.Writer) *WebMMuxer {
 	}
 }
 
-// WriteHeader writes the WebM header (no-op for this implementation)
+// WriteHeader writes the WebM container header
 func (m *WebMMuxer) WriteHeader() error {
-	// Header is written automatically when the first frame is written
+	// This is a no-op for our use case as headers are written automatically
+	// by the underlying ebml-go webm implementation
 	return nil
 }
 
-// WriteOpusFrame writes an Opus frame to the WebM container with panic protection
+// WriteOpusFrame writes an Opus audio frame with panic protection
 func (m *WebMMuxer) WriteOpusFrame(opusData []byte, timestamp time.Duration) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -52,14 +56,15 @@ func (m *WebMMuxer) WriteOpusFrame(opusData []byte, timestamp time.Duration) err
 		return io.ErrClosedPipe
 	}
 
-	// Initialize on first write
 	if !m.initialized {
 		if err := m.initialize(); err != nil {
+			m.logger.Error("Failed to initialize WebM muxer", "error", err)
+			m.closed = true
 			return err
 		}
 	}
 
-	// Write frame with panic protection
+	// Use a goroutine with recover to protect against panics from ebml-go
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -83,7 +88,27 @@ func (m *WebMMuxer) WriteOpusFrame(opusData []byte, timestamp time.Duration) err
 	return nil
 }
 
-// GetStats returns the current statistics
+// Close closes the WebM muxer
+func (m *WebMMuxer) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.closed {
+		return nil
+	}
+
+	if m.blockWriter != nil {
+		if err := m.blockWriter.Close(); err != nil {
+			m.logger.Error("Failed to close block writer", "error", err)
+			return err
+		}
+	}
+
+	m.closed = true
+	return nil
+}
+
+// GetStats returns muxer statistics
 func (m *WebMMuxer) GetStats() map[string]interface{} {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -95,68 +120,56 @@ func (m *WebMMuxer) GetStats() map[string]interface{} {
 	}
 }
 
-// Close closes the WebM muxer with panic protection
-func (m *WebMMuxer) Close() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if m.closed {
-		return nil
-	}
-
-	m.closed = true
-
-	// Close with panic protection
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				m.logger.Error("Panic in Close", "panic", r)
-			}
-		}()
-
-		if m.blockWriter != nil {
-			m.blockWriter.Close()
-		}
-	}()
-
-	m.logger.Info("WebM muxer closed", "frames_written", m.frameCount)
-	return nil
-}
-
-// initialize initializes the WebM container with panic protection
+// initialize sets up the underlying ebml-go webm block writer
 func (m *WebMMuxer) initialize() error {
-	// Initialize with panic protection
+	// Use a goroutine with recover to protect against panics from ebml-go
+	var err error
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
 				m.logger.Error("Panic in initialize", "panic", r)
-				m.closed = true
+				err = &PanicError{Panic: r}
 			}
 		}()
 
-		// Create a WriteCloser wrapper
+		// Create a writeCloser wrapper for our writer
 		wc := &writeCloserWrapper{Writer: m.writer}
 
-		// Create block writer
-		writers, err := NewSimpleBlockWriter(wc, []TrackEntry{m.trackEntry})
-		if err != nil {
-			m.logger.Error("Failed to create block writer", "error", err)
-			m.closed = true
+		// Use ebml-go webm directly
+		writers, writeErr := webm.NewSimpleBlockWriter(wc, []webm.TrackEntry{m.trackEntry})
+		if writeErr != nil {
+			err = writeErr
 			return
 		}
 
 		if len(writers) == 0 {
-			m.logger.Error("No block writers created")
-			m.closed = true
+			err = &InitializationError{Message: "no block writers created"}
 			return
 		}
 
 		m.blockWriter = writers[0]
 		m.initialized = true
-		m.logger.Info("WebM container initialized successfully")
 	}()
 
-	return nil
+	return err
+}
+
+// PanicError represents a panic that occurred during initialization
+type PanicError struct {
+	Panic interface{}
+}
+
+func (e *PanicError) Error() string {
+	return "panic during initialization"
+}
+
+// InitializationError represents an initialization error
+type InitializationError struct {
+	Message string
+}
+
+func (e *InitializationError) Error() string {
+	return e.Message
 }
 
 // writeCloserWrapper wraps an io.Writer to implement io.WriteCloser
@@ -165,6 +178,10 @@ type writeCloserWrapper struct {
 }
 
 func (w *writeCloserWrapper) Close() error {
-	// No-op for our use case
+	// If the underlying writer implements io.Closer, call its Close method
+	if closer, ok := w.Writer.(io.Closer); ok {
+		return closer.Close()
+	}
+	// No-op for writers that don't implement io.Closer
 	return nil
 }

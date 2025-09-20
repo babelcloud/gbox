@@ -4,7 +4,6 @@ go 1.23.7
 
 require (
 	github.com/adrg/xdg v0.5.3
-	github.com/at-wat/ebml-go v0.17.1
 	github.com/babelcloud/gbox-sdk-go v0.1.0-alpha.3
 	github.com/gorilla/mux v1.8.1
 	github.com/gorilla/websocket v1.5.3
@@ -32,6 +31,7 @@ require (
 )
 
 require (
+	github.com/at-wat/ebml-go v0.17.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect

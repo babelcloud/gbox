@@ -116,7 +116,7 @@ func (h *StreamingHandlers) HandleAudioStream(w http.ResponseWriter, r *http.Req
 	// Handle MSE-optimized WebM streaming (new approach)
 	if codec == "opus" && format == "webm" && mseOptimized {
 		audioService := audio.GetAudioService()
-		if err := audioService.StreamWebMForMSE(deviceSerial, w, r); err != nil {
+		if err := audioService.StreamWebM(deviceSerial, w, r); err != nil {
 			log.Printf("MSE WebM streaming error: %v", err)
 			http.Error(w, "MSE streaming failed", http.StatusInternalServerError)
 		}
@@ -339,7 +339,6 @@ func (h *StreamingHandlers) delegateToWebRTCHandler(conn *websocket.Conn, msg ma
 		h.webrtcHandlers.HandleIceCandidate(conn, msg, deviceSerial)
 	}
 }
-
 
 var controlUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
