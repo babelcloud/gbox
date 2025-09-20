@@ -220,13 +220,6 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
 
     const clientOptions = {
       onConnectionStateChange: (state: "connecting" | "connected" | "disconnected" | "error", message?: string) => {
-        console.log('[AndroidLiveView] Connection state change:', {
-          state,
-          message,
-          currentDevice,
-          currentMode,
-          willSetIsConnected: state === 'connected'
-        });
         setConnectionStatus(message || '');
         setIsConnected(state === 'connected');
 
@@ -291,6 +284,122 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
           // 将客户端实例暴露到全局，方便调试
           (window as any).h264Client = clientRef.current;
           console.log('[AndroidLiveView] H264 client created successfully');
+          
+          // 为 H264 模式添加鼠标事件绑定
+          const addH264EventListeners = () => {
+            const canvas = clientRef.current?.canvas;
+            if (canvas) {
+              console.log('[AndroidLiveView] Adding mouse event listeners to H264 canvas');
+              
+              const handleMouseDown = (e: MouseEvent) => {
+                e.preventDefault();
+                // 创建模拟的 React 事件对象
+                const syntheticEvent = {
+                  nativeEvent: e,
+                  clientX: e.clientX,
+                  clientY: e.clientY,
+                  type: 'mousedown'
+                } as any;
+                handleMouseInteraction(syntheticEvent);
+              };
+              
+              const handleMouseUp = (e: MouseEvent) => {
+                e.preventDefault();
+                // 创建模拟的 React 事件对象
+                const syntheticEvent = {
+                  nativeEvent: e,
+                  clientX: e.clientX,
+                  clientY: e.clientY,
+                  type: 'mouseup'
+                } as any;
+                handleMouseInteraction(syntheticEvent);
+              };
+              
+              const handleMouseMove = (e: MouseEvent) => {
+                e.preventDefault();
+                // 创建模拟的 React 事件对象
+                const syntheticEvent = {
+                  nativeEvent: e,
+                  clientX: e.clientX,
+                  clientY: e.clientY,
+                  type: 'mousemove'
+                } as any;
+                handleMouseInteraction(syntheticEvent);
+              };
+              
+              const handleMouseLeaveEvent = (e: MouseEvent) => {
+                e.preventDefault();
+                // 创建模拟的 React 事件对象
+                const syntheticEvent = {
+                  nativeEvent: e,
+                  clientX: e.clientX,
+                  clientY: e.clientY,
+                  type: 'mouseleave'
+                } as any;
+                handleMouseLeave(syntheticEvent);
+              };
+              
+              const handleTouchStart = (e: TouchEvent) => {
+                e.preventDefault();
+                // 创建模拟的 React 事件对象
+                const syntheticEvent = {
+                  nativeEvent: e,
+                  type: 'touchstart',
+                  touches: e.touches,
+                  changedTouches: e.changedTouches
+                } as any;
+                handleTouchInteraction(syntheticEvent);
+              };
+              
+              const handleTouchEnd = (e: TouchEvent) => {
+                e.preventDefault();
+                // 创建模拟的 React 事件对象
+                const syntheticEvent = {
+                  nativeEvent: e,
+                  type: 'touchend',
+                  touches: e.touches,
+                  changedTouches: e.changedTouches
+                } as any;
+                handleTouchInteraction(syntheticEvent);
+              };
+              
+              const handleTouchMove = (e: TouchEvent) => {
+                e.preventDefault();
+                // 创建模拟的 React 事件对象
+                const syntheticEvent = {
+                  nativeEvent: e,
+                  type: 'touchmove',
+                  touches: e.touches,
+                  changedTouches: e.changedTouches
+                } as any;
+                handleTouchInteraction(syntheticEvent);
+              };
+              
+              // 添加事件监听器
+              canvas.addEventListener('mousedown', handleMouseDown);
+              canvas.addEventListener('mouseup', handleMouseUp);
+              canvas.addEventListener('mousemove', handleMouseMove);
+              canvas.addEventListener('mouseleave', handleMouseLeaveEvent);
+              canvas.addEventListener('touchstart', handleTouchStart);
+              canvas.addEventListener('touchend', handleTouchEnd);
+              canvas.addEventListener('touchmove', handleTouchMove);
+              canvas.addEventListener('contextmenu', (e: Event) => e.preventDefault());
+              
+              // 设置 canvas 样式以支持交互
+              canvas.style.cursor = 'pointer';
+              canvas.style.touchAction = 'none';
+              canvas.tabIndex = 0;
+              
+              console.log('[AndroidLiveView] H264 canvas event listeners added successfully');
+            } else {
+              // 如果 canvas 还没有创建，稍后重试
+              setTimeout(addH264EventListeners, 100);
+            }
+          };
+          
+          // 延迟添加事件监听器，确保 canvas 已经创建
+          setTimeout(addH264EventListeners, 200);
+          
         } catch (error) {
           console.error('[AndroidLiveView] Failed to create H264 client:', error);
         }
@@ -354,9 +463,9 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
         console.log('[AndroidLiveView] Connecting via WebRTC with wsUrl:', wsUrl);
         await (clientRef.current as WebRTCClient).connect(serial, wsUrl);
       } else if (mode === 'h264') {
-        // H264 mode: connect via HTTP API
-        console.log('[AndroidLiveView] Connecting via H264 with apiUrl:', apiUrl);
-        await (clientRef.current as H264Client).connect(serial, apiUrl);
+        // H264 mode: connect via HTTP API, but pass wsUrl for WebSocket connections
+        console.log('[AndroidLiveView] Connecting via H264 with apiUrl:', apiUrl, 'wsUrl:', wsUrl);
+        await (clientRef.current as H264Client).connect(serial, apiUrl, wsUrl);
       }
       console.log('[AndroidLiveView] Connection attempt completed for:', serial);
     } catch (error) {
@@ -566,7 +675,7 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
                     onDisconnect={handleDisconnect}
                     isVisible={true}
                     onToggleVisibility={() => {}}
-                    showDisconnect={currentMode === 'h264'}
+                    showDisconnect={false}
                   />
 
                 </div>
