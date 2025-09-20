@@ -9,6 +9,7 @@ import (
 
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/core"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/scrcpy"
+	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/audio/webm"
 )
 
 // AudioStreamingService 音频流服务
@@ -54,7 +55,7 @@ func (s *AudioStreamingService) StreamOpus(deviceSerial string, writer io.Writer
 	logger.Info("🎵 Subscribed to Opus stream", "subscriberID", subscriberID)
 
 	// Create WebM muxer
-	muxer := NewWebMMuxer(writer)
+	muxer := webm.NewWebMMuxer(writer)
 	defer muxer.Close()
 
 	// Write WebM header
@@ -153,7 +154,7 @@ func (s *AudioStreamingService) StreamWebMForMSE(deviceSerial string, w http.Res
 	logger.Info("🎵 Subscribed to audio stream", "subscriberID", subscriberID)
 
 	// Create WebM muxer
-	muxer := NewWebMMuxer(w)
+	muxer := webm.NewWebMMuxer(w)
 	defer muxer.Close()
 
 	// Write WebM header immediately for MSE initialization

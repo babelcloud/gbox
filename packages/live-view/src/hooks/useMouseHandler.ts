@@ -28,9 +28,13 @@ export const useMouseHandler = ({ clientRef }: UseMouseHandlerProps) => {
         setIsDragging(false);
         // Hide indicator immediately
         setTouchPosition({ x: -100, y: -100 });
-      } else if (action === "move" && isDragging) {
-        // Update position immediately during drag
-        setTouchPosition({ x: e.clientX, y: e.clientY });
+      } else if (action === "move") {
+        // Update position during move if dragging (either local or client state)
+        // This ensures the indicator follows the mouse in both WebRTC and H264 modes
+        const clientDragging = (clientRef.current as any).isMouseDragging;
+        if (isDragging || clientDragging) {
+          setTouchPosition({ x: e.clientX, y: e.clientY });
+        }
       }
     },
     [clientRef, isDragging]
