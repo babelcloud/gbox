@@ -136,6 +136,6 @@ func printResponse(resp interface{}, outputFormat string) error {
 		{Header: "STATUS", Key: "status"},
 	}
 
-	renderTable(columns, data)
+	RenderTable(columns, data)
 	return nil
 }
