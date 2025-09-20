@@ -22,6 +22,7 @@ class ProfessionalMSEAudioProcessor {
   private mediaSource: MediaSource | null = null;
   private sourceBuffer: SourceBuffer | null = null;
   private audioElement: HTMLAudioElement | null = null;
+  private audioElementError: boolean = false;
   private isStreaming: boolean = false;
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   private abortController: AbortController | null = null;
@@ -29,7 +30,7 @@ class ProfessionalMSEAudioProcessor {
     bytesReceived: 0,
     chunksProcessed: 0,
     bufferedSeconds: 0,
-    startTime: 0
+    startTime: 0,
   };
 
   constructor(private container: HTMLElement) {
@@ -38,11 +39,14 @@ class ProfessionalMSEAudioProcessor {
 
   // 基于成功测试的专业MSE方案
   async connect(audioUrl: string): Promise<void> {
-    console.log('[ProfessionalMSEAudio] Connecting to:', audioUrl);
+    console.log("[ProfessionalMSEAudio] Connecting to:", audioUrl);
 
     // 检查MSE支持
-    if (!window.MediaSource || !MediaSource.isTypeSupported('audio/webm; codecs="opus"')) {
-      throw new Error('浏览器不支持WebM/Opus MSE');
+    if (
+      !window.MediaSource ||
+      !MediaSource.isTypeSupported('audio/webm; codecs="opus"')
+    ) {
+      throw new Error("浏览器不支持WebM/Opus MSE");
     }
 
     // 重置状态
@@ -52,10 +56,23 @@ class ProfessionalMSEAudioProcessor {
     this.stats.chunksProcessed = 0;
 
     // 创建音频元素
-    this.audioElement = document.createElement('audio');
+    this.audioElement = document.createElement("audio");
     this.audioElement.controls = false; // 隐藏控件，由视频播放器控制
-    this.audioElement.style.display = 'none';
+    this.audioElement.style.display = "none";
     this.container.appendChild(this.audioElement);
+
+    // 添加音频元素错误处理
+    this.audioElement.addEventListener("error", (e) => {
+      console.error("[ProfessionalMSEAudio] Audio element error:", e);
+      console.error("[ProfessionalMSEAudio] Error details:", {
+        error: this.audioElement?.error,
+        networkState: this.audioElement?.networkState,
+        readyState: this.audioElement?.readyState,
+      });
+
+      // 标记音频元素有错误，稍后重新创建
+      this.audioElementError = true;
+    });
 
     // 创建MediaSource
     this.mediaSource = new MediaSource();
@@ -63,29 +80,38 @@ class ProfessionalMSEAudioProcessor {
 
     // 等待MediaSource打开
     await new Promise((resolve, reject) => {
-      this.mediaSource!.addEventListener('sourceopen', resolve, { once: true });
-      this.mediaSource!.addEventListener('error', reject, { once: true });
+      this.mediaSource!.addEventListener("sourceopen", resolve, { once: true });
+      this.mediaSource!.addEventListener("error", reject, { once: true });
     });
 
-    console.log('[ProfessionalMSEAudio] MediaSource opened');
+    console.log("[ProfessionalMSEAudio] MediaSource opened");
 
     // 创建SourceBuffer
-    this.sourceBuffer = this.mediaSource.addSourceBuffer('audio/webm; codecs="opus"');
+    this.sourceBuffer = this.mediaSource.addSourceBuffer(
+      'audio/webm; codecs="opus"'
+    );
 
     // SourceBuffer事件监听
-    this.sourceBuffer.addEventListener('updateend', () => {
+    this.sourceBuffer.addEventListener("updateend", () => {
       // 尝试播放
-      if (this.audioElement && this.audioElement.readyState >= 3 && this.audioElement.paused) {
-        this.audioElement.play().then(() => {
-          console.log('[ProfessionalMSEAudio] 音频开始播放');
-        }).catch(e => {
-          console.warn('[ProfessionalMSEAudio] 播放失败:', e.message);
-        });
+      if (
+        this.audioElement &&
+        this.audioElement.readyState >= 3 &&
+        this.audioElement.paused
+      ) {
+        this.audioElement
+          .play()
+          .then(() => {
+            console.log("[ProfessionalMSEAudio] 音频开始播放");
+          })
+          .catch((e) => {
+            console.warn("[ProfessionalMSEAudio] 播放失败:", e.message);
+          });
       }
     });
 
-    this.sourceBuffer.addEventListener('error', (e) => {
-      console.error('[ProfessionalMSEAudio] SourceBuffer错误:', e);
+    this.sourceBuffer.addEventListener("error", (e) => {
+      console.error("[ProfessionalMSEAudio] SourceBuffer错误:", e);
     });
 
     // 启动流式获取
@@ -98,7 +124,7 @@ class ProfessionalMSEAudioProcessor {
       this.abortController = new AbortController();
 
       const response = await fetch(audioUrl, {
-        signal: this.abortController.signal
+        signal: this.abortController.signal,
       });
 
       if (!response.ok) {
@@ -106,10 +132,10 @@ class ProfessionalMSEAudioProcessor {
       }
 
       if (!response.body) {
-        throw new Error('ReadableStream not supported');
+        throw new Error("ReadableStream not supported");
       }
 
-      console.log('[ProfessionalMSEAudio] 连接成功，开始接收流数据');
+      console.log("[ProfessionalMSEAudio] 连接成功，开始接收流数据");
 
       // 获取ReadableStream reader
       this.reader = response.body.getReader();
@@ -119,7 +145,7 @@ class ProfessionalMSEAudioProcessor {
         const { done, value } = await this.reader.read();
 
         if (done) {
-          console.log('[ProfessionalMSEAudio] 服务器结束流传输');
+          console.log("[ProfessionalMSEAudio] 服务器结束流传输");
           break;
         }
 
@@ -127,13 +153,34 @@ class ProfessionalMSEAudioProcessor {
         this.stats.bytesReceived += value.length;
         this.stats.chunksProcessed++;
 
+        // 检查音频元素状态
+        if (
+          this.audioElementError ||
+          (this.audioElement && this.audioElement.error)
+        ) {
+          console.warn(
+            "[ProfessionalMSEAudio] Audio element has error, skipping chunk"
+          );
+          continue;
+        }
+
         // 将数据追加到SourceBuffer
-        if (this.sourceBuffer &&
-            !this.sourceBuffer.updating &&
-            this.mediaSource &&
-            this.mediaSource.readyState === 'open') {
+        if (
+          this.sourceBuffer &&
+          !this.sourceBuffer.updating &&
+          this.mediaSource &&
+          this.mediaSource.readyState === "open" &&
+          this.audioElement &&
+          !this.audioElementError &&
+          !this.audioElement.error
+        ) {
           try {
-            this.sourceBuffer.appendBuffer(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer);
+            this.sourceBuffer.appendBuffer(
+              value.buffer.slice(
+                value.byteOffset,
+                value.byteOffset + value.byteLength
+              ) as ArrayBuffer
+            );
 
             // 更新缓冲区统计
             if (this.sourceBuffer.buffered.length > 0) {
@@ -143,28 +190,47 @@ class ProfessionalMSEAudioProcessor {
             // 每100个块记录一次进度
             if (this.stats.chunksProcessed % 100 === 0) {
               const elapsed = Date.now() - this.stats.startTime;
-              const throughput = (this.stats.bytesReceived / 1024 / (elapsed / 1000)).toFixed(1);
-              console.log(`[ProfessionalMSEAudio] 已处理${this.stats.chunksProcessed}块, ${Math.round(this.stats.bytesReceived/1024)}KB, ${throughput}KB/s`);
+              const throughput = (
+                this.stats.bytesReceived /
+                1024 /
+                (elapsed / 1000)
+              ).toFixed(1);
+              console.log(
+                `[ProfessionalMSEAudio] 已处理${
+                  this.stats.chunksProcessed
+                }块, ${Math.round(
+                  this.stats.bytesReceived / 1024
+                )}KB, ${throughput}KB/s`
+              );
+            }
+          } catch (e) {
+            console.error("[ProfessionalMSEAudio] SourceBuffer追加失败:", e);
+
+            // 检查是否是音频元素错误导致的
+            if (
+              this.audioElementError ||
+              (this.audioElement && this.audioElement.error)
+            ) {
+              console.warn(
+                "[ProfessionalMSEAudio] Audio element error detected"
+              );
             }
 
-          } catch (e) {
-            console.error('[ProfessionalMSEAudio] SourceBuffer追加失败:', e);
             // 实现错误恢复机制
             await this.retryWithBackoff();
           }
         } else {
-          // 如果SourceBuffer正在更新，等待一下
-          await new Promise(resolve => setTimeout(resolve, 10));
+          // 如果SourceBuffer正在更新或状态异常，等待一下
+          await new Promise((resolve) => setTimeout(resolve, 10));
         }
       }
-
     } catch (error) {
-      if (error instanceof Error && error.name !== 'AbortError') {
-        console.error('[ProfessionalMSEAudio] 流处理错误:', error);
+      if (error instanceof Error && error.name !== "AbortError") {
+        console.error("[ProfessionalMSEAudio] 流处理错误:", error);
 
         // 自动重连机制
         if (this.isStreaming) {
-          console.log('[ProfessionalMSEAudio] 5秒后自动重连...');
+          console.log("[ProfessionalMSEAudio] 5秒后自动重连...");
           setTimeout(() => {
             if (this.isStreaming) {
               this.startStreaming(audioUrl);
@@ -180,17 +246,32 @@ class ProfessionalMSEAudioProcessor {
     const delays = [100, 200, 500, 1000]; // 递增退避
 
     for (const delay of delays) {
-      await new Promise(resolve => setTimeout(resolve, delay));
+      await new Promise((resolve) => setTimeout(resolve, delay));
 
-      if (this.sourceBuffer &&
-          !this.sourceBuffer.updating &&
-          this.mediaSource &&
-          this.mediaSource.readyState === 'open') {
+      // 检查音频元素状态
+      if (
+        this.audioElementError ||
+        (this.audioElement && this.audioElement.error)
+      ) {
+        console.warn(
+          "[ProfessionalMSEAudio] Audio element error during recovery"
+        );
+      }
+
+      if (
+        this.sourceBuffer &&
+        !this.sourceBuffer.updating &&
+        this.mediaSource &&
+        this.mediaSource.readyState === "open" &&
+        this.audioElement &&
+        !this.audioElementError &&
+        !this.audioElement.error
+      ) {
         return; // 恢复成功
       }
     }
 
-    throw new Error('SourceBuffer recovery failed');
+    throw new Error("SourceBuffer recovery failed");
   }
 
   // 停止音频流
@@ -205,10 +286,13 @@ class ProfessionalMSEAudioProcessor {
 
     // 关闭reader
     if (this.reader) {
-      this.reader.cancel().catch(e => {
+      this.reader.cancel().catch((e) => {
         // 静默处理预期的取消错误，避免控制台污染
-        if (e.name !== 'AbortError') {
-          console.log('[ProfessionalMSEAudio] Reader cancel error (unexpected):', e);
+        if (e.name !== "AbortError") {
+          console.log(
+            "[ProfessionalMSEAudio] Reader cancel error (unexpected):",
+            e
+          );
         }
       });
       this.reader = null;
@@ -222,7 +306,7 @@ class ProfessionalMSEAudioProcessor {
     }
 
     // 关闭MediaSource
-    if (this.mediaSource && this.mediaSource.readyState === 'open') {
+    if (this.mediaSource && this.mediaSource.readyState === "open") {
       try {
         this.mediaSource.endOfStream();
       } catch (e) {
@@ -234,8 +318,16 @@ class ProfessionalMSEAudioProcessor {
     // 显示最终统计
     if (this.stats.startTime > 0) {
       const elapsed = Date.now() - this.stats.startTime;
-      const avgThroughput = (this.stats.bytesReceived / 1024 / (elapsed / 1000)).toFixed(1);
-      console.log(`[ProfessionalMSEAudio] 音频流已停止 - 总计: ${Math.round(this.stats.bytesReceived/1024)}KB, ${avgThroughput}KB/s平均速率`);
+      const avgThroughput = (
+        this.stats.bytesReceived /
+        1024 /
+        (elapsed / 1000)
+      ).toFixed(1);
+      console.log(
+        `[ProfessionalMSEAudio] 音频流已停止 - 总计: ${Math.round(
+          this.stats.bytesReceived / 1024
+        )}KB, ${avgThroughput}KB/s平均速率`
+      );
     }
 
     // 重置状态
@@ -243,12 +335,11 @@ class ProfessionalMSEAudioProcessor {
     this.sourceBuffer = null;
   }
 
-
   // 手动播放音频（用于用户交互后）
   play(): void {
     if (this.audioElement && this.audioElement.paused) {
-      this.audioElement.play().catch(e => {
-        console.warn('[ProfessionalMSEAudio] Manual play failed:', e);
+      this.audioElement.play().catch((e) => {
+        console.warn("[ProfessionalMSEAudio] Manual play failed:", e);
       });
     }
   }
@@ -262,12 +353,24 @@ class ProfessionalMSEAudioProcessor {
 }
 
 export class H264Client {
+  // Android key codes
+  static readonly ANDROID_KEYCODES = {
+    POWER: 26,
+    VOLUME_UP: 24,
+    VOLUME_DOWN: 25,
+    BACK: 4,
+    HOME: 3,
+    APP_SWITCH: 187,
+    MENU: 82,
+  };
+
   private container: HTMLElement;
   private canvas: HTMLCanvasElement | null = null;
   private context: CanvasRenderingContext2D | null = null;
   private decoder: VideoDecoder | null = null;
   private abortController: AbortController | null = null;
   private audioProcessor: ProfessionalMSEAudioProcessor | null = null; // 新的专业音频处理器
+  private controlWs: WebSocket | null = null; // 控制WebSocket连接
   private opts: H264ClientOptions;
   private buffer: Uint8Array = new Uint8Array(0);
   private spsData: Uint8Array | null = null;
@@ -276,6 +379,15 @@ export class H264Client {
   private decodedFrames: Array<{ frame: VideoFrame; timestamp: number }> = [];
   private waitingForKeyframe: boolean = true; // 等待关键帧标志
   private keyframeRequestTimer: number | null = null; // 关键帧请求定时器
+  private controlRetryCount: number = 0; // 控制WebSocket重试计数器
+  private controlReconnectTimer: number | null = null; // 控制WebSocket重连定时器
+  private maxControlRetries: number = 5; // 最大重试次数
+  public isMouseDragging: boolean = false; // 鼠标拖拽状态
+  private lastConnectParams: {
+    deviceSerial: string;
+    apiUrl: string;
+    wsUrl?: string;
+  } | null = null; // 保存连接参数用于重连
 
   constructor(container: HTMLElement, opts: H264ClientOptions = {}) {
     this.container = container;
@@ -334,7 +446,8 @@ export class H264Client {
   // Connect to H.264 AVC format stream
   public async connect(
     deviceSerial: string,
-    apiUrl: string = "/api"
+    apiUrl: string = "/api",
+    wsUrl?: string
   ): Promise<void> {
     const url = `${apiUrl}/stream/video/${deviceSerial}?mode=h264&format=avc`;
     console.log("[H264Client] Connecting to H.264 AVC stream:", url);
@@ -358,11 +471,37 @@ export class H264Client {
     );
 
     try {
+      // 保存连接参数用于重连
+      this.lastConnectParams = { deviceSerial, apiUrl, wsUrl };
+
       await this.startHTTP(url);
+
+      // 先连接控制WebSocket（优先级更高）
+      console.log("[H264Client] About to connect control WebSocket...");
+      try {
+        await this.connectControl(deviceSerial, apiUrl, wsUrl);
+        console.log("[H264Client] Control connection completed successfully");
+      } catch (error) {
+        console.warn(
+          "[H264Client] Control connection failed, but continuing with video:",
+          error
+        );
+      }
 
       // 连接音频（如果启用）
       if (this.opts.enableAudio) {
-        await this.connectAudio(deviceSerial, apiUrl);
+        console.log("[H264Client] About to connect audio...");
+        try {
+          await this.connectAudio(deviceSerial, apiUrl);
+          console.log("[H264Client] Audio connection completed");
+        } catch (error) {
+          console.warn(
+            "[H264Client] Audio connection failed, but continuing:",
+            error
+          );
+        }
+      } else {
+        console.log("[H264Client] Audio disabled, skipping audio connection");
       }
 
       // 启动关键帧请求
@@ -381,6 +520,197 @@ export class H264Client {
     }
   }
 
+  // 连接控制WebSocket
+  private async connectControl(
+    deviceSerial: string,
+    apiUrl: string,
+    wsUrl?: string
+  ): Promise<void> {
+    console.log("[H264Client] Starting control WebSocket connection...");
+    console.log(
+      "[H264Client] Device:",
+      deviceSerial,
+      "API URL:",
+      apiUrl,
+      "WS URL:",
+      wsUrl
+    );
+
+    try {
+      // 构建控制WebSocket URL - 使用与WebRTCClient相同的逻辑
+      let controlWsUrl;
+      if (wsUrl) {
+        // 使用提供的wsUrl构建控制WebSocket URL
+        const baseUrl = wsUrl.replace(/\/ws$/, ""); // Remove /ws suffix if present
+        controlWsUrl = `${baseUrl}/api/stream/control/${deviceSerial}`.replace(
+          /^http/,
+          "ws"
+        );
+      } else if (apiUrl.startsWith("http")) {
+        // 如果apiUrl是完整URL
+        controlWsUrl = `${apiUrl}/stream/control/${deviceSerial}`.replace(
+          /^http/,
+          "ws"
+        );
+      } else {
+        // 如果apiUrl是相对路径，构建完整URL
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const host = window.location.hostname;
+        let port = window.location.port;
+        if (port === "3000" || port === "") {
+          port = "8080"; // 默认后端端口
+        }
+        controlWsUrl = `${protocol}//${host}:${port}${apiUrl}/stream/control/${deviceSerial}`;
+      }
+
+      console.log(`[H264Client] Control WebSocket URL: ${controlWsUrl}`);
+
+      // 创建WebSocket连接
+      console.log("[H264Client] Creating WebSocket connection...");
+      try {
+        this.controlWs = new WebSocket(controlWsUrl);
+        console.log("[H264Client] WebSocket object created successfully");
+      } catch (wsError) {
+        console.error("[H264Client] Failed to create WebSocket:", wsError);
+        throw wsError;
+      }
+
+      // 设置WebSocket事件处理器
+      this.controlWs.onopen = () => {
+        console.log("[H264Client] Control WebSocket connected successfully");
+        console.log("[H264Client] WebSocket URL:", controlWsUrl);
+        console.log(
+          "[H264Client] WebSocket ready state:",
+          this.controlWs?.readyState
+        );
+        // 连接成功后，重置重试计数器
+        this.controlRetryCount = 0;
+      };
+
+      this.controlWs.onmessage = (event) => {
+        console.log("[H264Client] Control WebSocket message:", event.data);
+      };
+
+      this.controlWs.onerror = (error) => {
+        console.error("[H264Client] Control WebSocket error:", error);
+      };
+
+      this.controlWs.onclose = (event) => {
+        console.log(
+          "[H264Client] Control WebSocket closed:",
+          event.code,
+          event.reason
+        );
+        if (event.code !== 1000) {
+          console.warn(
+            "[H264Client] Control WebSocket closed unexpectedly:",
+            event.code,
+            event.reason
+          );
+          // 尝试重连控制WebSocket
+          this.scheduleControlReconnect(deviceSerial, apiUrl, wsUrl);
+        }
+        this.controlWs = null;
+      };
+
+      // 等待连接建立
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          console.log("[H264Client] Control WebSocket connection timeout");
+          reject(new Error("Control WebSocket connection timeout"));
+        }, 10000); // 增加超时时间到10秒
+
+        const originalOnOpen = this.controlWs!.onopen;
+        const originalOnError = this.controlWs!.onerror;
+
+        this.controlWs!.onopen = () => {
+          clearTimeout(timeout);
+          console.log("[H264Client] Control WebSocket connected successfully");
+          // 恢复原始处理器
+          this.controlWs!.onopen = originalOnOpen;
+          this.controlWs!.onerror = originalOnError;
+          resolve();
+        };
+
+        this.controlWs!.onerror = (error) => {
+          clearTimeout(timeout);
+          console.error(
+            "[H264Client] Control WebSocket connection error:",
+            error
+          );
+          // 恢复原始处理器
+          this.controlWs!.onopen = originalOnOpen;
+          this.controlWs!.onerror = originalOnError;
+          reject(new Error("Control WebSocket connection failed"));
+        };
+      });
+    } catch (error) {
+      console.error("[H264Client] Control WebSocket connection failed:", error);
+      // 清理失败的WebSocket连接
+      if (this.controlWs) {
+        this.controlWs.close();
+        this.controlWs = null;
+      }
+      // 尝试重连控制WebSocket
+      this.scheduleControlReconnect(deviceSerial, apiUrl, wsUrl);
+      // 抛出错误让上层知道连接失败
+      throw error;
+    }
+  }
+
+  // 安排控制WebSocket重连
+  private scheduleControlReconnect(
+    deviceSerial?: string,
+    apiUrl?: string,
+    wsUrl?: string
+  ): void {
+    if (this.controlRetryCount >= this.maxControlRetries) {
+      console.log(
+        "[H264Client] Control WebSocket max retries reached, giving up"
+      );
+      return;
+    }
+
+    // 使用保存的连接参数或传入的参数
+    const params = this.lastConnectParams || {
+      deviceSerial: deviceSerial!,
+      apiUrl: apiUrl!,
+      wsUrl,
+    };
+    if (!params.deviceSerial || !params.apiUrl) {
+      console.error(
+        "[H264Client] Cannot reconnect control WebSocket - missing connection parameters"
+      );
+      return;
+    }
+
+    this.controlRetryCount++;
+    const delay = Math.min(
+      1000 * Math.pow(2, this.controlRetryCount - 1),
+      10000
+    ); // 指数退避，最大10秒
+
+    console.log(
+      `[H264Client] Scheduling control WebSocket reconnect in ${delay}ms (attempt ${this.controlRetryCount}/${this.maxControlRetries})`
+    );
+
+    this.controlReconnectTimer = window.setTimeout(() => {
+      console.log(
+        `[H264Client] Attempting control WebSocket reconnect (attempt ${this.controlRetryCount})`
+      );
+      this.connectControl(
+        params.deviceSerial,
+        params.apiUrl,
+        params.wsUrl
+      ).catch((error) => {
+        console.error(
+          "[H264Client] Control WebSocket reconnect failed:",
+          error
+        );
+      });
+    }, delay);
+  }
+
   // 连接专业MSE音频流
   private async connectAudio(
     deviceSerial: string,
@@ -396,11 +726,23 @@ export class H264Client {
       const audioUrl = `${apiUrl}/stream/audio/${deviceSerial}?codec=opus&format=webm&mse=true`;
 
       // 连接音频流
-      await this.audioProcessor.connect(audioUrl);
+      console.log("[H264Client] Calling audioProcessor.connect...");
+
+      // 添加超时机制防止音频连接卡住
+      const audioTimeout = new Promise<void>((_, reject) => {
+        setTimeout(() => reject(new Error("Audio connection timeout")), 10000);
+      });
+
+      await Promise.race([this.audioProcessor.connect(audioUrl), audioTimeout]);
+
+      console.log("[H264Client] audioProcessor.connect returned successfully");
 
       console.log("[H264Client] Professional MSE audio connected successfully");
     } catch (error) {
-      console.error("[H264Client] Professional MSE audio connection failed:", error);
+      console.error(
+        "[H264Client] Professional MSE audio connection failed:",
+        error
+      );
       // 不抛出错误，让视频继续工作
     }
   }
@@ -413,7 +755,6 @@ export class H264Client {
     }
   }
 
-
   // 手动播放音频（用于用户交互后）
   public playAudio(): void {
     this.enableAudio();
@@ -425,7 +766,6 @@ export class H264Client {
       this.audioProcessor.pause();
     }
   }
-
 
   private async startHTTP(url: string): Promise<void> {
     this.abortController = new AbortController();
@@ -644,8 +984,13 @@ export class H264Client {
       console.error("[H264Client] Failed to decode frame:", error);
 
       // If decode fails due to keyframe requirement, request keyframe
-      if (error instanceof Error && error.message.includes("key frame is required")) {
-        console.log("[H264Client] Decoder requires keyframe, requesting from server");
+      if (
+        error instanceof Error &&
+        error.message.includes("key frame is required")
+      ) {
+        console.log(
+          "[H264Client] Decoder requires keyframe, requesting from server"
+        );
         this.waitingForKeyframe = true;
         this.requestKeyframe();
       }
@@ -694,7 +1039,7 @@ export class H264Client {
   }
 
   // 请求关键帧
-  private requestKeyframe(): void {
+  public requestKeyframe(): void {
     console.log("[H264Client] Requesting keyframe from server");
 
     // 清除现有的定时器
@@ -708,7 +1053,9 @@ export class H264Client {
     // 设置定时器，每2秒请求一次，直到收到关键帧
     this.keyframeRequestTimer = window.setInterval(() => {
       if (this.waitingForKeyframe) {
-        console.log("[H264Client] Still waiting for keyframe, requesting again");
+        console.log(
+          "[H264Client] Still waiting for keyframe, requesting again"
+        );
         this.sendKeyframeRequest();
       } else {
         // 收到关键帧后清除定时器
@@ -724,7 +1071,287 @@ export class H264Client {
   private sendKeyframeRequest(): void {
     // 这里应该实现向服务器发送关键帧请求的逻辑
     // 例如通过WebSocket或HTTP请求通知服务器生成关键帧
-    console.log("[H264Client] Keyframe request sent (placeholder - implement based on your protocol)");
+    console.log(
+      "[H264Client] Keyframe request sent (placeholder - implement based on your protocol)"
+    );
+  }
+
+  // 发送按键事件
+  public sendKeyEvent(
+    keycode: number,
+    action: "down" | "up",
+    metaState: number = 0
+  ): void {
+    console.log("[H264Client] Sending key event:", {
+      keycode,
+      action,
+      metaState,
+    });
+
+    if (!this.controlWs || this.controlWs.readyState !== WebSocket.OPEN) {
+      console.warn(
+        "[H264Client] Control WebSocket not connected, cannot send key event"
+      );
+      // 尝试重连控制WebSocket（如果还有重试次数）
+      if (
+        this.controlRetryCount < this.maxControlRetries &&
+        this.lastConnectParams
+      ) {
+        console.log(
+          "[H264Client] Attempting to reconnect control WebSocket for key event"
+        );
+        this.scheduleControlReconnect();
+      } else {
+        console.log(
+          "[H264Client] Cannot reconnect control WebSocket - no retries left or missing connection params"
+        );
+      }
+      return;
+    }
+
+    const message = {
+      type: "key",
+      action,
+      keycode,
+      metaState,
+    };
+
+    try {
+      this.controlWs.send(JSON.stringify(message));
+      console.log("[H264Client] Key event sent successfully");
+    } catch (error) {
+      console.error("[H264Client] Failed to send key event:", error);
+      // 发送失败时，标记连接可能有问题
+      if (this.controlWs) {
+        this.controlWs.close();
+        this.controlWs = null;
+      }
+      // 尝试重连
+      if (this.lastConnectParams) {
+        this.scheduleControlReconnect();
+      }
+    }
+  }
+
+  // 发送触摸事件
+  public sendTouchEvent(
+    x: number,
+    y: number,
+    action: "down" | "up" | "move",
+    pressure: number = 1.0
+  ): void {
+    console.log("[H264Client] Sending touch event:", {
+      x,
+      y,
+      action,
+      pressure,
+    });
+
+    if (!this.controlWs || this.controlWs.readyState !== WebSocket.OPEN) {
+      console.warn(
+        "[H264Client] Control WebSocket not connected, cannot send touch event"
+      );
+      // 尝试重连控制WebSocket（如果还有重试次数）
+      if (
+        this.controlRetryCount < this.maxControlRetries &&
+        this.lastConnectParams
+      ) {
+        console.log(
+          "[H264Client] Attempting to reconnect control WebSocket for touch event"
+        );
+        this.scheduleControlReconnect();
+      }
+      return;
+    }
+
+    const message = {
+      type: "touch",
+      action,
+      x,
+      y,
+      pressure: action === "down" || action === "move" ? pressure : 0,
+      pointerId: 0,
+    };
+
+    try {
+      this.controlWs.send(JSON.stringify(message));
+    } catch (error) {
+      console.error("[H264Client] Failed to send touch event:", error);
+      // 发送失败时，标记连接可能有问题
+      if (this.controlWs) {
+        this.controlWs.close();
+        this.controlWs = null;
+      }
+      // 尝试重连
+      if (this.lastConnectParams) {
+        this.scheduleControlReconnect();
+      }
+    }
+  }
+
+  // 处理鼠标事件 - 与WebRTC客户端保持一致的接口
+  public handleMouseEvent(
+    event: MouseEvent,
+    action: "down" | "up" | "move"
+  ): void {
+    // 使用 canvas 或 container 元素
+    const targetElement = this.canvas || this.container;
+    if (!targetElement) {
+      console.warn("[H264Client] No target element available for mouse event");
+      return;
+    }
+
+    // 检查控制连接状态
+    if (!this.isControlConnected()) {
+      console.warn(
+        "[H264Client] Control WebSocket not connected, cannot send mouse event"
+      );
+      return;
+    }
+
+    // 只处理左键鼠标事件（模拟触摸）
+    if ((action === "down" || action === "up") && event.button !== 0) {
+      console.log(
+        `[H264Client] Ignoring non-left mouse button: ${event.button}`
+      );
+      return;
+    }
+
+    // 更新拖拽状态
+    if (action === "down") {
+      this.isMouseDragging = true;
+      event.preventDefault(); // 防止拖拽时选择文本
+    } else if (action === "up") {
+      this.isMouseDragging = false;
+    } else if (action === "move" && !this.isMouseDragging) {
+      // 只在拖拽时发送移动事件（模拟触摸拖拽）
+      return;
+    }
+
+    const rect = targetElement.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width;
+    const y = (event.clientY - rect.top) / rect.height;
+
+    // 确保坐标在有效范围内
+    const clampedX = Math.max(0, Math.min(1, x));
+    const clampedY = Math.max(0, Math.min(1, y));
+
+    console.log(
+      `[H264Client] Mouse ${action} at (${clampedX.toFixed(
+        3
+      )}, ${clampedY.toFixed(3)})`
+    );
+
+    // 使用现有的sendTouchEvent方法
+    this.sendTouchEvent(
+      clampedX,
+      clampedY,
+      action,
+      action === "down" || (action === "move" && this.isMouseDragging)
+        ? 1.0
+        : 0.0
+    );
+  }
+
+  // 处理触摸事件 - 与WebRTC客户端保持一致的接口
+  public handleTouchEvent(
+    event: TouchEvent,
+    action: "down" | "up" | "move"
+  ): void {
+    // 使用 canvas 或 container 元素
+    const targetElement = this.canvas || this.container;
+    if (!targetElement) {
+      console.warn("[H264Client] No target element available for touch event");
+      return;
+    }
+
+    const rect = targetElement.getBoundingClientRect();
+    const touch = event.touches[0] || event.changedTouches[0];
+
+    if (!touch) {
+      console.warn("[H264Client] No touch point available");
+      return;
+    }
+
+    const x = (touch.clientX - rect.left) / rect.width;
+    const y = (touch.clientY - rect.top) / rect.height;
+
+    // 确保坐标在有效范围内
+    const clampedX = Math.max(0, Math.min(1, x));
+    const clampedY = Math.max(0, Math.min(1, y));
+
+    console.log(
+      `[H264Client] Touch ${action} at (${clampedX.toFixed(
+        3
+      )}, ${clampedY.toFixed(3)})`
+    );
+
+    // 使用现有的sendTouchEvent方法
+    this.sendTouchEvent(
+      clampedX,
+      clampedY,
+      action,
+      action === "down" || action === "move" ? 1.0 : 0.0
+    );
+  }
+
+  // 检查控制WebSocket连接状态
+  public isControlConnected(): boolean {
+    const isConnected = !!(
+      this.controlWs && this.controlWs.readyState === WebSocket.OPEN
+    );
+    console.log("[H264Client] Control WebSocket status:", {
+      ws: !!this.controlWs,
+      readyState: this.controlWs?.readyState,
+      isConnected,
+      retryCount: this.controlRetryCount,
+      maxRetries: this.maxControlRetries,
+    });
+    return isConnected;
+  }
+
+  // 发送控制动作
+  public sendControlAction(action: string, params?: any): void {
+    console.log("[H264Client] Sending control action:", { action, params });
+
+    if (!this.controlWs || this.controlWs.readyState !== WebSocket.OPEN) {
+      console.warn(
+        "[H264Client] Control WebSocket not connected, cannot send control action"
+      );
+      // 尝试重连控制WebSocket（如果还有重试次数）
+      if (
+        this.controlRetryCount < this.maxControlRetries &&
+        this.lastConnectParams
+      ) {
+        console.log(
+          "[H264Client] Attempting to reconnect control WebSocket for control action"
+        );
+        this.scheduleControlReconnect();
+      }
+      return;
+    }
+
+    const message = {
+      type: "control",
+      action,
+      params,
+    };
+
+    try {
+      this.controlWs.send(JSON.stringify(message));
+      console.log("[H264Client] Control action sent successfully");
+    } catch (error) {
+      console.error("[H264Client] Failed to send control action:", error);
+      // 发送失败时，标记连接可能有问题
+      if (this.controlWs) {
+        this.controlWs.close();
+        this.controlWs = null;
+      }
+      // 尝试重连
+      if (this.lastConnectParams) {
+        this.scheduleControlReconnect();
+      }
+    }
   }
 
   private onFrameDecoded(frame: VideoFrame): void {
@@ -770,6 +1397,22 @@ export class H264Client {
       this.audioProcessor = null;
     }
 
+    // 清理控制WebSocket连接
+    if (this.controlWs) {
+      this.controlWs.close();
+      this.controlWs = null;
+    }
+
+    // 清理控制WebSocket重连定时器
+    if (this.controlReconnectTimer) {
+      clearTimeout(this.controlReconnectTimer);
+      this.controlReconnectTimer = null;
+    }
+
+    // 重置重试计数器和连接参数
+    this.controlRetryCount = 0;
+    this.lastConnectParams = null;
+
     // 清理关键帧请求定时器
     if (this.keyframeRequestTimer) {
       clearInterval(this.keyframeRequestTimer);
@@ -781,7 +1424,6 @@ export class H264Client {
       this.decoder.close();
       this.decoder = null;
     }
-
 
     // Clear animation frame
     if (this.animationFrameId) {

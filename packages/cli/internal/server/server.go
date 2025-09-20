@@ -16,6 +16,7 @@ import (
 	"time"
 
 	client "github.com/babelcloud/gbox/packages/cli/internal/client"
+	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/control"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/webrtc"
 	"github.com/babelcloud/gbox/packages/cli/internal/server/handlers"
 	"github.com/babelcloud/gbox/packages/cli/internal/server/router"
@@ -23,8 +24,6 @@ import (
 
 //go:embed all:static
 var staticFiles embed.FS
-
-
 
 // GBoxServer is the unified server for all gbox services
 type GBoxServer struct {
@@ -47,6 +46,9 @@ type GBoxServer struct {
 // NewGBoxServer creates a new unified gbox server
 func NewGBoxServer(port int) *GBoxServer {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	// Initialize control service
+	control.SetControlService()
 
 	return &GBoxServer{
 		port:          port,
@@ -173,7 +175,6 @@ func (s *GBoxServer) serveStaticWithMIME(fs http.FileSystem) http.Handler {
 		http.FileServer(fs).ServeHTTP(w, r)
 	})
 }
-
 
 // findStaticPath finds the server static files directory
 func (s *GBoxServer) findStaticPath() string {

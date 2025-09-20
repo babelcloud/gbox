@@ -220,13 +220,6 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
 
     const clientOptions = {
       onConnectionStateChange: (state: "connecting" | "connected" | "disconnected" | "error", message?: string) => {
-        console.log('[AndroidLiveView] Connection state change:', {
-          state,
-          message,
-          currentDevice,
-          currentMode,
-          willSetIsConnected: state === 'connected'
-        });
         setConnectionStatus(message || '');
         setIsConnected(state === 'connected');
 
@@ -354,9 +347,9 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
         console.log('[AndroidLiveView] Connecting via WebRTC with wsUrl:', wsUrl);
         await (clientRef.current as WebRTCClient).connect(serial, wsUrl);
       } else if (mode === 'h264') {
-        // H264 mode: connect via HTTP API
-        console.log('[AndroidLiveView] Connecting via H264 with apiUrl:', apiUrl);
-        await (clientRef.current as H264Client).connect(serial, apiUrl);
+        // H264 mode: connect via HTTP API, but pass wsUrl for WebSocket connections
+        console.log('[AndroidLiveView] Connecting via H264 with apiUrl:', apiUrl, 'wsUrl:', wsUrl);
+        await (clientRef.current as H264Client).connect(serial, apiUrl, wsUrl);
       }
       console.log('[AndroidLiveView] Connection attempt completed for:', serial);
     } catch (error) {
@@ -566,7 +559,7 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
                     onDisconnect={handleDisconnect}
                     isVisible={true}
                     onToggleVisibility={() => {}}
-                    showDisconnect={currentMode === 'h264'}
+                    showDisconnect={false}
                   />
 
                 </div>

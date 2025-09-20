@@ -53,8 +53,8 @@ func (s *AudioStreamingService) StreamOpus(deviceSerial string, writer io.Writer
 
 	logger.Info("🎵 Subscribed to Opus stream", "subscriberID", subscriberID)
 
-	// Create professional WebM muxer
-	muxer := NewProfessionalWebMMuxer(writer)
+	// Create WebM muxer
+	muxer := NewWebMMuxer(writer)
 	defer muxer.Close()
 
 	// Write WebM header
@@ -91,6 +91,9 @@ func (s *AudioStreamingService) StreamOpus(deviceSerial string, writer io.Writer
 				if writeErr := muxer.WriteOpusFrame(sample.Data, timestamp); writeErr != nil {
 					if writeErr == io.ErrClosedPipe {
 						logger.Info("🎵 Client disconnected, stopping audio stream", "frames_sent", sampleCount)
+						// Mark muxer as closed to prevent further writes
+						muxer = nil
+						return
 					} else {
 						logger.Error("❌ Failed to write WebM frame", "error", writeErr, "frame", sampleCount)
 					}
@@ -98,10 +101,10 @@ func (s *AudioStreamingService) StreamOpus(deviceSerial string, writer io.Writer
 			}
 		}()
 
-		// If muxer was set to nil due to panic, stop streaming
+		// If muxer is closed, break out of the loop
 		if muxer == nil {
-			logger.Info("🎵 Muxer failed due to panic, stopping stream", "frames_sent", sampleCount)
-			return nil
+			logger.Info("🎵 Muxer closed, stopping stream", "frames_sent", sampleCount)
+			break
 		}
 
 		// Log successful transmission for first few frames
@@ -149,8 +152,8 @@ func (s *AudioStreamingService) StreamWebMForMSE(deviceSerial string, w http.Res
 
 	logger.Info("🎵 Subscribed to audio stream", "subscriberID", subscriberID)
 
-	// Create professional WebM muxer
-	muxer := NewProfessionalWebMMuxer(w)
+	// Create WebM muxer
+	muxer := NewWebMMuxer(w)
 	defer muxer.Close()
 
 	// Write WebM header immediately for MSE initialization
@@ -199,6 +202,8 @@ func (s *AudioStreamingService) StreamWebMForMSE(deviceSerial string, w http.Res
 						// Check if this is a client disconnect (expected)
 						if writeErr == io.ErrClosedPipe {
 							logger.Info("🎵 Client disconnected during MSE streaming", "frames_sent", frameCount)
+							// Mark muxer as closed to prevent further writes
+							muxer = nil
 						} else {
 							logger.Error("Failed to write Opus frame", "error", writeErr)
 						}
