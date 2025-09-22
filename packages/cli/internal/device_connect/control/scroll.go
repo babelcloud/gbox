@@ -23,7 +23,7 @@ func (h *ScrollHandler) ProcessScrollEvent(msg map[string]interface{}, deviceSer
 	hScroll, _ := msg["hScroll"].(float64)
 	vScroll, _ := msg["vScroll"].(float64)
 
-	log.Printf("Scroll event: device=%s, x=%.3f, y=%.3f, hScroll=%.2f, vScroll=%.2f",
+	log.Printf("[DEBUG] Scroll event: device=%s, x=%.3f, y=%.3f, hScroll=%.2f, vScroll=%.2f",
 		deviceSerial, x, y, hScroll, vScroll)
 
 	// TODO: Implement scroll event processing logic

@@ -26,6 +26,12 @@ class MSEAudioProcessor {
   public isStreaming: boolean = false;
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   private abortController: AbortController | null = null;
+  private healthCheckInterval: number | null = null;
+  private reconnectAttempts: number = 0;
+  private maxReconnectAttempts: number = 5;
+  private reconnectDelay: number = 1000; // 1 second
+  private reconnectTimer: number | null = null;
+  private currentAudioUrl: string | null = null;
   private stats = {
     bytesReceived: 0,
     chunksProcessed: 0,
@@ -40,6 +46,7 @@ class MSEAudioProcessor {
   // Based on successful MSE approach
   async connect(audioUrl: string): Promise<void> {
     console.log("[MSEAudio] Connecting to:", audioUrl);
+    this.currentAudioUrl = audioUrl;
 
     // Check MSE support
     if (
@@ -61,17 +68,53 @@ class MSEAudioProcessor {
     this.audioElement.style.display = "none";
     this.container.appendChild(this.audioElement);
 
-    // Add audio element error handling
+    // Add audio element error handling with detailed logging
     this.audioElement.addEventListener("error", (e) => {
-      console.error("[MSEAudio] Audio element error:", e);
-      console.error("[MSEAudio] Error details:", {
+      const errorDetails = {
         error: this.audioElement?.error,
         networkState: this.audioElement?.networkState,
         readyState: this.audioElement?.readyState,
+        currentTime: this.audioElement?.currentTime,
+        duration: this.audioElement?.duration,
+        paused: this.audioElement?.paused,
+        muted: this.audioElement?.muted,
+        timestamp: new Date().toISOString(),
+      };
+
+      console.error("[MSEAudio] ❌ Audio element error:", {
+        event: e,
+        details: errorDetails,
+        errorCode: this.audioElement?.error?.code,
+        errorMessage: this.audioElement?.error?.message,
+      });
+
+      // Log network state interpretation
+      const networkStateMap: { [key: number]: string } = {
+        0: "NETWORK_EMPTY",
+        1: "NETWORK_IDLE",
+        2: "NETWORK_LOADING",
+        3: "NETWORK_NO_SOURCE",
+      };
+
+      const readyStateMap: { [key: number]: string } = {
+        0: "HAVE_NOTHING",
+        1: "HAVE_METADATA",
+        2: "HAVE_CURRENT_DATA",
+        3: "HAVE_FUTURE_DATA",
+        4: "HAVE_ENOUGH_DATA",
+      };
+
+      console.error("[MSEAudio] 📊 Audio element state analysis:", {
+        networkState: networkStateMap[this.audioElement?.networkState || 0],
+        readyState: readyStateMap[this.audioElement?.readyState || 0],
+        hasError: !!this.audioElement?.error,
+        isLikelyNetworkIssue: this.audioElement?.networkState === 3,
       });
 
       // Mark audio element as having error, recreate later
       this.audioElementError = true;
+      // Stop streaming to prevent further errors
+      this.isStreaming = false;
     });
 
     // Create MediaSource
@@ -111,8 +154,19 @@ class MSEAudioProcessor {
     });
 
     this.sourceBuffer.addEventListener("error", (e) => {
-      console.error("[MSEAudio] SourceBuffer error:", e);
+      console.error("[MSEAudio] ❌ SourceBuffer error:", {
+        event: e,
+        timestamp: new Date().toISOString(),
+        mediaSourceState: this.mediaSource?.readyState,
+        sourceBufferUpdating: this.sourceBuffer?.updating,
+        bufferedLength: this.sourceBuffer?.buffered.length,
+      });
+      // Mark streaming as stopped to prevent further operations
+      this.isStreaming = false;
     });
+
+    // Start health monitoring
+    this.startHealthMonitoring();
 
     // Start streaming fetch (don't wait for completion)
     this.startStreaming(audioUrl).catch((error) => {
@@ -120,25 +174,140 @@ class MSEAudioProcessor {
     });
   }
 
+  // Start health monitoring to detect connection issues early
+  private startHealthMonitoring(): void {
+    this.healthCheckInterval = window.setInterval(() => {
+      if (!this.isStreaming) {
+        return;
+      }
+
+      const healthStatus = this.checkConnectionHealth();
+
+      if (!healthStatus.isHealthy) {
+        console.warn("[MSEAudio] ⚠️ Connection health check failed:", {
+          reason: healthStatus.reason,
+          details: healthStatus.details,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }, 2000); // Check every 2 seconds
+  }
+
+  // Stop health monitoring
+  private stopHealthMonitoring(): void {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
+  }
+
+  // Check connection health
+  private checkConnectionHealth(): {
+    isHealthy: boolean;
+    reason?: string;
+    details?: any;
+  } {
+    if (!this.audioElement || !this.mediaSource || !this.sourceBuffer) {
+      return { isHealthy: false, reason: "missing_components" };
+    }
+
+    if (this.audioElementError || this.audioElement.error) {
+      return {
+        isHealthy: false,
+        reason: "audio_element_error",
+        details: {
+          error: this.audioElement.error,
+          networkState: this.audioElement.networkState,
+          readyState: this.audioElement.readyState,
+        },
+      };
+    }
+
+    if (this.mediaSource.readyState !== "open") {
+      return {
+        isHealthy: false,
+        reason: "media_source_not_open",
+        details: { readyState: this.mediaSource.readyState },
+      };
+    }
+
+    if (this.audioElement.networkState === 3) {
+      // NETWORK_NO_SOURCE
+      return {
+        isHealthy: false,
+        reason: "network_no_source",
+        details: { networkState: this.audioElement.networkState },
+      };
+    }
+
+    // Check if we haven't received data for too long
+    const timeSinceLastData = Date.now() - this.stats.startTime;
+    if (timeSinceLastData > 15000 && this.stats.bytesReceived === 0) {
+      // 15 seconds with no data
+      return {
+        isHealthy: false,
+        reason: "no_data_received",
+        details: {
+          timeSinceStart: timeSinceLastData,
+          bytesReceived: this.stats.bytesReceived,
+        },
+      };
+    }
+
+    // Check if we haven't received data recently (data starvation)
+    const timeSinceStart = Date.now() - this.stats.startTime;
+    if (timeSinceStart > 5000 && this.stats.bytesReceived === 0) {
+      // 5 seconds with no data after initial connection
+      return {
+        isHealthy: false,
+        reason: "data_starvation",
+        details: {
+          timeSinceStart: timeSinceStart,
+          bytesReceived: this.stats.bytesReceived,
+        },
+      };
+    }
+
+    return { isHealthy: true };
+  }
+
   private async startStreaming(audioUrl: string): Promise<void> {
     try {
       // Create AbortController for canceling requests
       this.abortController = new AbortController();
+
+      console.log("[MSEAudio] 🔗 Initiating connection to audio stream...", {
+        url: audioUrl,
+        timestamp: new Date().toISOString(),
+      });
 
       const response = await fetch(audioUrl, {
         signal: this.abortController.signal,
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+        console.error("[MSEAudio] ❌ Connection failed with HTTP error:", {
+          status: response.status,
+          statusText: response.statusText,
+          url: audioUrl,
+          timestamp: new Date().toISOString(),
+        });
+        throw new Error(errorMsg);
       }
 
       if (!response.body) {
+        console.error("[MSEAudio] ❌ ReadableStream not supported by browser");
         throw new Error("ReadableStream not supported");
       }
 
       console.log(
-        "[MSEAudio] Connected successfully, starting to receive stream data"
+        "[MSEAudio] ✅ Connected successfully, starting to receive stream data",
+        {
+          url: audioUrl,
+          contentType: response.headers.get("content-type"),
+          timestamp: new Date().toISOString(),
+        }
       );
 
       // Get ReadableStream reader
@@ -149,7 +318,14 @@ class MSEAudioProcessor {
         const { done, value } = await this.reader.read();
 
         if (done) {
-          console.log("[MSEAudio] Server ended stream transmission");
+          console.log("[MSEAudio] 📡 Server ended stream transmission", {
+            reason: "stream_completed",
+            bytesReceived: this.stats.bytesReceived,
+            chunksProcessed: this.stats.chunksProcessed,
+            timestamp: new Date().toISOString(),
+          });
+          // Trigger reconnection when stream ends
+          this.scheduleReconnect();
           break;
         }
 
@@ -189,7 +365,7 @@ class MSEAudioProcessor {
               this.stats.bufferedSeconds = this.sourceBuffer.buffered.end(0);
             }
 
-            // Log progress every 100 chunks
+            // Log progress every 100 chunks with connection health
             if (this.stats.chunksProcessed % 100 === 0) {
               const elapsed = Date.now() - this.stats.startTime;
               const throughput = (
@@ -197,13 +373,29 @@ class MSEAudioProcessor {
                 1024 /
                 (elapsed / 1000)
               ).toFixed(1);
+
+              // Check connection health during progress logging
+              const healthStatus = this.checkConnectionHealth();
+              const isHealthy = healthStatus.isHealthy;
+
               console.log(
-                `[MSEAudio] Processed ${
+                `[MSEAudio] 📊 Stream progress: ${
                   this.stats.chunksProcessed
                 } chunks, ${Math.round(
                   this.stats.bytesReceived / 1024
-                )}KB, ${throughput}KB/s`
+                )}KB, ${throughput}KB/s, health: ${isHealthy ? "✅" : "❌"}`
               );
+
+              if (!isHealthy) {
+                console.warn(
+                  "[MSEAudio] ⚠️ Connection health issue detected:",
+                  {
+                    reason: healthStatus.reason,
+                    details: healthStatus.details,
+                    timestamp: new Date().toISOString(),
+                  }
+                );
+              }
             }
           } catch (e) {
             console.error("[MSEAudio] SourceBuffer append failed:", e);
@@ -226,19 +418,51 @@ class MSEAudioProcessor {
       }
     } catch (error) {
       if (error instanceof Error && error.name !== "AbortError") {
-        console.error("[MSEAudio] Stream processing error:", error);
+        console.error("[MSEAudio] ❌ Stream processing error:", {
+          error: error.message,
+          name: error.name,
+          stack: error.stack,
+          isNetworkError: this.isNetworkError(error),
+          timestamp: new Date().toISOString(),
+          bytesReceived: this.stats.bytesReceived,
+          chunksProcessed: this.stats.chunksProcessed,
+        });
 
-        // Auto-reconnect mechanism
-        if (this.isStreaming) {
-          console.log("[MSEAudio] Auto-reconnecting in 5 seconds...");
-          setTimeout(() => {
-            if (this.isStreaming) {
-              this.startStreaming(audioUrl);
-            }
-          }, 5000);
-        }
+        // Log error and trigger reconnection
+        console.log("[MSEAudio] 🛑 Stream error occurred, will reconnect", {
+          reason: "stream_error",
+          errorType: error.name,
+          timestamp: new Date().toISOString(),
+        });
+        this.scheduleReconnect();
+      } else if (error instanceof Error && error.name === "AbortError") {
+        console.log("[MSEAudio] 🛑 Stream aborted (user action)", {
+          timestamp: new Date().toISOString(),
+        });
       }
     }
+  }
+
+  // Check if error is network-related
+  private isNetworkError(error: Error): boolean {
+    const networkErrorPatterns = [
+      "Failed to fetch",
+      "NetworkError",
+      "Connection refused",
+      "Connection reset",
+      "Connection timeout",
+      "Network request failed",
+      "ERR_NETWORK",
+      "ERR_INTERNET_DISCONNECTED",
+      "ERR_CONNECTION_REFUSED",
+      "ERR_CONNECTION_RESET",
+      "ERR_CONNECTION_TIMED_OUT",
+    ];
+
+    const errorMessage = error.message.toLowerCase();
+    return networkErrorPatterns.some((pattern) =>
+      errorMessage.includes(pattern.toLowerCase())
+    );
   }
 
   // Error recovery mechanism
@@ -272,9 +496,137 @@ class MSEAudioProcessor {
     throw new Error("SourceBuffer recovery failed");
   }
 
+  // Schedule reconnection with exponential backoff
+  private scheduleReconnect(): void {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error("[MSEAudio] ❌ Max reconnect attempts reached, giving up");
+      this.isStreaming = false;
+      return;
+    }
+
+    this.reconnectAttempts++;
+    const delay = Math.min(
+      this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1),
+      10000 // Max 10 seconds
+    );
+
+    console.log(
+      `[MSEAudio] 🔄 Scheduling reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`
+    );
+
+    this.reconnectTimer = window.setTimeout(() => {
+      this.performReconnect();
+    }, delay);
+  }
+
+  // Perform the actual reconnection
+  private async performReconnect(): Promise<void> {
+    if (!this.currentAudioUrl) {
+      console.error("[MSEAudio] ❌ No audio URL available for reconnection");
+      return;
+    }
+
+    console.log(
+      `[MSEAudio] 🔄 Attempting reconnection (attempt ${this.reconnectAttempts})`
+    );
+
+    try {
+      // Clean up current connection
+      this.cleanup();
+
+      // Add small delay to ensure server cleanup
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Reset state for new connection
+      this.isStreaming = true;
+      this.stats.startTime = Date.now();
+
+      // Reconnect
+      await this.connect(this.currentAudioUrl);
+
+      // Reset reconnect attempts on successful connection
+      this.reconnectAttempts = 0;
+      console.log("[MSEAudio] ✅ Reconnection successful");
+    } catch (error) {
+      console.error("[MSEAudio] ❌ Reconnection failed:", error);
+      // Schedule another reconnection attempt
+      this.scheduleReconnect();
+    }
+  }
+
+  // Clean up resources
+  private cleanup(): void {
+    this.isStreaming = false;
+
+    // Stop health monitoring
+    this.stopHealthMonitoring();
+
+    // Cancel network request
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+
+    // Release reader
+    if (this.reader) {
+      this.reader.releaseLock();
+      this.reader = null;
+    }
+
+    // Clear reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    // Clean up MediaSource and SourceBuffer for fresh start
+    if (this.sourceBuffer) {
+      try {
+        if (this.mediaSource && this.mediaSource.readyState === "open") {
+          this.mediaSource.removeSourceBuffer(this.sourceBuffer);
+        }
+      } catch (e) {
+        console.warn("[MSEAudio] Error removing source buffer:", e);
+      }
+      this.sourceBuffer = null;
+    }
+
+    if (this.mediaSource) {
+      try {
+        if (this.mediaSource.readyState === "open") {
+          this.mediaSource.endOfStream();
+        }
+      } catch (e) {
+        console.warn("[MSEAudio] Error ending media source stream:", e);
+      }
+      this.mediaSource = null;
+    }
+
+    // Remove audio element
+    if (this.audioElement) {
+      this.audioElement.remove();
+      this.audioElement = null;
+    }
+  }
+
   // Stop audio stream
   disconnect(): void {
+    console.log("[MSEAudio] 🛑 Disconnecting audio stream", {
+      timestamp: new Date().toISOString(),
+      bytesReceived: this.stats.bytesReceived,
+      chunksProcessed: this.stats.chunksProcessed,
+    });
+
     this.isStreaming = false;
+
+    // Stop health monitoring
+    this.stopHealthMonitoring();
+
+    // Clear reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
 
     // Cancel network request
     if (this.abortController) {
@@ -300,14 +652,21 @@ class MSEAudioProcessor {
       this.audioElement = null;
     }
 
-    // Close MediaSource
-    if (this.mediaSource && this.mediaSource.readyState === "open") {
+    // Close MediaSource gracefully
+    if (this.mediaSource) {
       try {
-        this.mediaSource.endOfStream();
+        if (this.mediaSource.readyState === "open") {
+          this.mediaSource.endOfStream();
+        }
       } catch (e) {
         // Silently handle expected MediaSource close errors
-        // These errors are normal during fast mode switching
+        // These errors are normal during fast mode switching or stream termination
+        console.log(
+          "[MSEAudio] MediaSource close error (expected):",
+          e instanceof Error ? e.message : String(e)
+        );
       }
+      this.mediaSource = null;
     }
 
     // Show final statistics

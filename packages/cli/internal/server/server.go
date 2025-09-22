@@ -78,8 +78,11 @@ func (s *GBoxServer) Start() error {
 	s.setupRoutes()
 
 	s.httpServer = &http.Server{
-		Addr:    fmt.Sprintf(":%d", s.port),
-		Handler: s.mux,
+		Addr:         fmt.Sprintf(":%d", s.port),
+		Handler:      s.mux,
+		ReadTimeout:  0, // No read timeout for streaming connections
+		WriteTimeout: 0, // No write timeout for streaming connections
+		IdleTimeout:  0, // No idle timeout for streaming connections
 	}
 
 	// Start server in background

@@ -26,7 +26,7 @@ func (s *ControlService) HandleTouchEvent(msg map[string]interface{}, deviceSeri
 	pressure, _ := msg["pressure"].(float64)
 	pointerId, _ := msg["pointerId"].(float64)
 
-	log.Printf("Touch event: device=%s, action=%s, x=%.3f, y=%.3f, pressure=%.2f, pointerId=%.0f",
+	log.Printf("[DEBUG] Touch event: device=%s, action=%s, x=%.3f, y=%.3f, pressure=%.2f, pointerId=%.0f",
 		deviceSerial, action, x, y, pressure, pointerId)
 
 	// 获取设备的 source
@@ -67,7 +67,7 @@ func (s *ControlService) HandleTouchEvent(msg map[string]interface{}, deviceSeri
 		return err
 	}
 
-	log.Printf("Touch event sent successfully to device: %s", deviceSerial)
+	log.Printf("[DEBUG] Touch event sent successfully to device: %s", deviceSerial)
 	return nil
 }
 
@@ -77,7 +77,7 @@ func (s *ControlService) HandleKeyEvent(msg map[string]interface{}, deviceSerial
 	keycode, _ := msg["keycode"].(float64)
 	metaState, _ := msg["metaState"].(float64)
 
-	log.Printf("Key event: device=%s, action=%s, keycode=%.0f, metaState=%.0f",
+	log.Printf("[DEBUG] Key event: device=%s, action=%s, keycode=%.0f, metaState=%.0f",
 		deviceSerial, action, keycode, metaState)
 
 	// 获取设备的 source
@@ -110,7 +110,7 @@ func (s *ControlService) HandleKeyEvent(msg map[string]interface{}, deviceSerial
 		return err
 	}
 
-	log.Printf("Key event sent successfully to device: %s", deviceSerial)
+	log.Printf("[DEBUG] Key event sent successfully to device: %s", deviceSerial)
 	return nil
 }
 
@@ -121,7 +121,7 @@ func (s *ControlService) HandleScrollEvent(msg map[string]interface{}, deviceSer
 	hScroll, _ := msg["hScroll"].(float64)
 	vScroll, _ := msg["vScroll"].(float64)
 
-	log.Printf("Scroll event: device=%s, x=%.3f, y=%.3f, hScroll=%.2f, vScroll=%.2f",
+	log.Printf("[DEBUG] Scroll event: device=%s, x=%.3f, y=%.3f, hScroll=%.2f, vScroll=%.2f",
 		deviceSerial, x, y, hScroll, vScroll)
 
 	// 获取设备的 source
@@ -161,7 +161,7 @@ func (s *ControlService) HandleScrollEvent(msg map[string]interface{}, deviceSer
 		return err
 	}
 
-	log.Printf("Scroll event sent successfully to device: %s", deviceSerial)
+	log.Printf("[DEBUG] Scroll event sent successfully to device: %s", deviceSerial)
 	return nil
 }
 

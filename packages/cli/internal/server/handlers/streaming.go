@@ -129,9 +129,9 @@ func (h *StreamingHandlers) HandleAudioStream(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Set WebM/Opus content type (best browser compatibility)
+	// Set WebM/Opus content type with chunked encoding for binary streaming
 	w.Header().Set("Content-Type", "audio/webm; codecs=opus")
-
+	w.Header().Set("Transfer-Encoding", "chunked") // Critical for binary data streaming
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -292,7 +292,7 @@ func (h *StreamingHandlers) HandleControlWebSocket(w http.ResponseWriter, r *htt
 			continue
 		}
 
-		log.Printf("Control message received: type=%s, device=%s", msgType, deviceSerial)
+		log.Printf("[DEBUG] Control message received: type=%s, device=%s", msgType, deviceSerial)
 
 		switch msgType {
 		// WebRTC signaling messages - delegate to WebRTC handler
@@ -339,7 +339,6 @@ func (h *StreamingHandlers) delegateToWebRTCHandler(conn *websocket.Conn, msg ma
 		h.webrtcHandlers.HandleIceCandidate(conn, msg, deviceSerial)
 	}
 }
-
 
 var controlUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
