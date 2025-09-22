@@ -21,7 +21,7 @@ func (h *ClipboardHandler) ProcessClipboardEvent(msg map[string]interface{}, dev
 	text, _ := msg["text"].(string)
 	paste, _ := msg["paste"].(bool)
 
-	log.Printf("Clipboard event: device=%s, text_length=%d, paste=%t",
+	log.Printf("[DEBUG] Clipboard event: device=%s, text_length=%d, paste=%t",
 		deviceSerial, len(text), paste)
 
 	// TODO: Implement clipboard event processing logic

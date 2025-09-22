@@ -6,139 +6,112 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/at-wat/ebml-go/mkvcore"
 	"github.com/at-wat/ebml-go/webm"
 )
 
-// ProfessionalWebMMuxer provides professional WebM container using at-wat/ebml-go
+// WebMMuxer provides WebM container using at-wat/ebml-go
 // Based on the official Pion WebRTC save-to-webm example
-type ProfessionalWebMMuxer struct {
-	writer       io.Writer
-	audioWriter  webm.BlockWriteCloser
-	logger       *slog.Logger
-	initialized  bool
-	frameCount   uint64
+type WebMMuxer struct {
+	writer         io.Writer
+	audioWriter    webm.BlockWriteCloser
+	logger         *slog.Logger
+	initialized    bool
+	frameCount     uint64
 	audioTimestamp time.Duration
 }
 
-// NewProfessionalWebMMuxer creates a new professional WebM muxer
-func NewProfessionalWebMMuxer(writer io.Writer) *ProfessionalWebMMuxer {
-	return &ProfessionalWebMMuxer{
+// NewWebMMuxer creates a new WebM muxer
+func NewWebMMuxer(writer io.Writer) *WebMMuxer {
+	return &WebMMuxer{
 		writer: writer,
-		logger: slog.With("component", "professional_webm_muxer"),
+		logger: slog.With("component", "webm_muxer"),
 	}
 }
 
-// safeWriterCloser wraps an io.Writer with comprehensive panic recovery
-type safeWriterCloser struct {
+// writerCloser wraps an io.Writer with basic error handling
+type writerCloser struct {
 	writer io.Writer
 	logger *slog.Logger
 	closed bool
 }
 
-func (swc *safeWriterCloser) Write(p []byte) (n int, err error) {
-	// Double-check closed state
-	if swc.closed {
+func (wc *writerCloser) Write(p []byte) (n int, err error) {
+	if wc.closed {
 		return 0, io.ErrClosedPipe
 	}
 
-	// Additional safety check - verify writer is still valid
-	if swc.writer == nil {
-		swc.closed = true
-		return 0, io.ErrClosedPipe
-	}
-
-	// Comprehensive panic recovery
-	defer func() {
-		if r := recover(); r != nil {
-			swc.logger.Warn("Write operation panic recovered", "panic", r)
-			swc.closed = true
-			err = io.ErrClosedPipe
-			n = 0
-		}
-	}()
-
-	// Additional safety check before write
-	if swc.closed {
-		return 0, io.ErrClosedPipe
-	}
-
-	n, err = swc.writer.Write(p)
+	n, err = wc.writer.Write(p)
 	if err != nil {
-		swc.logger.Warn("Write error detected, marking writer as closed", "error", err)
-		swc.closed = true
+		wc.logger.Warn("Write error detected, marking writer as closed",
+			"error", err,
+			"error_type", fmt.Sprintf("%T", err),
+			"data_size", len(p),
+			"bytes_written", n)
+		wc.closed = true
 	}
 	return n, err
 }
 
-func (swc *safeWriterCloser) Close() error {
-	swc.closed = true
-	return nil // No-op close
+func (wc *writerCloser) Close() error {
+	wc.closed = true
+	return nil
 }
 
 // WriteHeader initializes the WebM container with audio track
-func (m *ProfessionalWebMMuxer) WriteHeader() error {
+func (m *WebMMuxer) WriteHeader() error {
 	if m.initialized {
 		return nil
 	}
 
-	m.logger.Info("🎵 Initializing professional WebM container based on Pion example")
+	m.logger.Info("🎵 Initializing WebM container based on Pion example")
 
-	// Comprehensive panic recovery for the entire initialization
-	var initErr error
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				m.logger.Error("WebM initialization panic recovered", "panic", r)
-				initErr = fmt.Errorf("WebM initialization failed due to panic: %v", r)
-			}
-		}()
-
-		// Wrap writer with comprehensive panic recovery
-		writeCloser := &safeWriterCloser{
-			writer: m.writer,
-			logger: m.logger,
-			closed: false,
-		}
-
-		// Create WebM writer with audio track configuration (matching Pion's example)
-		writers, err := webm.NewSimpleBlockWriter(writeCloser, []webm.TrackEntry{
-			{
-				Name:            "Audio",
-				TrackNumber:     1,
-				TrackUID:        12345,
-				CodecID:         "A_OPUS",
-				TrackType:       2,                // Audio track type
-				DefaultDuration: 20000000,         // 20ms in nanoseconds (typical Opus frame duration)
-				Audio: &webm.Audio{
-					SamplingFrequency: 48000.0,    // 48kHz
-					Channels:          2,          // Stereo
-				},
-			},
-		})
-
-		if err != nil {
-			m.logger.Error("Failed to create WebM writer", "error", err)
-			initErr = err
-			return
-		}
-
-		// Get the audio writer from the slice
-		m.audioWriter = writers[0]
-		m.initialized = true
-	}()
-
-	if initErr != nil {
-		return initErr
+	// Wrap writer with basic error handling
+	writeCloser := &writerCloser{
+		writer: m.writer,
+		logger: m.logger,
+		closed: false,
 	}
 
-	m.logger.Info("✅ Professional WebM container initialized successfully")
+	// Create WebM writer with audio track configuration (matching Pion's example)
+	// Use custom fatal error handler to avoid panic
+	writers, err := webm.NewSimpleBlockWriter(writeCloser, []webm.TrackEntry{
+		{
+			Name:            "Audio",
+			TrackNumber:     1,
+			TrackUID:        1, // Use simple UID to avoid conflicts
+			CodecID:         "A_OPUS",
+			TrackType:       2,        // Audio track type
+			DefaultDuration: 20000000, // 20ms in nanoseconds (typical Opus frame duration)
+			Audio: &webm.Audio{
+				SamplingFrequency: 48000.0, // 48kHz
+				Channels:          2,       // Stereo
+			},
+		},
+	}, mkvcore.WithOnFatalHandler(func(err error) {
+		m.logger.Warn("WebM error occurred, will trigger client reconnect", "error", err)
+		// Reset state for clean reconnection
+		m.initialized = false
+		m.audioWriter = nil
+	}))
+
+	if err != nil {
+		m.logger.Error("Failed to create WebM writer", "error", err)
+		return err
+	}
+
+	// Get the audio writer from the slice
+	m.audioWriter = writers[0]
+	m.initialized = true
+
+	m.logger.Info("✅ WebM container initialized successfully")
 	return nil
 }
 
 // WriteOpusFrame writes an Opus frame to the WebM container
-func (m *ProfessionalWebMMuxer) WriteOpusFrame(opusData []byte, timestamp time.Duration) error {
+func (m *WebMMuxer) WriteOpusFrame(opusData []byte, timestamp time.Duration) error {
 	// Early validation checks
-	if opusData == nil || len(opusData) == 0 {
+	if len(opusData) == 0 {
 		return nil // Skip empty frames
 	}
 
@@ -154,42 +127,22 @@ func (m *ProfessionalWebMMuxer) WriteOpusFrame(opusData []byte, timestamp time.D
 		return io.ErrClosedPipe
 	}
 
-	// Additional safety check for muxer state
-	defer func() {
-		if r := recover(); r != nil {
-			m.logger.Warn("WriteOpusFrame panic recovered", "panic", r, "frame", m.frameCount)
-			// Mark writer as closed to prevent further writes
-			m.audioWriter = nil
-		}
-	}()
-
 	// Update audio timestamp (cumulative duration)
 	// Using fixed 20ms duration for Opus frames (typical)
 	frameTimestamp := 20 * time.Millisecond
 	m.audioTimestamp += frameTimestamp
 
-	// Safely write to WebM container with panic recovery
-	var err error
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				m.logger.Warn("WebM write panic recovered", "panic", r, "frame", m.frameCount)
-				err = io.ErrClosedPipe
-				// Mark writer as closed to prevent further writes
-				m.audioWriter = nil
-			}
-		}()
-
-		// Write to WebM container
-		// Parameters: isKeyframe (true for audio), timestamp in milliseconds, data
-		_, err = m.audioWriter.Write(true, int64(m.audioTimestamp/time.Millisecond), opusData)
-	}()
+	// Write to WebM container
+	// Parameters: isKeyframe (true for audio), timestamp in milliseconds, data
+	_, err := m.audioWriter.Write(true, int64(m.audioTimestamp/time.Millisecond), opusData)
 
 	if err != nil {
 		if err == io.ErrClosedPipe {
 			m.logger.Info("Audio stream closed, stopping WebM stream", "frame", m.frameCount)
 		} else {
 			m.logger.Error("Failed to write Opus frame to WebM", "error", err, "frame", m.frameCount)
+			// Mark writer as closed on write error to prevent further attempts
+			m.audioWriter = nil
 		}
 		return err
 	}
@@ -208,36 +161,27 @@ func (m *ProfessionalWebMMuxer) WriteOpusFrame(opusData []byte, timestamp time.D
 }
 
 // Close finalizes the WebM container
-func (m *ProfessionalWebMMuxer) Close() error {
+func (m *WebMMuxer) Close() error {
 	if m.audioWriter != nil {
 		m.logger.Info("🎵 Finalizing WebM container", "total_frames", m.frameCount)
 
-		// Safe close with panic recovery
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					m.logger.Warn("WebM close panic recovered", "panic", r)
-				}
-			}()
-
-			if err := m.audioWriter.Close(); err != nil {
-				m.logger.Warn("WebM writer close error (expected if stream ended)", "error", err)
-			}
-		}()
+		if err := m.audioWriter.Close(); err != nil {
+			m.logger.Warn("WebM writer close error (expected if stream ended)", "error", err)
+		}
 
 		m.audioWriter = nil
 	}
 
-	m.logger.Info("✅ Professional WebM muxer closed successfully")
+	m.logger.Info("✅ WebM muxer closed successfully")
 	return nil
 }
 
 // GetStats returns muxer statistics
-func (m *ProfessionalWebMMuxer) GetStats() map[string]interface{} {
+func (m *WebMMuxer) GetStats() map[string]interface{} {
 	return map[string]interface{}{
 		"frames_written":    m.frameCount,
 		"audio_duration_ms": int64(m.audioTimestamp / time.Millisecond),
 		"initialized":       m.initialized,
-		"type":             "professional_webm",
+		"type":              "webm",
 	}
 }

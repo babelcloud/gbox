@@ -114,13 +114,51 @@ func (p *Pipeline) PublishAudio(sample core.AudioSample) {
 		return
 	}
 
+	// Track successful sends
+	successfulSends := 0
+	totalSubscribers := len(p.audioSubs)
+
+	// Create a list of subscribers to remove (dead channels)
+	var deadSubscribers []string
+
 	for id, ch := range p.audioSubs {
 		select {
 		case ch <- sample:
 			util.GetLogger().Debug("🎵 Audio sample sent to subscriber", "subscriber", id, "size", len(sample.Data))
+			successfulSends++
 		default:
-			// Channel is full, skip
-			util.GetLogger().Warn("🎵 Audio channel full, dropping sample", "subscriber", id)
+			// Channel is full, check if it's a dead channel
+			select {
+			case <-ch:
+				// Channel was closed, mark for removal
+				deadSubscribers = append(deadSubscribers, id)
+				util.GetLogger().Warn("🎵 Dead audio subscriber detected, marking for removal", "subscriber", id)
+			default:
+				// Channel is just full, not dead
+				util.GetLogger().Warn("🎵 Audio channel full, dropping sample", "subscriber", id)
+			}
 		}
+	}
+
+	// Remove dead subscribers
+	if len(deadSubscribers) > 0 {
+		p.mu.RUnlock() // Release read lock
+		p.mu.Lock()    // Acquire write lock
+		for _, id := range deadSubscribers {
+			if ch, exists := p.audioSubs[id]; exists {
+				close(ch)
+				delete(p.audioSubs, id)
+				util.GetLogger().Info("🎵 Dead audio subscriber removed", "id", id, "total", len(p.audioSubs))
+			}
+		}
+		p.mu.Unlock() // Release write lock
+		p.mu.RLock()  // Re-acquire read lock for consistency
+	}
+
+	// If no subscribers could accept the sample, log a warning
+	if successfulSends == 0 {
+		util.GetLogger().Warn("🎵 All audio channels full, dropping sample",
+			"total_subscribers", totalSubscribers,
+			"sample_size", len(sample.Data))
 	}
 }

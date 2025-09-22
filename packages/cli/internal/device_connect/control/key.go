@@ -22,7 +22,7 @@ func (h *KeyHandler) ProcessKeyEvent(msg map[string]interface{}, deviceSerial st
 	keycode, _ := msg["keycode"].(float64)
 	metaState, _ := msg["metaState"].(float64)
 
-	log.Printf("Key event: device=%s, action=%s, keycode=%.0f, metaState=%.0f",
+	log.Printf("[DEBUG] Key event: device=%s, action=%s, keycode=%.0f, metaState=%.0f",
 		deviceSerial, action, keycode, metaState)
 
 	// TODO: Implement key event processing logic

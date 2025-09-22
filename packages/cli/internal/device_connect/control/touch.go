@@ -24,7 +24,7 @@ func (h *TouchHandler) ProcessTouchEvent(msg map[string]interface{}, deviceSeria
 	pressure, _ := msg["pressure"].(float64)
 	pointerId, _ := msg["pointerId"].(float64)
 
-	log.Printf("Touch event: device=%s, action=%s, x=%.3f, y=%.3f, pressure=%.2f, pointerId=%.0f",
+	log.Printf("[DEBUG] Touch event: device=%s, action=%s, x=%.3f, y=%.3f, pressure=%.2f, pointerId=%.0f",
 		deviceSerial, action, x, y, pressure, pointerId)
 
 	// TODO: Implement touch event processing logic
