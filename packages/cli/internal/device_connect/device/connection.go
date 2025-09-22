@@ -240,8 +240,9 @@ func (sc *ScrcpyConnection) startScrcpyServer() error {
 
 	// Add hardware video encoder if device supports it
 	// Use hardware encoder (c2.qti.avc.encoder) for better performance on Qualcomm devices
-	args = append(args, "video_encoder=c2.qti.avc.encoder")
-	log.Printf("Using hardware video encoder (c2.qti.avc.encoder) for %s mode", sc.streamingMode)
+	// args = append(args, "video_encoder=c2.qti.avc.encoder")
+	// args = append(args, "video_encoder=c2.android.avc.encoder")
+	// log.Printf("Using hardware video encoder (c2.qti.avc.encoder) for %s mode", sc.streamingMode)
 
 	cmd := exec.Command(sc.adbPath, args...)
 

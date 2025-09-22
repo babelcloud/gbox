@@ -736,6 +736,14 @@ export class H264Client {
   private controlRetryCount: number = 0; // Control WebSocket retry counter
   private controlReconnectTimer: number | null = null; // Control WebSocket reconnect timer
   private maxControlRetries: number = 5; // Maximum retry count
+  private statsInterval: number | null = null; // Stats update interval
+  private lastResolution: string | null = null; // Last reported resolution
+  private lastCanvasDimensions: { width: number; height: number } | null = null; // Last canvas dimensions
+  private resizeTimeout: number | null = null; // Resize debounce timeout
+  private resizeObserver: ResizeObserver | null = null; // Container resize observer
+  private orientationChangeHandler: (() => void) | null = null; // Orientation change handler
+  private orientationCheckInterval: number | null = null; // Orientation check interval
+  private lastOrientation: string | null = null; // Last detected orientation
   private lastConnectionStatus: boolean = false; // Last connection status for log reduction
   public isMouseDragging: boolean = false; // Mouse dragging state
   private lastConnectParams: {
@@ -766,30 +774,37 @@ export class H264Client {
     }
 
     try {
-      // Create canvas for rendering
-      this.canvas = document.createElement("canvas");
-      this.canvas.style.width = "100%";
-      this.canvas.style.height = "100%";
-      this.canvas.style.display = "block";
-      this.container.appendChild(this.canvas);
+      // Create canvas for rendering (only if not exists)
+      if (!this.canvas) {
+        this.canvas = document.createElement("canvas");
+        this.canvas.style.width = "100%";
+        this.canvas.style.height = "100%";
+        this.canvas.style.display = "block";
+        this.canvas.style.objectFit = "contain";
+        this.canvas.style.background = "black";
+        this.canvas.style.margin = "auto";
+        this.container.appendChild(this.canvas);
+      }
 
-      // Get 2D context
+      // Get 2D context (recreate if needed)
       const context = this.canvas.getContext("2d");
       if (!context) {
         throw new Error("Failed to get 2d context from canvas");
       }
       this.context = context;
 
-      // Create VideoDecoder
-      this.decoder = new VideoDecoder({
-        output: (frame) => this.onFrameDecoded(frame),
-        error: (error: DOMException) => {
-          console.error("[H264Client] VideoDecoder error:", error);
-          this.opts.onError?.(
-            new Error(`VideoDecoder error: ${error.message}`)
-          );
-        },
-      });
+      // Create VideoDecoder (only if not exists)
+      if (!this.decoder) {
+        this.decoder = new VideoDecoder({
+          output: (frame) => this.onFrameDecoded(frame),
+          error: (error: DOMException) => {
+            console.error("[H264Client] VideoDecoder error:", error);
+            this.opts.onError?.(
+              new Error(`VideoDecoder error: ${error.message}`)
+            );
+          },
+        });
+      }
 
       console.log("[H264Client] WebCodecs decoder initialized successfully");
     } catch (error) {
@@ -806,6 +821,16 @@ export class H264Client {
   ): Promise<void> {
     const url = `${apiUrl}/stream/video/${deviceSerial}?mode=h264&format=avc`;
     console.log("[H264Client] Connecting to H.264 AVC stream:", url);
+
+    // Always disconnect first to ensure clean state (like WebRTC)
+    if (this.abortController || this.audioProcessor || this.controlWs) {
+      console.log(
+        "[H264Client] Cleaning up existing connection before device switch"
+      );
+      this.cleanupForDeviceSwitch();
+      // Wait for cleanup to complete (like WebRTC)
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
 
     // Reinitialize WebCodecs if decoder is not ready (e.g., after disconnect)
     if (!this.decoder) {
@@ -861,6 +886,12 @@ export class H264Client {
 
       // Start keyframe requests
       this.requestKeyframe();
+
+      // Start stats update interval
+      this.startStatsUpdate();
+
+      // Start container resize observer
+      this.startResizeObserver();
 
       // Notify connected state
       this.opts.onConnectionStateChange?.(
@@ -1740,8 +1771,82 @@ export class H264Client {
         this.canvas.width !== frame.displayWidth ||
         this.canvas.height !== frame.displayHeight
       ) {
-        this.canvas.width = frame.displayWidth;
-        this.canvas.height = frame.displayHeight;
+        const oldWidth = this.canvas.width;
+        const oldHeight = this.canvas.height;
+
+        // Check if this is a significant resolution change (remote device rotation)
+        const isSignificantChange =
+          this.lastCanvasDimensions &&
+          (Math.abs(frame.displayWidth - this.lastCanvasDimensions.width) >
+            100 ||
+            Math.abs(frame.displayHeight - this.lastCanvasDimensions.height) >
+              100);
+
+        // Check if this looks like a screen rotation (width and height swapped)
+        const isRotation =
+          this.lastCanvasDimensions &&
+          Math.abs(frame.displayWidth - this.lastCanvasDimensions.height) <
+            50 &&
+          Math.abs(frame.displayHeight - this.lastCanvasDimensions.width) < 50;
+
+        if (isSignificantChange) {
+          console.log("[H264Client] Remote device screen rotation detected:", {
+            from: `${oldWidth}x${oldHeight}`,
+            to: `${frame.displayWidth}x${frame.displayHeight}`,
+            change: {
+              width: frame.displayWidth - oldWidth,
+              height: frame.displayHeight - oldHeight,
+            },
+            isRotation,
+          });
+        }
+
+        // For screen rotation, use atomic update to prevent flicker
+        if (isRotation || isSignificantChange) {
+          // Temporarily hide canvas to prevent showing intermediate state
+          this.canvas.style.visibility = "hidden";
+
+          // Update both pixel dimensions and display size atomically
+          requestAnimationFrame(() => {
+            if (!this.canvas) return;
+
+            // Update canvas pixel dimensions
+            this.canvas.width = frame.displayWidth;
+            this.canvas.height = frame.displayHeight;
+
+            // Update display size immediately after (no transition for rotation)
+            this.updateCanvasDisplaySize(
+              frame.displayWidth,
+              frame.displayHeight,
+              false
+            );
+
+            // Show canvas again after both updates are complete
+            requestAnimationFrame(() => {
+              if (this.canvas) {
+                this.canvas.style.visibility = "visible";
+              }
+            });
+          });
+        } else {
+          // For normal changes, update canvas dimensions first
+          this.canvas.width = frame.displayWidth;
+          this.canvas.height = frame.displayHeight;
+          this.updateCanvasDisplaySize(frame.displayWidth, frame.displayHeight);
+        }
+
+        // Notify resolution change (similar to WebRTC)
+        const width = frame.displayWidth;
+        const height = frame.displayHeight;
+        console.log(
+          "[H264Client] Video resolution detected:",
+          `${width}x${height}`
+        );
+        if (width && height) {
+          this.lastResolution = `${width}x${height}`;
+          this.lastCanvasDimensions = { width, height };
+          this.opts.onStatsUpdate?.({ resolution: this.lastResolution });
+        }
       }
 
       // Draw frame to canvas
@@ -1751,6 +1856,328 @@ export class H264Client {
     } finally {
       frame.close();
     }
+  }
+
+  // Start stats update interval (similar to WebRTC)
+  private startStatsUpdate(): void {
+    // Clear existing interval
+    if (this.statsInterval) {
+      clearInterval(this.statsInterval);
+    }
+
+    // Update stats every second
+    this.statsInterval = window.setInterval(() => {
+      this.updateStats();
+    }, 1000);
+  }
+
+  // Start container resize observer
+  private startResizeObserver(): void {
+    // Clear existing observer
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+    }
+
+    // Create new observer
+    this.resizeObserver = new ResizeObserver(() => {
+      // Recalculate canvas display size when container resizes
+      if (this.canvas && this.canvas.width > 0 && this.canvas.height > 0) {
+        this.updateCanvasDisplaySize(this.canvas.width, this.canvas.height);
+      }
+    });
+
+    // Start observing container
+    this.resizeObserver.observe(this.container);
+
+    // Add orientation change listener for better screen rotation detection
+    this.orientationChangeHandler = () => {
+      console.log(
+        "[H264Client] Orientation change detected, updating canvas size"
+      );
+      // Use a longer delay for orientation change to ensure layout is updated
+      setTimeout(() => {
+        if (this.canvas && this.canvas.width > 0 && this.canvas.height > 0) {
+          this.updateCanvasDisplaySize(this.canvas.width, this.canvas.height);
+        }
+      }, 300);
+    };
+
+    window.addEventListener("orientationchange", this.orientationChangeHandler);
+
+    // Start periodic orientation check as backup
+    this.startOrientationCheck();
+  }
+
+  // Start periodic orientation check as backup mechanism
+  private startOrientationCheck(): void {
+    // Clear existing interval
+    if (this.orientationCheckInterval) {
+      clearInterval(this.orientationCheckInterval);
+    }
+
+    // Check orientation every 500ms
+    this.orientationCheckInterval = window.setInterval(() => {
+      if (!this.container) return;
+
+      const containerRect = this.container.getBoundingClientRect();
+      const currentOrientation =
+        containerRect.width > containerRect.height ? "landscape" : "portrait";
+
+      if (this.lastOrientation && this.lastOrientation !== currentOrientation) {
+        console.log(
+          "[H264Client] Orientation change detected via periodic check:",
+          {
+            from: this.lastOrientation,
+            to: currentOrientation,
+            containerSize: {
+              width: containerRect.width,
+              height: containerRect.height,
+            },
+          }
+        );
+
+        // Trigger canvas size update
+        if (this.canvas && this.canvas.width > 0 && this.canvas.height > 0) {
+          this.updateCanvasDisplaySize(this.canvas.width, this.canvas.height);
+        }
+      }
+
+      this.lastOrientation = currentOrientation;
+    }, 500);
+  }
+
+  // Update stats (similar to WebRTC)
+  private updateStats(): void {
+    if (!this.canvas) return;
+
+    // Get current resolution
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+    const resolution = width && height ? `${width}x${height}` : "";
+
+    // Only notify if resolution has changed or is available
+    if (resolution && resolution !== this.lastResolution) {
+      console.log("[H264Client] Remote device resolution changed:", {
+        from: this.lastResolution,
+        to: resolution,
+        dimensions: { width, height },
+      });
+
+      this.lastResolution = resolution;
+      this.opts.onStatsUpdate?.({ resolution });
+
+      // Trigger canvas display size update when remote device resolution changes
+      // This handles remote device screen rotation
+      this.updateCanvasDisplaySize(width, height);
+    }
+  }
+
+  // Update canvas display size to maintain aspect ratio (similar to WebRTC)
+  private updateCanvasDisplaySize(
+    videoWidth: number,
+    videoHeight: number,
+    useTransition: boolean = true
+  ): void {
+    if (!this.canvas || !this.container) return;
+
+    // Clear existing timeout
+    if (this.resizeTimeout) {
+      clearTimeout(this.resizeTimeout);
+    }
+
+    // Debounce the resize operation to avoid flicker
+    this.resizeTimeout = window.setTimeout(() => {
+      this.performCanvasResize(videoWidth, videoHeight, useTransition);
+    }, 50);
+  }
+
+  // Perform the actual canvas resize operation
+  private performCanvasResize(
+    videoWidth: number,
+    videoHeight: number,
+    useTransition: boolean = true
+  ): void {
+    if (!this.canvas || !this.container) return;
+
+    // Get container dimensions
+    const containerRect = this.container.getBoundingClientRect();
+    const containerWidth = containerRect.width;
+    const containerHeight = containerRect.height;
+
+    if (containerWidth === 0 || containerHeight === 0) {
+      // Container not ready, don't change canvas size to avoid flicker
+      console.log(
+        "[H264Client] Container not ready, skipping canvas size update",
+        {
+          containerWidth,
+          containerHeight,
+          videoSize: { width: videoWidth, height: videoHeight },
+        }
+      );
+      return;
+    }
+
+    // Calculate aspect ratios
+    const containerAspect = containerWidth / containerHeight;
+    const videoAspect = videoWidth / videoHeight;
+
+    let displayWidth: number;
+    let displayHeight: number;
+
+    if (videoAspect > containerAspect) {
+      // Video is wider than container, fit to width
+      displayWidth = containerWidth;
+      displayHeight = containerWidth / videoAspect;
+    } else {
+      // Video is taller than container, fit to height
+      displayHeight = containerHeight;
+      displayWidth = containerHeight * videoAspect;
+    }
+
+    // Apply calculated dimensions
+    if (useTransition) {
+      // Use smooth transition for normal changes
+      this.canvas.style.transition =
+        "width 0.2s ease-out, height 0.2s ease-out";
+    } else {
+      // No transition for screen rotation to prevent flicker
+      this.canvas.style.transition = "";
+    }
+
+    this.canvas.style.width = `${displayWidth}px`;
+    this.canvas.style.height = `${displayHeight}px`;
+    this.canvas.style.objectFit = "contain";
+    this.canvas.style.display = "block";
+    this.canvas.style.margin = "auto";
+
+    // Remove transition after animation completes (only if using transition)
+    if (useTransition) {
+      setTimeout(() => {
+        if (this.canvas) {
+          this.canvas.style.transition = "";
+        }
+      }, 200);
+    }
+
+    console.log("[H264Client] Canvas display size updated:", {
+      video: `${videoWidth}x${videoHeight}`,
+      container: `${containerWidth}x${containerHeight}`,
+      display: `${displayWidth}x${displayHeight}`,
+      aspectRatio: videoAspect.toFixed(2),
+    });
+  }
+
+  // Get canvas element for external access
+  public getCanvas(): HTMLCanvasElement | null {
+    return this.canvas;
+  }
+
+  // Clean up resources for device switching (less aggressive than full disconnect)
+  private cleanupForDeviceSwitch(): void {
+    console.log("[H264Client] Performing device switch cleanup...");
+
+    // Cancel HTTP request
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+
+    // Clean up audio processor completely (like WebRTC audio cleanup)
+    if (this.audioProcessor) {
+      console.log(
+        "[H264Client] Cleaning up audio processor for device switch..."
+      );
+      this.audioProcessor.disconnect();
+      this.audioProcessor = null;
+    }
+
+    // Clean up control WebSocket
+    if (this.controlWs) {
+      console.log(
+        "[H264Client] Cleaning up control WebSocket for device switch..."
+      );
+      this.controlWs.close();
+      this.controlWs = null;
+    }
+
+    // Clear control WebSocket reconnect timer
+    if (this.controlReconnectTimer) {
+      clearTimeout(this.controlReconnectTimer);
+      this.controlReconnectTimer = null;
+    }
+
+    // Reset control retry counter
+    this.controlRetryCount = 0;
+
+    // Clear keyframe request timer
+    if (this.keyframeRequestTimer) {
+      clearInterval(this.keyframeRequestTimer);
+      this.keyframeRequestTimer = null;
+    }
+
+    // Clear stats interval
+    if (this.statsInterval) {
+      clearInterval(this.statsInterval);
+      this.statsInterval = null;
+    }
+
+    // Clear resize observer
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+
+    // Clear orientation change handler
+    if (this.orientationChangeHandler) {
+      window.removeEventListener(
+        "orientationchange",
+        this.orientationChangeHandler
+      );
+      this.orientationChangeHandler = null;
+    }
+
+    // Clear orientation check interval
+    if (this.orientationCheckInterval) {
+      clearInterval(this.orientationCheckInterval);
+      this.orientationCheckInterval = null;
+    }
+
+    // Clear resize timeout
+    if (this.resizeTimeout) {
+      clearTimeout(this.resizeTimeout);
+      this.resizeTimeout = null;
+    }
+
+    // Reset video-related state
+    this.buffer = new Uint8Array(0);
+    this.spsData = null;
+    this.ppsData = null;
+    this.waitingForKeyframe = true;
+    this.decodedFrames = [];
+
+    // Clear canvas and reset dimensions (like WebRTC video element cleanup)
+    if (this.canvas && this.context) {
+      console.log("[H264Client] Clearing canvas for device switch...");
+      // Clear the canvas content
+      this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      // Reset canvas to default size
+      this.canvas.width = 640;
+      this.canvas.height = 480;
+      // Reset canvas styling
+      this.canvas.style.width = "100%";
+      this.canvas.style.height = "100%";
+      this.canvas.style.objectFit = "contain";
+      this.canvas.style.display = "block";
+      this.canvas.style.margin = "auto";
+      this.canvas.style.background = "black";
+    }
+
+    // Reset resolution tracking
+    this.lastResolution = null;
+    this.lastCanvasDimensions = null;
+    this.lastOrientation = null;
+
+    console.log("[H264Client] Device switch cleanup completed");
   }
 
   public disconnect(): void {
@@ -1784,6 +2211,39 @@ export class H264Client {
     if (this.controlReconnectTimer) {
       clearTimeout(this.controlReconnectTimer);
       this.controlReconnectTimer = null;
+    }
+
+    // 清理统计更新定时器
+    if (this.statsInterval) {
+      clearInterval(this.statsInterval);
+      this.statsInterval = null;
+    }
+
+    // 清理容器大小变化观察器
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+
+    // 清理屏幕旋转监听器
+    if (this.orientationChangeHandler) {
+      window.removeEventListener(
+        "orientationchange",
+        this.orientationChangeHandler
+      );
+      this.orientationChangeHandler = null;
+    }
+
+    // 清理屏幕旋转定时检查
+    if (this.orientationCheckInterval) {
+      clearInterval(this.orientationCheckInterval);
+      this.orientationCheckInterval = null;
+    }
+
+    // 清理防抖定时器
+    if (this.resizeTimeout) {
+      clearTimeout(this.resizeTimeout);
+      this.resizeTimeout = null;
     }
 
     // 重置重试计数器和连接参数
