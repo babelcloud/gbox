@@ -109,6 +109,16 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
     let videoWidth = video.videoWidth || 1080;
     let videoHeight = video.videoHeight || 2340;
 
+    // For H264 mode, try to get dimensions from the H264 client's canvas
+    if (currentMode === 'h264' && clientRef.current?.getCanvas) {
+      const canvas = clientRef.current.getCanvas();
+      if (canvas && canvas.width > 0 && canvas.height > 0) {
+        videoWidth = canvas.width;
+        videoHeight = canvas.height;
+        console.log('[Video] Using H264 canvas dimensions:', { videoWidth, videoHeight });
+      }
+    }
+
     const aspectRatio = videoWidth / videoHeight;
 
     // Calculate optimal dimensions
@@ -127,6 +137,36 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
       newHeight = availableHeight;
     }
 
+    // For H264 mode, allow video to fill more of the screen
+    if (currentMode === 'h264') {
+      // Check if we're in landscape mode (width > height)
+      const isLandscape = availableWidth > availableHeight;
+      
+      if (isLandscape) {
+        // In landscape, prioritize filling the width
+        newWidth = availableWidth;
+        newHeight = availableWidth / aspectRatio;
+        
+        // If height exceeds available space, scale down proportionally
+        if (newHeight > availableHeight) {
+          const scale = availableHeight / newHeight;
+          newWidth *= scale;
+          newHeight *= scale;
+        }
+      } else {
+        // In portrait, prioritize filling the height
+        newHeight = availableHeight;
+        newWidth = availableHeight * aspectRatio;
+        
+        // If width exceeds available space, scale down proportionally
+        if (newWidth > availableWidth) {
+          const scale = availableWidth / newWidth;
+          newWidth *= scale;
+          newHeight *= scale;
+        }
+      }
+    }
+
     // Apply dimensions
     video.style.width = `${Math.floor(newWidth)}px`;
     video.style.height = `${Math.floor(newHeight)}px`;
@@ -140,13 +180,16 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
     videoWrapper.style.maxHeight = '100%';
 
     console.log('[Video] Resized:', {
+      mode: currentMode,
       dimensions: { width: Math.floor(newWidth), height: Math.floor(newHeight) },
       videoSize: { width: videoWidth, height: videoHeight },
       container: { width: containerRect.width, height: containerRect.height },
       available: { width: availableWidth, height: availableHeight },
-      aspectRatio
+      aspectRatio: aspectRatio.toFixed(2),
+      orientation: availableWidth > availableHeight ? 'landscape' : 'portrait',
+      fillStrategy: currentMode === 'h264' ? (availableWidth > availableHeight ? 'width-first' : 'height-first') : 'conservative',
     });
-  }, []);
+  }, [currentMode]);
 
   // Debounced resize handler for window resize events
   const debouncedResize = React.useMemo(() => {
@@ -166,9 +209,54 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
 
   // Window resize listener - always active, independent of connection state
   useEffect(() => {
-    window.addEventListener('resize', debouncedResize);
-    return () => window.removeEventListener('resize', debouncedResize);
-  }, [debouncedResize]);
+    const handleResize = () => {
+      console.log('[Video] Window resize detected');
+      debouncedResize();
+    };
+
+    const handleOrientationChange = () => {
+      console.log('[Video] Orientation change detected');
+      // Use a longer delay for orientation change to ensure layout is updated
+      setTimeout(() => {
+        console.log('[Video] Triggering resize after orientation change');
+        resizeVideo();
+      }, 300);
+    };
+
+    const handleVisualViewportChange = () => {
+      console.log('[Video] Visual viewport change detected');
+      debouncedResize();
+    };
+
+    // Add multiple event listeners for better coverage
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleOrientationChange);
+    window.addEventListener('visualViewportChange', handleVisualViewportChange);
+    
+    // Also listen for visual viewport if available
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleVisualViewportChange);
+    }
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleOrientationChange);
+      window.removeEventListener('visualViewportChange', handleVisualViewportChange);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleVisualViewportChange);
+      }
+    };
+  }, [debouncedResize, resizeVideo]);
+
+  // Listen for remote device resolution changes (screen rotation)
+  useEffect(() => {
+    if (stats.resolution && isConnected) {
+      console.log('[Video] Remote device resolution changed, triggering resize:', stats.resolution);
+      // Trigger video resize when remote device resolution changes
+      // This handles remote device screen rotation
+      setTimeout(resizeVideo, 100);
+    }
+  }, [stats.resolution, isConnected, resizeVideo]);
 
   // Video event listeners for metadata and resize events
   useEffect(() => {
