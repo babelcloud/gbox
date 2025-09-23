@@ -2,11 +2,12 @@ package router
 
 import (
 	"net/http"
+
 	"github.com/babelcloud/gbox/packages/cli/internal/server/handlers"
 )
 
 // APIRouter handles all /api/* routes
-type APIRouter struct{
+type APIRouter struct {
 	handlers *handlers.APIHandlers
 }
 
@@ -30,9 +31,14 @@ func (r *APIRouter) RegisterRoutes(mux *http.ServeMux, server interface{}) {
 
 	// Device management endpoints
 	mux.HandleFunc("/api/devices", r.handlers.HandleDeviceList)
-	mux.HandleFunc("/api/devices/", r.handlers.HandleDeviceAction)
 	mux.HandleFunc("/api/devices/register", r.handlers.HandleDeviceRegister)
 	mux.HandleFunc("/api/devices/unregister", r.handlers.HandleDeviceUnregister)
+
+	// Device-specific endpoints with path patterns
+	mux.HandleFunc("/api/devices/{serial}", r.handlers.HandleDeviceAction)
+	mux.HandleFunc("/api/devices/{serial}/video", r.handlers.HandleDeviceVideo)
+	mux.HandleFunc("/api/devices/{serial}/audio", r.handlers.HandleDeviceAudio)
+	mux.HandleFunc("/api/devices/{serial}/control", r.handlers.HandleDeviceControl)
 
 	// Box management endpoints (proxy to remote GBOX API)
 	mux.HandleFunc("/api/boxes", boxHandlers.HandleBoxList)
@@ -54,4 +60,3 @@ func (r *APIRouter) RegisterRoutes(mux *http.ServeMux, server interface{}) {
 func (r *APIRouter) GetPathPrefix() string {
 	return "/api"
 }
-

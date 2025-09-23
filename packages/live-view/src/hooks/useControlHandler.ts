@@ -1,50 +1,72 @@
 import { useCallback } from "react";
-import { WebRTCClient } from "../lib/webrtc-client";
-import { H264Client } from "../lib/h264-client";
+import { ControlClient } from "../lib/types";
 
-interface UseControlHandlerProps {
-  clientRef: React.RefObject<WebRTCClient | H264Client | null>;
-  isConnected: boolean;
+export interface UseControlHandlerProps {
+  client: ControlClient | null;
+  enabled?: boolean;
+  isConnected?: boolean;
 }
 
-export const useControlHandler = ({
-  clientRef,
-  isConnected,
-}: UseControlHandlerProps) => {
+export interface UseControlHandlerReturn {
+  handleControlAction: (action: string) => void;
+  handleIMESwitch: () => void;
+}
+
+/**
+ * Hook for handling control actions (power, volume, back, home, etc.)
+ */
+export function useControlHandler({
+  client,
+  enabled = true,
+  isConnected = false,
+}: UseControlHandlerProps): UseControlHandlerReturn {
   const handleControlAction = useCallback(
     (action: string) => {
-      if (!clientRef.current) return;
+      if (!enabled || !client || !isConnected) return;
 
-      // 支持两种客户端的键盘码
-      const keycodes =
-        (clientRef.current as any).constructor.ANDROID_KEYCODES ||
-        WebRTCClient.ANDROID_KEYCODES;
-      const keycode = keycodes[action.toUpperCase()];
-
+      const keycode = getAndroidKeycode(action);
+      console.log(
+        `[ControlHandler] handleControlAction: action=${action}, keycode=${keycode}`
+      );
       if (keycode) {
-        clientRef.current.sendKeyEvent(keycode, "down");
+        client.sendKeyEvent(keycode, "down");
         setTimeout(() => {
-          clientRef.current?.sendKeyEvent(keycode, "up");
+          client?.sendKeyEvent(keycode, "up");
         }, 100);
+      } else {
+        console.warn(
+          `[ControlHandler] No keycode found for action: ${action}`
+        );
       }
     },
-    [clientRef]
+    [enabled, client, isConnected]
   );
 
-  // Handle IME switch button click
   const handleIMESwitch = useCallback(() => {
-    if (!clientRef.current || !isConnected) return;
-
-    console.log("[IME] Switching input method");
-    // Send language switch keycode (204)
-    clientRef.current.sendKeyEvent(204, "down");
+    if (!enabled || !client || !isConnected) return;
+    client.sendKeyEvent(204, "down"); // KEYCODE_LANGUAGE_SWITCH
     setTimeout(() => {
-      clientRef.current?.sendKeyEvent(204, "up");
+      client?.sendKeyEvent(204, "up");
     }, 50);
-  }, [isConnected, clientRef]);
+  }, [enabled, client, isConnected]);
 
   return {
     handleControlAction,
     handleIMESwitch,
   };
-};
+}
+
+// Helper function
+function getAndroidKeycode(action: string): number | null {
+  const keycodeMap: { [action: string]: number } = {
+    power: 26,
+    volume_up: 24,
+    volume_down: 25,
+    back: 4,
+    home: 3,
+    app_switch: 187,
+    menu: 82,
+  };
+
+  return keycodeMap[action.toLowerCase()] || null;
+}

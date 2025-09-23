@@ -26,7 +26,8 @@ export default [
       commonjs(),
       typescript({ 
         tsconfig: './tsconfig.json',
-        declaration: false,
+        declaration: true,
+        declarationDir: './dist',
       }),
       postcss({
         modules: true,
@@ -38,7 +39,7 @@ export default [
     external: ['react', 'react-dom'],
   },
   {
-    input: 'dist/index.d.ts',
+    input: 'src/index.ts',
     output: [{ file: 'dist/index.d.ts', format: 'es' }],
     plugins: [dts()],
     external: [/\.css$/],

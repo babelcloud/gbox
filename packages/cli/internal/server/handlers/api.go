@@ -59,16 +59,29 @@ func (h *APIHandlers) HandleDeviceList(w http.ResponseWriter, req *http.Request)
 	h.deviceHandlers.HandleDeviceList(w, req)
 }
 
-func (h *APIHandlers) HandleDeviceAction(w http.ResponseWriter, req *http.Request) {
-	h.deviceHandlers.HandleDeviceAction(w, req)
-}
-
 func (h *APIHandlers) HandleDeviceRegister(w http.ResponseWriter, req *http.Request) {
 	h.deviceHandlers.HandleDeviceRegister(w, req)
 }
 
 func (h *APIHandlers) HandleDeviceUnregister(w http.ResponseWriter, req *http.Request) {
 	h.deviceHandlers.HandleDeviceUnregister(w, req)
+}
+
+// Device-specific handlers
+func (h *APIHandlers) HandleDeviceAction(w http.ResponseWriter, req *http.Request) {
+	h.deviceHandlers.HandleDeviceAction(w, req)
+}
+
+func (h *APIHandlers) HandleDeviceVideo(w http.ResponseWriter, req *http.Request) {
+	h.deviceHandlers.HandleDeviceVideo(w, req)
+}
+
+func (h *APIHandlers) HandleDeviceAudio(w http.ResponseWriter, req *http.Request) {
+	h.deviceHandlers.HandleDeviceAudio(w, req)
+}
+
+func (h *APIHandlers) HandleDeviceControl(w http.ResponseWriter, req *http.Request) {
+	h.deviceHandlers.HandleDeviceControl(w, req)
 }
 
 // ADB Expose endpoints - delegate to dedicated handlers
@@ -142,5 +155,3 @@ func (h *APIHandlers) HandleServerInfo(w http.ResponseWriter, req *http.Request)
 
 	RespondJSON(w, http.StatusOK, info)
 }
-
-

@@ -1,7 +1,7 @@
 package control
 
 import (
-	"log"
+	"github.com/babelcloud/gbox/packages/cli/internal/util"
 )
 
 // TouchHandler handles touch control events
@@ -24,8 +24,7 @@ func (h *TouchHandler) ProcessTouchEvent(msg map[string]interface{}, deviceSeria
 	pressure, _ := msg["pressure"].(float64)
 	pointerId, _ := msg["pointerId"].(float64)
 
-	log.Printf("[DEBUG] Touch event: device=%s, action=%s, x=%.3f, y=%.3f, pressure=%.2f, pointerId=%.0f",
-		deviceSerial, action, x, y, pressure, pointerId)
+	util.GetLogger().Debug("Touch event", "device", deviceSerial, "action", action, "x", x, "y", y, "pressure", pressure, "pointerId", pointerId)
 
 	// TODO: Implement touch event processing logic
 	// This could include:
@@ -49,29 +48,29 @@ func (h *TouchHandler) ValidateTouchEvent(msg map[string]interface{}) error {
 	if _, ok := msg["y"].(float64); !ok {
 		return ErrMissingY
 	}
-	
+
 	// Validate action type
 	action, _ := msg["action"].(string)
 	if action != "down" && action != "up" && action != "move" {
 		return ErrInvalidAction
 	}
-	
+
 	// Validate coordinates
 	x, _ := msg["x"].(float64)
 	y, _ := msg["y"].(float64)
 	if x < 0 || y < 0 {
 		return ErrInvalidCoordinates
 	}
-	
+
 	return nil
 }
 
 // Error definitions
 var (
-	ErrMissingAction     = &ControlError{Code: "MISSING_ACTION", Message: "Missing action field"}
-	ErrMissingX          = &ControlError{Code: "MISSING_X", Message: "Missing x coordinate"}
-	ErrMissingY          = &ControlError{Code: "MISSING_Y", Message: "Missing y coordinate"}
-	ErrInvalidAction     = &ControlError{Code: "INVALID_ACTION", Message: "Invalid action type"}
+	ErrMissingAction      = &ControlError{Code: "MISSING_ACTION", Message: "Missing action field"}
+	ErrMissingX           = &ControlError{Code: "MISSING_X", Message: "Missing x coordinate"}
+	ErrMissingY           = &ControlError{Code: "MISSING_Y", Message: "Missing y coordinate"}
+	ErrInvalidAction      = &ControlError{Code: "INVALID_ACTION", Message: "Invalid action type"}
 	ErrInvalidCoordinates = &ControlError{Code: "INVALID_COORDINATES", Message: "Invalid coordinates"}
 )
 
