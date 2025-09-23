@@ -1,78 +1,74 @@
 import { useCallback, useState } from "react";
-import { WebRTCClient } from "../lib/webrtc-client";
-import { H264Client } from "../lib/h264-client";
+import { ControlClient } from "../lib/types";
 
-interface UseMouseHandlerProps {
-  clientRef: React.RefObject<WebRTCClient | H264Client | null>;
+export interface UseMouseHandlerProps {
+  client: ControlClient | null;
+  enabled?: boolean;
+  isConnected?: boolean;
 }
 
-export const useMouseHandler = ({ clientRef }: UseMouseHandlerProps) => {
-  const [isDragging, setIsDragging] = useState(false);
-  const [touchPosition, setTouchPosition] = useState({ x: 0, y: 0 });
+export interface UseMouseHandlerReturn {
+  handleMouseDown: (e: React.MouseEvent) => void;
+  handleMouseUp: (e: React.MouseEvent) => void;
+  handleMouseMove: (e: React.MouseEvent) => void;
+  handleMouseLeave: (e: React.MouseEvent) => void;
+  isMouseDragging: boolean;
+}
 
-  const handleMouseInteraction = useCallback(
+/**
+ * Hook for handling mouse events
+ */
+export function useMouseHandler({
+  client,
+  enabled = true,
+  isConnected = false,
+}: UseMouseHandlerProps): UseMouseHandlerReturn {
+  const [isMouseDragging, setIsMouseDragging] = useState(false);
+
+  const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      if (!clientRef.current) return;
-
-      const action =
-        e.type === "mousedown" ? "down" : e.type === "mouseup" ? "up" : "move";
-
-      // Handle mouse event in client
-      clientRef.current.handleMouseEvent(e.nativeEvent, action);
-
-      // Update local dragging state and touch indicator position
-      if (action === "down") {
-        setIsDragging(true);
-        setTouchPosition({ x: e.clientX, y: e.clientY });
-      } else if (action === "up") {
-        setIsDragging(false);
-        // Hide indicator immediately
-        setTouchPosition({ x: -100, y: -100 });
-      } else if (action === "move") {
-        // Update position during move if dragging (either local or client state)
-        // This ensures the indicator follows the mouse in both WebRTC and H264 modes
-        const clientDragging = (clientRef.current as any).isMouseDragging;
-        if (isDragging || clientDragging) {
-          setTouchPosition({ x: e.clientX, y: e.clientY });
-        }
-      }
+      if (!enabled || !client || !isConnected) return;
+      setIsMouseDragging(true);
+      client.handleMouseEvent(e.nativeEvent, "down");
     },
-    [clientRef, isDragging]
+    [enabled, client, isConnected]
   );
 
-  const handleTouchInteraction = useCallback(
-    (e: React.TouchEvent) => {
-      if (!clientRef.current) return;
-
-      const action =
-        e.type === "touchstart"
-          ? "down"
-          : e.type === "touchend"
-          ? "up"
-          : "move";
-
-      clientRef.current.handleTouchEvent(e.nativeEvent, action);
+  const handleMouseUp = useCallback(
+    (e: React.MouseEvent) => {
+      if (!enabled || !client || !isConnected) return;
+      setIsMouseDragging(false);
+      client.handleMouseEvent(e.nativeEvent, "up");
     },
-    [clientRef]
+    [enabled, client, isConnected]
+  );
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (!enabled || !client || !isConnected) return;
+      if (isMouseDragging) {
+        client.handleMouseEvent(e.nativeEvent, "move");
+      }
+    },
+    [enabled, client, isConnected, isMouseDragging]
   );
 
   const handleMouseLeave = useCallback(
     (e: React.MouseEvent) => {
-      // Release drag if mouse leaves the video element
-      if (clientRef.current && isDragging) {
-        clientRef.current.handleMouseEvent(e.nativeEvent, "up");
-        setIsDragging(false);
-        setTouchPosition({ x: -100, y: -100 });
+      if (!enabled || !client || !isConnected) return;
+      if (isMouseDragging) {
+        client.handleMouseEvent(e.nativeEvent, "up");
+        setIsMouseDragging(false);
       }
     },
-    [clientRef, isDragging]
+    [enabled, client, isConnected, isMouseDragging]
   );
 
   return {
-    isDragging,
-    touchPosition,
-    handleMouseInteraction,
-    handleTouchInteraction,
+    handleMouseDown,
+    handleMouseUp,
+    handleMouseMove,
     handleMouseLeave,
+    isMouseDragging,
   };
-};
+}

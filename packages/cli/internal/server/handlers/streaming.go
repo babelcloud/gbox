@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 
@@ -10,6 +9,7 @@ import (
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/audio"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/h264"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/mse"
+	"github.com/babelcloud/gbox/packages/cli/internal/util"
 	"github.com/gorilla/websocket"
 )
 
@@ -91,6 +91,8 @@ func (h *StreamingHandlers) HandleAudioStream(w http.ResponseWriter, r *http.Req
 	parts := strings.Split(path, "?")
 	deviceSerial := parts[0]
 
+	util.GetLogger().Debug("Processing audio stream", "device", deviceSerial, "url", r.URL.String())
+
 	if deviceSerial == "" {
 		http.Error(w, "Device serial required", http.StatusBadRequest)
 		return
@@ -113,11 +115,14 @@ func (h *StreamingHandlers) HandleAudioStream(w http.ResponseWriter, r *http.Req
 	// Check for MSE-optimized WebM streaming
 	mseOptimized := r.URL.Query().Get("mse") == "true"
 
+	util.GetLogger().Debug("Audio parameters", "codec", codec, "format", format, "mse", mseOptimized)
+
 	// Handle MSE-optimized WebM streaming (new approach)
 	if codec == "opus" && format == "webm" && mseOptimized {
+		util.GetLogger().Debug("Using MSE WebM streaming", "device", deviceSerial)
 		audioService := audio.GetAudioService()
 		if err := audioService.StreamWebMForMSE(deviceSerial, w, r); err != nil {
-			log.Printf("MSE WebM streaming error: %v", err)
+			util.GetLogger().Error("MSE WebM streaming error", "error", err)
 			http.Error(w, "MSE streaming failed", http.StatusInternalServerError)
 		}
 		return
@@ -264,12 +269,12 @@ func (h *StreamingHandlers) HandleControlWebSocket(w http.ResponseWriter, r *htt
 
 	conn, err := controlUpgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("Failed to upgrade control WebSocket: %v", err)
+		util.GetLogger().Error("Failed to upgrade control WebSocket", "error", err)
 		return
 	}
 	defer conn.Close()
 
-	log.Printf("Control WebSocket connection established for device: %s", deviceSerial)
+	util.GetLogger().Debug("Control WebSocket connection established", "device", deviceSerial)
 
 	// Delegate to control service
 	controlService := control.GetControlService()
@@ -280,9 +285,9 @@ func (h *StreamingHandlers) HandleControlWebSocket(w http.ResponseWriter, r *htt
 		if err := conn.ReadJSON(&msg); err != nil {
 			// Check for normal close conditions
 			if websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
-				log.Printf("Control WebSocket closed normally for device: %s", deviceSerial)
+				util.GetLogger().Debug("Control WebSocket closed normally", "device", deviceSerial)
 			} else if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("Control WebSocket read error: %v", err)
+				util.GetLogger().Error("Control WebSocket read error", "error", err)
 			}
 			break
 		}
@@ -292,7 +297,7 @@ func (h *StreamingHandlers) HandleControlWebSocket(w http.ResponseWriter, r *htt
 			continue
 		}
 
-		log.Printf("[DEBUG] Control message received: type=%s, device=%s", msgType, deviceSerial)
+		util.GetLogger().Debug("Control message received", "type", msgType, "device", deviceSerial)
 
 		switch msgType {
 		// WebRTC signaling messages - delegate to WebRTC handler
@@ -316,7 +321,7 @@ func (h *StreamingHandlers) HandleControlWebSocket(w http.ResponseWriter, r *htt
 			controlService.HandleVideoResetEvent(msg, deviceSerial)
 
 		default:
-			log.Printf("Unknown control message type: %s", msgType)
+			util.GetLogger().Warn("Unknown control message type", "type", msgType)
 		}
 	}
 }
@@ -324,7 +329,7 @@ func (h *StreamingHandlers) HandleControlWebSocket(w http.ResponseWriter, r *htt
 // delegateToWebRTCHandler forwards WebRTC signaling messages to the specialized handler
 func (h *StreamingHandlers) delegateToWebRTCHandler(conn *websocket.Conn, msg map[string]interface{}, msgType, deviceSerial string) {
 	if h.webrtcHandlers == nil {
-		log.Printf("WebRTC handlers not initialized")
+		util.GetLogger().Warn("WebRTC handlers not initialized")
 		return
 	}
 

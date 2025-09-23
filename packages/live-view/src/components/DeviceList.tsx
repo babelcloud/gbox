@@ -4,11 +4,11 @@ import styles from './DeviceList.module.css';
 
 interface DeviceListProps {
   devices: Device[];
-  currentDevice: string | null;
+  currentDevice: Device | null;
   connectionStatus: string;
   isConnected: boolean;
   loading: boolean;
-  onConnect: (serial: string) => void;
+  onConnect: (device: Device) => Promise<void>;
   onDisconnect: () => void;
   onRefresh: () => void;
 }
@@ -21,13 +21,13 @@ export const DeviceList: React.FC<DeviceListProps> = ({
   loading,
   onConnect,
   onDisconnect,
-  onRefresh,
+  onRefresh: _onRefresh
 }) => {
   const getDeviceStatus = (device: Device): string => {
-    if (currentDevice === device.serial && connectionStatus) {
+    if (currentDevice?.serial === device.serial && connectionStatus) {
       return connectionStatus;
     }
-    if (device.connected || (currentDevice === device.serial && isConnected)) {
+    if (device.connected || (currentDevice?.serial === device.serial && isConnected)) {
       return device.videoWidth && device.videoHeight
         ? `Connected - ${device.videoWidth}x${device.videoHeight}`
         : 'Connected';
@@ -36,7 +36,7 @@ export const DeviceList: React.FC<DeviceListProps> = ({
   };
 
   const getStatusClass = (device: Device): string => {
-    if (currentDevice === device.serial && connectionStatus) {
+    if (currentDevice?.serial === device.serial && connectionStatus) {
       if (connectionStatus.includes('Connecting') ||
           connectionStatus.includes('reconnecting') ||
           connectionStatus.includes('Reconnecting')) {
@@ -66,27 +66,16 @@ export const DeviceList: React.FC<DeviceListProps> = ({
       )}
 
       {devices.map((device) => {
-        const isDeviceConnected = device.connected ||
-          (currentDevice === device.serial && isConnected) ||
-          (currentDevice === device.serial && connectionStatus && !connectionStatus.includes('failed') && !connectionStatus.includes('disconnected'));
-
+        // Simplified connection state logic
+        const isDeviceConnected = currentDevice?.serial === device.serial && isConnected;
 
         return (
           <div 
             key={device.serial}
             className={`${styles.deviceItem} ${isDeviceConnected ? styles.connected : ''}`}
-            onClick={() => {
-              console.log('[DeviceList] Device clicked:', {
-                serial: device.serial,
-                state: device.state,
-                isDeviceConnected,
-                canConnect: !isDeviceConnected && device.state === 'device'
-              });
+            onClick={async () => {
               if (!isDeviceConnected && device.state === 'device') {
-                console.log('[DeviceList] Calling onConnect for device:', device.serial);
-                onConnect(device.serial);
-              } else {
-                console.log('[DeviceList] Cannot connect to device - conditions not met');
+                await onConnect(device);
               }
             }}
           >

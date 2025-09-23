@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
-import { Device } from '../types';
+import { useState, useCallback, useEffect } from "react";
+import { Device } from "../types";
 
 interface UseDeviceManagerProps {
   apiUrl: string;
@@ -13,40 +13,46 @@ interface UseDeviceManagerProps {
 export const useDeviceManager = ({
   apiUrl,
   showDeviceList,
-  autoConnect,
-  deviceSerial,
-  isConnected,
+  autoConnect: _autoConnect,
+  deviceSerial: _deviceSerial,
+  isConnected: _isConnected,
   onError,
 }: UseDeviceManagerProps) => {
   const [devices, setDevices] = useState<Device[]>([]);
-  const [currentDevice, setCurrentDevice] = useState<string | null>(null);
+  const [currentDevice, setCurrentDevice] = useState<Device | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Load devices
   const loadDevices = useCallback(async () => {
-    console.log('[useDeviceManager] Loading devices from:', `${apiUrl}/devices`);
+    console.log(
+      "[useDeviceManager] Loading devices from:",
+      `${apiUrl}/devices`
+    );
     setLoading(true);
     try {
       const response = await fetch(`${apiUrl}/devices`);
-      console.log('[useDeviceManager] Response status:', response.status);
+      console.log("[useDeviceManager] Response status:", response.status);
       const data = await response.json();
-      console.log('[useDeviceManager] Raw response data:', data);
-      console.log('[useDeviceManager] Raw devices array:', data.devices);
+      console.log("[useDeviceManager] Raw response data:", data);
+      console.log("[useDeviceManager] Raw devices array:", data.devices);
       if (data.devices && data.devices.length > 0) {
-        console.log('[useDeviceManager] First raw device:', data.devices[0]);
+        console.log("[useDeviceManager] First raw device:", data.devices[0]);
       }
       // Transform device data to match our interface
       // The API returns 'id' but we use 'serial' internally
       const transformedDevices = (data.devices || []).map((device: any) => ({
         serial: device.id || device.serial || device.udid,
         state: device.status || device.state, // API returns 'status', frontend expects 'state'
-        model: device['ro.product.model'] || device.model || 'Unknown',
+        model: device["ro.product.model"] || device.model || "Unknown",
         connected: device.connected,
       }));
-      console.log('[useDeviceManager] Transformed devices:', transformedDevices);
+      console.log(
+        "[useDeviceManager] Transformed devices:",
+        transformedDevices
+      );
       setDevices(transformedDevices);
     } catch (error) {
-      console.error('[useDeviceManager] Failed to load devices:', error);
+      console.error("[useDeviceManager] Failed to load devices:", error);
       onError?.(error as Error);
     } finally {
       setLoading(false);

@@ -369,12 +369,27 @@ func (s *Source) handleAudioStream(ctx context.Context, conn net.Conn) {
 	logger.Info("✅ Audio metadata read successfully", "device", s.deviceSerial)
 
 	// Start reading audio packets
+	packetCount := 0
+	lastPacketTime := time.Now()
+	timeoutDuration := 30 * time.Second // 30 seconds timeout for no audio data
+
+	logger.Info("🎵 Starting audio packet reading loop", "device", s.deviceSerial)
+
 	for {
 		select {
 		case <-ctx.Done():
 			logger.Debug("Audio stream context cancelled", "device", s.deviceSerial)
 			return
 		default:
+		}
+
+		// Check for timeout - if no audio packets received for 30 seconds, log warning
+		if time.Since(lastPacketTime) > timeoutDuration && packetCount == 0 {
+			logger.Warn("🎵 No audio packets received for 30 seconds - device may not have audio activity or audio permissions may be missing",
+				"device", s.deviceSerial,
+				"timeout", timeoutDuration,
+				"packets_received", packetCount)
+			// Continue waiting, don't return - audio might start later
 		}
 
 		// Read audio packet with timeout to prevent blocking on closed connections
@@ -389,14 +404,18 @@ func (s *Source) handleAudioStream(ctx context.Context, conn net.Conn) {
 			}
 
 			if err == io.EOF {
-				logger.Info("Audio stream ended", "device", s.deviceSerial)
+				logger.Info("Audio stream ended", "device", s.deviceSerial, "total_packets", packetCount)
 			} else if strings.Contains(err.Error(), "use of closed network connection") {
 				logger.Debug("Audio connection closed", "device", s.deviceSerial)
 			} else {
-				logger.Error("Failed to read audio packet", "device", s.deviceSerial, "error", err)
+				logger.Error("Failed to read audio packet", "device", s.deviceSerial, "error", err, "packets_received", packetCount)
 			}
 			return
 		}
+
+		// Update packet count and timestamp
+		packetCount++
+		lastPacketTime = time.Now()
 
 		// Create audio sample
 		sample := core.AudioSample{
@@ -404,9 +423,15 @@ func (s *Source) handleAudioStream(ctx context.Context, conn net.Conn) {
 			PTS:  int64(packet.PTS),
 		}
 
-		// Log first few audio packets
+		// Log first few audio packets and progress
 		if len(sample.Data) > 0 {
-			logger.Debug("🎵 Audio packet received", "device", s.deviceSerial, "size", len(sample.Data), "pts", sample.PTS)
+			if packetCount <= 5 {
+				logger.Info("🎵 Audio packet received", "device", s.deviceSerial, "packet", packetCount, "size", len(sample.Data), "pts", sample.PTS)
+			} else if packetCount%100 == 0 {
+				logger.Debug("🎵 Audio streaming progress", "device", s.deviceSerial, "packets", packetCount, "size", len(sample.Data))
+			}
+		} else {
+			logger.Warn("🎵 Empty audio packet received", "device", s.deviceSerial, "packet", packetCount)
 		}
 
 		// Publish to pipeline

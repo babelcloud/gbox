@@ -55,30 +55,27 @@ func (h *DeviceHandlers) HandleDeviceList(w http.ResponseWriter, r *http.Request
 
 // HandleDeviceAction handles device action requests (connect/disconnect)
 func (h *DeviceHandlers) HandleDeviceAction(w http.ResponseWriter, r *http.Request) {
-	// Parse URL path: /api/devices/{id}/{action}
+	// Extract device serial from path: /api/devices/{serial}
 	path := strings.TrimPrefix(r.URL.Path, "/api/devices/")
-	parts := strings.Split(path, "/")
+	deviceID := strings.Split(path, "/")[0]
 
-	if len(parts) < 2 {
-		RespondJSON(w, http.StatusBadRequest, map[string]interface{}{
-			"success": false,
-			"error":   "Invalid device action URL format",
-		})
+	if deviceID == "" {
+		http.Error(w, "Device serial required", http.StatusBadRequest)
 		return
 	}
 
-	deviceID := parts[0]
-	action := parts[1]
-
-	switch action {
-	case "connect":
+	// Handle connect/disconnect based on HTTP method
+	switch r.Method {
+	case http.MethodPost:
+		// POST /api/devices/{serial} - connect device
 		h.handleDeviceConnect(w, r, deviceID)
-	case "disconnect":
+	case http.MethodDelete:
+		// DELETE /api/devices/{serial} - disconnect device
 		h.handleDeviceDisconnect(w, r, deviceID)
 	default:
-		RespondJSON(w, http.StatusBadRequest, map[string]interface{}{
+		RespondJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{
 			"success": false,
-			"error":   fmt.Sprintf("Unknown action: %s", action),
+			"error":   "Method not allowed. Use POST to connect or DELETE to disconnect",
 		})
 	}
 }
@@ -99,6 +96,76 @@ func (h *DeviceHandlers) HandleDeviceUnregister(w http.ResponseWriter, r *http.R
 		"success": false,
 		"error":   "Device unregistration not yet implemented",
 	})
+}
+
+// Device streaming handlers
+func (h *DeviceHandlers) HandleDeviceVideo(w http.ResponseWriter, req *http.Request) {
+	// Extract device serial from path: /api/devices/{serial}/video
+	path := strings.TrimPrefix(req.URL.Path, "/api/devices/")
+	parts := strings.Split(path, "/")
+	deviceSerial := parts[0]
+
+	if deviceSerial == "" {
+		http.Error(w, "Device serial required", http.StatusBadRequest)
+		return
+	}
+
+	// Create streaming handlers and delegate to video stream handler
+	streamingHandlers := NewStreamingHandlers()
+	streamingHandlers.SetServerService(h.serverService)
+	streamingHandlers.SetPathPrefix("/api")
+
+	// Modify the request path to match the expected format for streaming handlers
+	req.URL.Path = "/stream/video/" + deviceSerial
+
+	streamingHandlers.HandleVideoStream(w, req)
+}
+
+func (h *DeviceHandlers) HandleDeviceAudio(w http.ResponseWriter, req *http.Request) {
+	// Extract device serial from path: /api/devices/{serial}/audio
+	path := strings.TrimPrefix(req.URL.Path, "/api/devices/")
+	parts := strings.Split(path, "/")
+	deviceSerial := parts[0]
+
+	log.Printf("[HandleDeviceAudio] Processing audio request for device: %s, URL: %s", deviceSerial, req.URL.String())
+
+	if deviceSerial == "" {
+		http.Error(w, "Device serial required", http.StatusBadRequest)
+		return
+	}
+
+	// Create streaming handlers and delegate to audio stream handler
+	streamingHandlers := NewStreamingHandlers()
+	streamingHandlers.SetServerService(h.serverService)
+	streamingHandlers.SetPathPrefix("/api")
+
+	// Modify the request path to match the expected format for streaming handlers
+	req.URL.Path = "/stream/audio/" + deviceSerial
+
+	log.Printf("[HandleDeviceAudio] Delegating to streaming handler with path: %s", req.URL.Path)
+	streamingHandlers.HandleAudioStream(w, req)
+}
+
+func (h *DeviceHandlers) HandleDeviceControl(w http.ResponseWriter, req *http.Request) {
+	// Extract device serial from path: /api/devices/{serial}/control
+	path := strings.TrimPrefix(req.URL.Path, "/api/devices/")
+	parts := strings.Split(path, "/")
+	deviceSerial := parts[0]
+
+	if deviceSerial == "" {
+		http.Error(w, "Device serial required", http.StatusBadRequest)
+		return
+	}
+
+	// Create streaming handlers and delegate to control WebSocket handler
+	streamingHandlers := NewStreamingHandlers()
+	streamingHandlers.SetServerService(h.serverService)
+	streamingHandlers.SetPathPrefix("/api")
+
+	// Modify the request path to match the expected format for streaming handlers
+	req.URL.Path = "/stream/control/" + deviceSerial
+
+	streamingHandlers.HandleControlWebSocket(w, req)
 }
 
 // HandleWebSocket handles WebSocket connections for device communication

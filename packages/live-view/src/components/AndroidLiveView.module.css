@@ -1,4 +1,5 @@
-.container {
+/* Android Live View - Restored Original Layout */
+.androidLiveView {
   display: flex;
   height: 100vh;
   max-height: 100vh;
@@ -12,6 +13,137 @@
   border-radius: 0;
   overflow: hidden;
   box-sizing: border-box;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+  backdrop-filter: blur(10px);
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0;
+}
+
+.connectionStatus {
+  font-size: 14px;
+  color: #888;
+  margin: 0 16px;
+  flex: 1;
+  text-align: center;
+}
+
+.controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.controls button {
+  padding: 8px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(10px);
+}
+
+.controls button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.controls button.active {
+  background: #667eea;
+  border-color: #667eea;
+  color: #ffffff;
+}
+
+/* Content Wrapper - Sidebar Layout */
+.contentWrapper {
+  display: flex;
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* Sidebar - Device List Area */
+.sidebar {
+  width: 320px;
+  min-width: 300px;
+  max-width: 320px;
+  background: #2d2d2d;
+  padding: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Sidebar Header */
+.sidebarHeader {
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.sidebarTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0;
+}
+
+/* Sidebar Content */
+.sidebarContent {
+  padding: 16px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Sidebar Footer */
+.sidebarFooter {
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.sidebarConnectionStatus {
+  font-size: 12px;
+  color: #ff6b6b;
+  font-weight: 500;
+  text-align: left;
+}
+
+.sidebarConnectionStatus.connected {
+  color: #4CAF50;
+}
+
+.sidebarConnectionStatus.connecting {
+  color: #FF9800;
+}
+
+.sidebarConnectionStatus.error {
+  color: #f44336;
 }
 
 /* Mode Switcher */
@@ -90,26 +222,7 @@
   display: none;
 }
 
-.contentWrapper {
-  display: flex;
-  flex: 1;
-  position: relative;
-  overflow: hidden;
-  min-width: 0;
-}
-
-.sidebar {
-  width: 320px;
-  min-width: 300px;
-  max-width: 320px;
-  background: #2d2d2d;
-  padding: 16px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  flex-shrink: 0;
-  box-sizing: border-box;
-}
-
+/* Main Content - Video Area */
 .mainContent {
   flex: 1;
   display: flex;
@@ -121,6 +234,7 @@
   min-height: 0;
 }
 
+/* Video Container */
 .videoContainer {
   flex: 1;
   position: relative;
@@ -132,16 +246,9 @@
   box-sizing: border-box;
 }
 
-.videoContent {
-  flex: 1;
-  position: relative;
-  display: flex;
-  flex-direction: row;
-  overflow: hidden;
-  min-height: 0;
-  box-sizing: border-box;
-}
+/* Video Content - Removed, simplified structure */
 
+/* Video Main Area */
 .videoMainArea {
   flex: 1;
   position: relative;
@@ -153,8 +260,10 @@
   min-width: 0;
   padding: 8px;
   box-sizing: border-box;
+  background: #000;
 }
 
+/* Video Wrapper */
 .videoWrapper {
   position: relative;
   display: flex;
@@ -169,12 +278,12 @@
   min-width: 0;
 }
 
-
+/* Video Element */
 .video {
   object-fit: contain;
   display: block;
-  width: auto;
-  height: auto;
+  width: 100%;
+  height: 100%;
   max-width: 100%;
   max-height: 100%;
   cursor: pointer;
@@ -189,6 +298,18 @@
   cursor: grabbing;
 }
 
+/* Client Container */
+.clientContainer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Touch Indicator */
 .touchIndicator {
   position: fixed;
   width: 20px;
@@ -200,7 +321,6 @@
   display: none;
   transform: translate(-50%, -50%);
   box-shadow: 0 0 10px rgba(0, 122, 255, 0.5);
-  /* Remove transition for instant response */
 }
 
 .touchIndicator.active {
@@ -214,26 +334,17 @@
   height: 24px;
 }
 
+/* Controls Area - Positioned absolutely in video area */
 .controlsArea {
-  position: relative;
-  right: 0;
-  top: 0;
-  transform: none;
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 1000;
-  background: rgba(0, 0, 0, 0.9);
   pointer-events: auto;
-  width: 120px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 8px;
 }
 
-
-
+/* Stats Area */
 .statsArea {
   position: relative;
   bottom: 0;
@@ -251,6 +362,7 @@
   font-weight: bolder;
 }
 
+/* Stats */
 .stats {
   background: transparent;
   padding: 4px 12px;
@@ -265,6 +377,12 @@
   border: none;
 }
 
+.stats .connectionStatus {
+  color: #ff6b6b;
+  font-weight: 500;
+}
+
+/* Toggle Button */
 .toggleButton {
   position: absolute;
   right: 10px;
@@ -344,16 +462,5 @@
   
   .videoContainer {
     padding: 8px;
-  }
-  
-  .modeSwitcher {
-    margin-bottom: 12px;
-    padding: 10px;
-  }
-  
-  .modeBtn {
-    padding: 6px 10px;
-    font-size: 11px;
-    margin-bottom: 4px;
   }
 }
