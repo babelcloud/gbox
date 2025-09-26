@@ -191,67 +191,81 @@ export class StatsService {
     try {
       const stats = await pc.getStats();
 
-      stats.forEach((report: any) => {
-        if (
-          report.type === "inbound-rtp" &&
-          (report.mediaType === "video" || report.kind === "video")
-        ) {
-          // FPS calculation
-          if (this.options.enableFPS && report.framesDecoded) {
-            const currentTime = Date.now();
-            const currentFramesDecoded = report.framesDecoded || 0;
+      stats.forEach(
+        (report: {
+          type: string;
+          mediaType?: string;
+          kind?: string;
+          frameWidth?: number;
+          frameHeight?: number;
+          framesDecoded?: number;
+          timestamp?: number;
+          bytesReceived?: number;
+          state?: string;
+          currentRoundTripTime?: number;
+        }) => {
+          if (
+            report.type === "inbound-rtp" &&
+            (report.mediaType === "video" || report.kind === "video")
+          ) {
+            // FPS calculation
+            if (this.options.enableFPS && report.framesDecoded) {
+              const currentTime = Date.now();
+              const currentFramesDecoded = report.framesDecoded || 0;
 
-            if (this.lastFramesDecoded > 0 && this.lastStatsTime > 0) {
-              const timeDiff = (currentTime - this.lastStatsTime) / 1000;
-              const framesDiff = currentFramesDecoded - this.lastFramesDecoded;
-              if (timeDiff > 0 && framesDiff >= 0) {
-                metrics.fps = Math.round(framesDiff / timeDiff);
+              if (this.lastFramesDecoded > 0 && this.lastStatsTime > 0) {
+                const timeDiff = (currentTime - this.lastStatsTime) / 1000;
+                const framesDiff =
+                  currentFramesDecoded - this.lastFramesDecoded;
+                if (timeDiff > 0 && framesDiff >= 0) {
+                  metrics.fps = Math.round(framesDiff / timeDiff);
+                }
+              }
+
+              this.lastFramesDecoded = currentFramesDecoded;
+              this.lastStatsTime = currentTime;
+            }
+
+            // Resolution
+            if (this.options.enableResolution) {
+              const width = report.frameWidth || 0;
+              const height = report.frameHeight || 0;
+              if (width && height) {
+                metrics.resolution = `${width}x${height}`;
               }
             }
 
-            this.lastFramesDecoded = currentFramesDecoded;
-            this.lastStatsTime = currentTime;
-          }
+            // Bandwidth
+            if (this.options.enableBandwidth && report.bytesReceived) {
+              const currentTime = Date.now();
+              const currentBytes = report.bytesReceived;
 
-          // Resolution
-          if (this.options.enableResolution) {
-            const width = report.frameWidth || 0;
-            const height = report.frameHeight || 0;
-            if (width && height) {
-              metrics.resolution = `${width}x${height}`;
-            }
-          }
-
-          // Bandwidth
-          if (this.options.enableBandwidth && report.bytesReceived) {
-            const currentTime = Date.now();
-            const currentBytes = report.bytesReceived;
-
-            if (this.lastBytesReceived > 0 && this.lastBandwidthTime > 0) {
-              const timeDiff = (currentTime - this.lastBandwidthTime) / 1000;
-              const bytesDiff = currentBytes - this.lastBytesReceived;
-              if (timeDiff > 0) {
-                metrics.bandwidth = Math.round(
-                  (bytesDiff * 8) / timeDiff / 1000
-                ); // kbps
+              if (this.lastBytesReceived > 0 && this.lastBandwidthTime > 0) {
+                const timeDiff = (currentTime - this.lastBandwidthTime) / 1000;
+                const bytesDiff = currentBytes - this.lastBytesReceived;
+                if (timeDiff > 0) {
+                  metrics.bandwidth = Math.round(
+                    (bytesDiff * 8) / timeDiff / 1000
+                  ); // kbps
+                }
               }
-            }
 
-            this.lastBytesReceived = currentBytes;
-            this.lastBandwidthTime = currentTime;
+              this.lastBytesReceived = currentBytes;
+              this.lastBandwidthTime = currentTime;
+            }
+          }
+
+          // Latency from candidate-pair
+          if (
+            this.options.enableLatency &&
+            report.type === "candidate-pair" &&
+            report.state === "succeeded" &&
+            report.currentRoundTripTime
+          ) {
+            metrics.latency = Math.round(report.currentRoundTripTime * 1000);
           }
         }
-
-        // Latency from candidate-pair
-        if (
-          this.options.enableLatency &&
-          report.type === "candidate-pair" &&
-          report.state === "succeeded" &&
-          report.currentRoundTripTime
-        ) {
-          metrics.latency = Math.round(report.currentRoundTripTime * 1000);
-        }
-      });
+      );
 
       // Use ping-pong latency if available
       if (this.options.enableLatency && this.pingTimes.length > 0) {

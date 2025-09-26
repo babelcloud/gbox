@@ -10,9 +10,14 @@ class MockControlClient implements ControlClient {
     action: string;
     metaState: number;
   }> = [];
+  public isMouseDragging: boolean = false;
 
   // ControlClient interface implementation
-  connect(): Promise<void> {
+  connect(
+    _deviceSerial: string,
+    _apiUrl: string,
+    _wsUrl?: string
+  ): Promise<void> {
     return Promise.resolve();
   }
 
@@ -24,24 +29,28 @@ class MockControlClient implements ControlClient {
     return true;
   }
 
-  sendKeyEvent(keycode: number, action: string, metaState: number = 0): void {
+  sendKeyEvent(
+    keycode: number,
+    action: "down" | "up",
+    metaState: number = 0
+  ): void {
     this.keyEvents.push({ keycode, action, metaState });
   }
 
   sendTouchEvent(
-    x: number,
-    y: number,
-    action: string,
-    pressure: number = 1.0
+    _x: number,
+    _y: number,
+    _action: "down" | "up" | "move",
+    _pressure: number = 1.0
   ): void {
     // Mock implementation
   }
 
-  sendControlAction(action: string, data?: any): void {
+  sendControlAction(_action: string, _params?: unknown): void {
     // Mock implementation
   }
 
-  sendClipboardSet(text: string, paste: boolean): void {
+  sendClipboardSet(_text: string, _paste?: boolean): void {
     // Mock implementation
   }
 
@@ -49,11 +58,11 @@ class MockControlClient implements ControlClient {
     // Mock implementation
   }
 
-  handleMouseEvent(event: any, action: string): void {
+  handleMouseEvent(_event: MouseEvent, _action: "down" | "up" | "move"): void {
     // Mock implementation
   }
 
-  handleTouchEvent(event: any, action: string): void {
+  handleTouchEvent(_event: TouchEvent, _action: "down" | "up" | "move"): void {
     // Mock implementation
   }
 }
@@ -81,7 +90,7 @@ describe("useControlHandler", () => {
     expect(typeof result.current.handleIMESwitch).toBe("function");
   });
 
-  it("should handle control actions correctly", () => {
+  it("should handle control actions correctly", async () => {
     const { result } = renderHook(() =>
       useControlHandler({
         client: mockClient,
@@ -93,6 +102,9 @@ describe("useControlHandler", () => {
     act(() => {
       result.current.handleControlAction("power");
     });
+
+    // Wait for the async up event
+    await new Promise((resolve) => setTimeout(resolve, 150));
 
     expect(mockClient.keyEvents).toHaveLength(2); // down + up
     expect(mockClient.keyEvents[0]).toEqual({
@@ -107,7 +119,7 @@ describe("useControlHandler", () => {
     });
   });
 
-  it("should handle volume up action", () => {
+  it("should handle volume up action", async () => {
     const { result } = renderHook(() =>
       useControlHandler({
         client: mockClient,
@@ -120,11 +132,14 @@ describe("useControlHandler", () => {
       result.current.handleControlAction("volume_up");
     });
 
+    // Wait for the async up event
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
     expect(mockClient.keyEvents).toHaveLength(2);
     expect(mockClient.keyEvents[0].keycode).toBe(24); // volume up
   });
 
-  it("should handle volume down action", () => {
+  it("should handle volume down action", async () => {
     const { result } = renderHook(() =>
       useControlHandler({
         client: mockClient,
@@ -137,11 +152,14 @@ describe("useControlHandler", () => {
       result.current.handleControlAction("volume_down");
     });
 
+    // Wait for the async up event
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
     expect(mockClient.keyEvents).toHaveLength(2);
     expect(mockClient.keyEvents[0].keycode).toBe(25); // volume down
   });
 
-  it("should handle back action", () => {
+  it("should handle back action", async () => {
     const { result } = renderHook(() =>
       useControlHandler({
         client: mockClient,
@@ -154,11 +172,14 @@ describe("useControlHandler", () => {
       result.current.handleControlAction("back");
     });
 
+    // Wait for the async up event
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
     expect(mockClient.keyEvents).toHaveLength(2);
     expect(mockClient.keyEvents[0].keycode).toBe(4); // back
   });
 
-  it("should handle home action", () => {
+  it("should handle home action", async () => {
     const { result } = renderHook(() =>
       useControlHandler({
         client: mockClient,
@@ -171,11 +192,14 @@ describe("useControlHandler", () => {
       result.current.handleControlAction("home");
     });
 
+    // Wait for the async up event
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
     expect(mockClient.keyEvents).toHaveLength(2);
     expect(mockClient.keyEvents[0].keycode).toBe(3); // home
   });
 
-  it("should handle app switch action", () => {
+  it("should handle app switch action", async () => {
     const { result } = renderHook(() =>
       useControlHandler({
         client: mockClient,
@@ -188,11 +212,14 @@ describe("useControlHandler", () => {
       result.current.handleControlAction("app_switch");
     });
 
+    // Wait for the async up event
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
     expect(mockClient.keyEvents).toHaveLength(2);
     expect(mockClient.keyEvents[0].keycode).toBe(187); // app switch
   });
 
-  it("should handle menu action", () => {
+  it("should handle menu action", async () => {
     const { result } = renderHook(() =>
       useControlHandler({
         client: mockClient,
@@ -204,6 +231,9 @@ describe("useControlHandler", () => {
     act(() => {
       result.current.handleControlAction("menu");
     });
+
+    // Wait for the async up event
+    await new Promise((resolve) => setTimeout(resolve, 150));
 
     expect(mockClient.keyEvents).toHaveLength(2);
     expect(mockClient.keyEvents[0].keycode).toBe(82); // menu
@@ -226,13 +256,13 @@ describe("useControlHandler", () => {
 
     expect(mockClient.keyEvents).toHaveLength(0);
     expect(consoleSpy).toHaveBeenCalledWith(
-      "[useControlHandler] No keycode found for action: unknown_action"
+      "[ControlHandler] No keycode found for action: unknown_action"
     );
 
     consoleSpy.mockRestore();
   });
 
-  it("should handle IME switch correctly", () => {
+  it("should handle IME switch correctly", async () => {
     const { result } = renderHook(() =>
       useControlHandler({
         client: mockClient,
@@ -244,6 +274,9 @@ describe("useControlHandler", () => {
     act(() => {
       result.current.handleIMESwitch();
     });
+
+    // Wait for the async up event
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     expect(mockClient.keyEvents).toHaveLength(2);
     expect(mockClient.keyEvents[0]).toEqual({
@@ -309,7 +342,7 @@ describe("useControlHandler", () => {
     expect(mockClient.keyEvents).toHaveLength(0);
   });
 
-  it("should handle case insensitive actions", () => {
+  it("should handle case insensitive actions", async () => {
     const { result } = renderHook(() =>
       useControlHandler({
         client: mockClient,
@@ -321,6 +354,9 @@ describe("useControlHandler", () => {
     act(() => {
       result.current.handleControlAction("POWER");
     });
+
+    // Wait for the async up event
+    await new Promise((resolve) => setTimeout(resolve, 150));
 
     expect(mockClient.keyEvents).toHaveLength(2);
     expect(mockClient.keyEvents[0].keycode).toBe(26); // power keycode

@@ -23,7 +23,21 @@ export function useTouchHandler({
 }: UseTouchHandlerProps): UseTouchHandlerReturn {
   const handleTouchStart = useCallback(
     (e: React.TouchEvent) => {
-      if (!enabled || !client || !isConnected) return;
+      console.log(`[useTouchHandler] handleTouchStart called:`, {
+        enabled,
+        hasClient: !!client,
+        isConnected,
+        clientType: client?.constructor?.name,
+      });
+
+      if (!enabled || !client || !isConnected) {
+        console.log(`[useTouchHandler] handleTouchStart blocked:`, {
+          enabled,
+          hasClient: !!client,
+          isConnected,
+        });
+        return;
+      }
       client.handleTouchEvent(e.nativeEvent, "down");
     },
     [enabled, client, isConnected]

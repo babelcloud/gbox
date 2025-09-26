@@ -40,12 +40,16 @@ export const useDeviceManager = ({
       }
       // Transform device data to match our interface
       // The API returns 'id' but we use 'serial' internally
-      const transformedDevices = (data.devices || []).map((device: any) => ({
-        serial: device.id || device.serial || device.udid,
-        state: device.status || device.state, // API returns 'status', frontend expects 'state'
-        model: device["ro.product.model"] || device.model || "Unknown",
-        connected: device.connected,
-      }));
+      const transformedDevices = (data.devices || []).map(
+        (device: Record<string, unknown>) => ({
+          serial: (device.id || device.serial || device.udid) as string,
+          state: (device.status || device.state) as string, // API returns 'status', frontend expects 'state'
+          model: (device["ro.product.model"] ||
+            device.model ||
+            "Unknown") as string,
+          connected: device.connected as boolean,
+        })
+      );
       console.log(
         "[useDeviceManager] Transformed devices:",
         transformedDevices

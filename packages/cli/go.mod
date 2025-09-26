@@ -1,18 +1,20 @@
 module github.com/babelcloud/gbox/packages/cli
 
-go 1.23.7
+go 1.24.0
 
 require (
 	github.com/adrg/xdg v0.5.3
 	github.com/at-wat/ebml-go v0.17.1
 	github.com/babelcloud/gbox-sdk-go v0.1.0-alpha.3
-	github.com/gorilla/mux v1.8.1
+	github.com/bluenviron/gohlslib v1.4.0
+	github.com/bluenviron/mediacommon v1.11.1-0.20240525122142-20163863aa75
+	github.com/bluenviron/mediacommon/v2 v2.4.3
 	github.com/gorilla/websocket v1.5.3
 	github.com/pion/webrtc/v4 v4.1.4
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.20.1
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	golang.org/x/oauth2 v0.27.0
 	golang.org/x/term v0.31.0
 )
@@ -32,6 +34,9 @@ require (
 )
 
 require (
+	github.com/abema/go-mp4 v1.4.1 // indirect
+	github.com/asticode/go-astikit v0.30.0 // indirect
+	github.com/asticode/go-astits v1.13.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect

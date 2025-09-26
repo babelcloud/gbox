@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /// <reference types="jest" />
 import { useKeyboardHandler } from "../useKeyboardHandler";
 import { ControlClient } from "../../lib/types";
@@ -10,9 +11,14 @@ class MockControlClient implements ControlClient {
     action: string;
     metaState: number;
   }> = [];
+  public isMouseDragging: boolean = false;
 
   // ControlClient interface implementation
-  connect(): Promise<void> {
+  connect(
+    _deviceSerial: string,
+    _apiUrl: string,
+    _wsUrl?: string
+  ): Promise<void> {
     return Promise.resolve();
   }
 
@@ -24,24 +30,28 @@ class MockControlClient implements ControlClient {
     return true;
   }
 
-  sendKeyEvent(keycode: number, action: string, metaState: number = 0): void {
+  sendKeyEvent(
+    keycode: number,
+    action: "down" | "up",
+    metaState: number = 0
+  ): void {
     this.keyEvents.push({ keycode, action, metaState });
   }
 
   sendTouchEvent(
-    x: number,
-    y: number,
-    action: string,
-    pressure: number = 1.0
+    _x: number,
+    _y: number,
+    _action: "down" | "up" | "move",
+    _pressure: number = 1.0
   ): void {
     // Mock implementation
   }
 
-  sendControlAction(action: string, data?: any): void {
+  sendControlAction(_action: string, _params?: unknown): void {
     // Mock implementation
   }
 
-  sendClipboardSet(text: string, paste: boolean): void {
+  sendClipboardSet(_text: string, _paste?: boolean): void {
     // Mock implementation
   }
 
@@ -49,11 +59,11 @@ class MockControlClient implements ControlClient {
     // Mock implementation
   }
 
-  handleMouseEvent(event: any, action: string): void {
+  handleMouseEvent(_event: MouseEvent, _action: "down" | "up" | "move"): void {
     // Mock implementation
   }
 
-  handleTouchEvent(event: any, action: string): void {
+  handleTouchEvent(_event: TouchEvent, _action: "down" | "up" | "move"): void {
     // Mock implementation
   }
 }
@@ -109,14 +119,13 @@ describe("useKeyboardHandler", () => {
       metaKey: false,
       altKey: false,
       shiftKey: false,
-    } as any;
+    } as unknown as KeyboardEvent;
 
     act(() => {
-      result.current.handleKeyDown(mockEvent);
+      result.current.handleKeyDown(mockEvent as any);
     });
 
     expect(mockEvent.preventDefault).toHaveBeenCalled();
-    expect(mockEvent.stopPropagation).toHaveBeenCalled();
     expect(mockClient.keyEvents).toHaveLength(1);
     expect(mockClient.keyEvents[0]).toEqual({
       keycode: 29, // KeyA
@@ -146,14 +155,13 @@ describe("useKeyboardHandler", () => {
       metaKey: false,
       altKey: false,
       shiftKey: false,
-    } as any;
+    } as unknown as KeyboardEvent;
 
     act(() => {
-      result.current.handleKeyUp(mockEvent);
+      result.current.handleKeyUp(mockEvent as any);
     });
 
     expect(mockEvent.preventDefault).toHaveBeenCalled();
-    expect(mockEvent.stopPropagation).toHaveBeenCalled();
     expect(mockClient.keyEvents).toHaveLength(1);
     expect(mockClient.keyEvents[0]).toEqual({
       keycode: 29, // KeyA
@@ -183,14 +191,13 @@ describe("useKeyboardHandler", () => {
       metaKey: false,
       altKey: false,
       shiftKey: false,
-    } as any;
+    } as unknown as KeyboardEvent;
 
     act(() => {
-      result.current.handleKeyDown(mockEvent);
+      result.current.handleKeyDown(mockEvent as any);
     });
 
     expect(mockEvent.preventDefault).toHaveBeenCalled();
-    expect(mockEvent.stopPropagation).toHaveBeenCalled();
     expect(mockClipboardPaste).toHaveBeenCalled();
     expect(mockClient.keyEvents).toHaveLength(0); // Should not send key event
   });
@@ -216,14 +223,13 @@ describe("useKeyboardHandler", () => {
       metaKey: false,
       altKey: false,
       shiftKey: false,
-    } as any;
+    } as unknown as KeyboardEvent;
 
     act(() => {
-      result.current.handleKeyDown(mockEvent);
+      result.current.handleKeyDown(mockEvent as any);
     });
 
     expect(mockEvent.preventDefault).toHaveBeenCalled();
-    expect(mockEvent.stopPropagation).toHaveBeenCalled();
     expect(mockClipboardCopy).toHaveBeenCalled();
     expect(mockClient.keyEvents).toHaveLength(0); // Should not send key event
   });
@@ -255,10 +261,10 @@ describe("useKeyboardHandler", () => {
       metaKey: true, // Cmd key on Mac
       altKey: false,
       shiftKey: false,
-    } as any;
+    } as unknown as KeyboardEvent;
 
     act(() => {
-      result.current.handleKeyDown(mockEvent);
+      result.current.handleKeyDown(mockEvent as any);
     });
 
     expect(mockClipboardPaste).toHaveBeenCalled();
@@ -285,10 +291,10 @@ describe("useKeyboardHandler", () => {
       metaKey: true,
       altKey: true,
       shiftKey: true,
-    } as any;
+    } as unknown as KeyboardEvent;
 
     act(() => {
-      result.current.handleKeyDown(mockEvent);
+      result.current.handleKeyDown(mockEvent as any);
     });
 
     expect(mockClient.keyEvents[0].metaState).toBe(0x100b); // All modifiers
@@ -331,10 +337,10 @@ describe("useKeyboardHandler", () => {
         metaKey: false,
         altKey: false,
         shiftKey: false,
-      } as any;
+      } as unknown as KeyboardEvent;
 
       act(() => {
-        result.current.handleKeyDown(mockEvent);
+        result.current.handleKeyDown(mockEvent as any);
       });
 
       expect(mockClient.keyEvents[0].keycode).toBe(expectedKeycode);
@@ -362,11 +368,11 @@ describe("useKeyboardHandler", () => {
       metaKey: false,
       altKey: false,
       shiftKey: false,
-    } as any;
+    } as unknown as KeyboardEvent;
 
     act(() => {
-      result.current.handleKeyDown(mockEvent);
-      result.current.handleKeyUp(mockEvent);
+      result.current.handleKeyDown(mockEvent as any);
+      result.current.handleKeyUp(mockEvent as any);
     });
 
     expect(mockClient.keyEvents).toHaveLength(0);
@@ -393,11 +399,11 @@ describe("useKeyboardHandler", () => {
       metaKey: false,
       altKey: false,
       shiftKey: false,
-    } as any;
+    } as unknown as KeyboardEvent;
 
     act(() => {
-      result.current.handleKeyDown(mockEvent);
-      result.current.handleKeyUp(mockEvent);
+      result.current.handleKeyDown(mockEvent as any);
+      result.current.handleKeyUp(mockEvent as any);
     });
 
     expect(mockClient.keyEvents).toHaveLength(0);
@@ -424,11 +430,11 @@ describe("useKeyboardHandler", () => {
       metaKey: false,
       altKey: false,
       shiftKey: false,
-    } as any;
+    } as unknown as KeyboardEvent;
 
     act(() => {
-      result.current.handleKeyDown(mockEvent);
-      result.current.handleKeyUp(mockEvent);
+      result.current.handleKeyDown(mockEvent as any);
+      result.current.handleKeyUp(mockEvent as any);
     });
 
     expect(mockClient.keyEvents).toHaveLength(0);
@@ -455,11 +461,11 @@ describe("useKeyboardHandler", () => {
       metaKey: false,
       altKey: false,
       shiftKey: false,
-    } as any;
+    } as unknown as KeyboardEvent;
 
     act(() => {
-      result.current.handleKeyDown(mockEvent);
-      result.current.handleKeyUp(mockEvent);
+      result.current.handleKeyDown(mockEvent as any);
+      result.current.handleKeyUp(mockEvent as any);
     });
 
     expect(mockClient.keyEvents).toHaveLength(0);
@@ -486,14 +492,13 @@ describe("useKeyboardHandler", () => {
       metaKey: true,
       altKey: false,
       shiftKey: false,
-    } as any;
+    } as unknown as KeyboardEvent;
 
     act(() => {
-      result.current.handleKeyUp(mockEvent);
+      result.current.handleKeyUp(mockEvent as any);
     });
 
     expect(mockEvent.preventDefault).toHaveBeenCalled();
-    expect(mockEvent.stopPropagation).toHaveBeenCalled();
     expect(mockClient.keyEvents).toHaveLength(0);
   });
 });

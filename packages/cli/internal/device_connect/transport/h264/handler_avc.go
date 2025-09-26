@@ -26,7 +26,7 @@ func NewAVCHTTPHandler(deviceSerial string) *AVCHTTPHandler {
 // ServeHTTP implements http.Handler for AVC format H.264 streaming
 func (h *AVCHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logger := util.GetLogger()
-	logger.Info("Starting AVC format H.264 HTTP stream", "device", h.deviceSerial)
+	logger.Info("Starting AVC format H.264 HTTP stream", "device", h.deviceSerial, "url", r.URL.String())
 
 	// Set headers for AVC format H.264 streaming
 	w.Header().Set("Content-Type", "video/h264")
@@ -46,28 +46,46 @@ func (h *AVCHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	subscriberID := fmt.Sprintf("avc_http_%d", time.Now().UnixNano())
 
 	// Subscribe to video stream
-	videoCh := source.SubscribeVideo(subscriberID, 100)
+	videoCh := source.SubscribeVideo(subscriberID, 1000)
 	defer source.UnsubscribeVideo(subscriberID)
 
-	// Send SPS/PPS first if available (convert to AVC format)
-	if spsPps := source.GetSpsPps(); len(spsPps) > 0 {
-		avcSpsPps, convertErr := h.converter.Convert(spsPps)
-		if convertErr != nil {
-			logger.Error("Failed to convert SPS/PPS to AVC format", "device", h.deviceSerial, "error", convertErr)
-			http.Error(w, "Failed to convert SPS/PPS", http.StatusInternalServerError)
-			return
-		}
+	// Wait for SPS/PPS data to be available (with timeout)
+	spsPpsSent := false
+	maxWaitTime := 10 * time.Second
+	checkInterval := 100 * time.Millisecond
+	startTime := time.Now()
 
-		if len(avcSpsPps) > 0 {
-			if _, err := w.Write(avcSpsPps); err != nil {
-				logger.Error("Failed to write AVC SPS/PPS", "device", h.deviceSerial, "error", err)
+	for time.Since(startTime) < maxWaitTime {
+		spsPps := source.GetSpsPps()
+		if len(spsPps) > 0 {
+			logger.Info("Converting SPS/PPS to AVC format", "device", h.deviceSerial, "originalSize", len(spsPps))
+			avcSpsPps, convertErr := h.converter.Convert(spsPps)
+			if convertErr != nil {
+				logger.Error("Failed to convert SPS/PPS to AVC format", "device", h.deviceSerial, "error", convertErr)
+				http.Error(w, "Failed to convert SPS/PPS", http.StatusInternalServerError)
 				return
 			}
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
+
+			if len(avcSpsPps) > 0 {
+				if _, err := w.Write(avcSpsPps); err != nil {
+					logger.Error("Failed to write AVC SPS/PPS", "device", h.deviceSerial, "error", err)
+					return
+				}
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+				logger.Info("Sent AVC SPS/PPS", "device", h.deviceSerial, "size", len(avcSpsPps))
+				spsPpsSent = true
+				break
+			} else {
+				logger.Warn("Empty AVC SPS/PPS after conversion", "device", h.deviceSerial)
 			}
-			logger.Info("Sent AVC SPS/PPS", "device", h.deviceSerial, "size", len(avcSpsPps))
 		}
+		time.Sleep(checkInterval)
+	}
+
+	if !spsPpsSent {
+		logger.Warn("SPS/PPS data not available within timeout, continuing without it", "device", h.deviceSerial)
 	}
 
 	// Stream video data

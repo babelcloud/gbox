@@ -222,15 +222,15 @@ func TestWriterCloser(t *testing.T) {
 	})
 }
 
-// TestStreamWebMForMSE tests the MSE streaming functionality
-func TestStreamWebMForMSE(t *testing.T) {
+// TestStreamWebM tests the WebM streaming functionality
+func TestStreamWebM(t *testing.T) {
 	t.Run("DeviceNotFound", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/stream/audio/test_device?codec=opus&format=webm&mse=true", nil)
+		req := httptest.NewRequest("GET", "/stream/audio/test_device?codec=opus&format=webm", nil)
 		req = req.WithContext(context.Background())
 		rr := httptest.NewRecorder()
 
 		service := NewAudioStreamingService()
-		err := service.StreamWebMForMSE("test_device", rr, req)
+		err := service.StreamWebM("test_device", rr, req)
 
 		if err == nil {
 			t.Error("Expected error for missing device, got nil")

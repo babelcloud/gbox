@@ -223,7 +223,7 @@ func (sc *ScrcpyConnection) startScrcpyServer() error {
 	// Build scrcpy server command
 	scidHex := fmt.Sprintf("%08x", sc.scid)
 
-	// Build command arguments with optimized settings for WebCodecs
+	// Build command arguments, codec selection depends on streaming mode
 	args := []string{
 		"-s", sc.deviceSerial, "shell",
 		"CLASSPATH=/data/local/tmp/scrcpy-server.jar",
@@ -235,14 +235,34 @@ func (sc *ScrcpyConnection) startScrcpyServer() error {
 		"control=true",
 		"cleanup=true",
 		"log_level=verbose", // Enable verbose logging to debug scroll issues
-		"video_codec_options=i-frame-interval=1",
+		"video_codec_options=i-frame-interval=2",
+		"video_codec=h264",
+		"video_encoder=c2.qti.avc.encoder",
 	}
 
-	// Add hardware video encoder if device supports it
-	// Use hardware encoder (c2.qti.avc.encoder) for better performance on Qualcomm devices
-	// args = append(args, "video_encoder=c2.qti.avc.encoder")
-	// args = append(args, "video_encoder=c2.android.avc.encoder")
-	// log.Printf("Using hardware video encoder (c2.qti.avc.encoder) for %s mode", sc.streamingMode)
+	// Select audio codec by mode:
+	// - separated (webm) and webrtc modes: use Opus
+	// - muxed (mp4) mode: use AAC
+	switch sc.streamingMode {
+	case "webm", "webrtc", "mse":
+		// Separated and WebRTC modes use Opus for better WebRTC compatibility
+		args = append(args,
+			"audio_codec=opus",
+			"audio_encoder=c2.android.opus.encoder",
+		)
+	case "mp4":
+		// Muxed mode uses AAC for MP4 container compatibility
+		args = append(args,
+			"audio_codec=aac",
+			"audio_encoder=c2.android.aac.encoder",
+		)
+	default:
+		// Default to Opus for unknown modes (better compatibility)
+		args = append(args,
+			"audio_codec=opus",
+			"audio_encoder=c2.android.opus.encoder",
+		)
+	}
 
 	cmd := exec.Command(sc.adbPath, args...)
 

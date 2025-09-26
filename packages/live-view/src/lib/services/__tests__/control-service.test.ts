@@ -10,7 +10,7 @@ class MockControlClient implements ControlClient {
     action: string;
     metaState: number;
   }> = [];
-  public controlActions: Array<{ action: string; params?: any }> = [];
+  public controlActions: Array<{ action: string; params?: unknown }> = [];
 
   async connect(
     _deviceSerial: string,
@@ -37,7 +37,7 @@ class MockControlClient implements ControlClient {
     _pressure?: number
   ): void {}
 
-  sendControlAction(action: string, params?: any): void {
+  sendControlAction(action: string, params?: unknown): void {
     this.controlActions.push({ action, params });
   }
 

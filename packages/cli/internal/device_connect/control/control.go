@@ -25,7 +25,7 @@ func (s *ControlService) HandleTouchEvent(msg map[string]interface{}, deviceSeri
 	pressure, _ := msg["pressure"].(float64)
 	pointerId, _ := msg["pointerId"].(float64)
 
-	util.GetLogger().Debug("Touch event", "device", deviceSerial, "action", action, "x", x, "y", y, "pressure", pressure, "pointerId", pointerId)
+	util.GetLogger().Debug("Touch event received", "device", deviceSerial, "action", action, "x", x, "y", y, "pressure", pressure, "pointerId", pointerId)
 
 	// 获取设备的 source
 	source := scrcpy.GetSource(deviceSerial)
@@ -65,7 +65,7 @@ func (s *ControlService) HandleTouchEvent(msg map[string]interface{}, deviceSeri
 		return err
 	}
 
-	util.GetLogger().Debug("Touch event sent successfully", "device", deviceSerial)
+	util.GetLogger().Debug("Touch event sent successfully", "device", deviceSerial, "action", action)
 	return nil
 }
 

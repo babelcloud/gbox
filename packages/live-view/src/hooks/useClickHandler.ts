@@ -56,15 +56,19 @@ export function useClickHandler({
               }, 10);
             }, 10);
           }, 10);
-
-          clickCountRef.current = 0;
-          lastClickTimeRef.current = 0;
-          lastClickPositionRef.current = { x: 0, y: 0 };
         }
       } else {
         clickCountRef.current = 1;
         console.log("[ClickHandler] Single click - position cursor");
       }
+
+      // Reset counters after processing
+      if (clickCountRef.current >= 3) {
+        clickCountRef.current = 0;
+        lastClickTimeRef.current = 0;
+        lastClickPositionRef.current = { x: 0, y: 0 };
+      }
+
       lastClickTimeRef.current = currentTime;
       lastClickPositionRef.current = currentPosition;
     },

@@ -7,11 +7,16 @@ import { renderHook, act } from "@testing-library/react";
 class MockControlClient implements ControlClient {
   public controlActions: Array<{
     action: string;
-    data?: any;
+    data?: unknown;
   }> = [];
+  public isMouseDragging: boolean = false;
 
   // ControlClient interface implementation
-  connect(): Promise<void> {
+  connect(
+    _deviceSerial: string,
+    _apiUrl: string,
+    _wsUrl?: string
+  ): Promise<void> {
     return Promise.resolve();
   }
 
@@ -23,24 +28,28 @@ class MockControlClient implements ControlClient {
     return true;
   }
 
-  sendKeyEvent(keycode: number, action: string, metaState: number = 0): void {
-    // Mock implementation
-  }
-
-  sendTouchEvent(
-    x: number,
-    y: number,
-    action: string,
-    pressure: number = 1.0
+  sendKeyEvent(
+    _keycode: number,
+    _action: "down" | "up",
+    _metaState: number = 0
   ): void {
     // Mock implementation
   }
 
-  sendControlAction(action: string, data?: any): void {
-    this.controlActions.push({ action, data });
+  sendTouchEvent(
+    _x: number,
+    _y: number,
+    _action: "down" | "up" | "move",
+    _pressure: number = 1.0
+  ): void {
+    // Mock implementation
   }
 
-  sendClipboardSet(text: string, paste: boolean): void {
+  sendControlAction(action: string, params?: unknown): void {
+    this.controlActions.push({ action, data: params });
+  }
+
+  sendClipboardSet(_text: string, _paste?: boolean): void {
     // Mock implementation
   }
 
@@ -48,11 +57,11 @@ class MockControlClient implements ControlClient {
     // Mock implementation
   }
 
-  handleMouseEvent(event: any, action: string): void {
+  handleMouseEvent(_event: MouseEvent, _action: "down" | "up" | "move"): void {
     // Mock implementation
   }
 
-  handleTouchEvent(event: any, action: string): void {
+  handleTouchEvent(_event: TouchEvent, _action: "down" | "up" | "move"): void {
     // Mock implementation
   }
 }
@@ -104,7 +113,7 @@ describe("useWheelHandler", () => {
       preventDefault: jest.fn(),
       stopPropagation: jest.fn(),
       target: mockElement,
-    } as any;
+    } as unknown as WheelEvent;
 
     act(() => {
       result.current.handleWheel(mockEvent);
@@ -151,7 +160,7 @@ describe("useWheelHandler", () => {
       preventDefault: jest.fn(),
       stopPropagation: jest.fn(),
       target: mockElement,
-    } as any;
+    } as unknown as WheelEvent;
 
     act(() => {
       result.current.handleWheel(mockEvent);
@@ -193,14 +202,14 @@ describe("useWheelHandler", () => {
       preventDefault: jest.fn(),
       stopPropagation: jest.fn(),
       target: mockElement,
-    } as any;
+    } as unknown as WheelEvent;
 
     act(() => {
       result.current.handleWheel(mockEvent);
     });
 
-    expect(mockClient.controlActions[0].data.hScroll).toBe(16); // Clamped to max 16
-    expect(mockClient.controlActions[0].data.vScroll).toBe(-16); // Clamped to min -16
+    expect((mockClient.controlActions[0].data as { hScroll: number; vScroll: number }).hScroll).toBe(-16); // Clamped to min -16
+    expect((mockClient.controlActions[0].data as { hScroll: number; vScroll: number }).vScroll).toBe(16); // Clamped to max 16
   });
 
   it("should handle zero scroll values", () => {
@@ -229,7 +238,7 @@ describe("useWheelHandler", () => {
       preventDefault: jest.fn(),
       stopPropagation: jest.fn(),
       target: mockElement,
-    } as any;
+    } as unknown as WheelEvent;
 
     act(() => {
       result.current.handleWheel(mockEvent);
@@ -266,7 +275,7 @@ describe("useWheelHandler", () => {
       preventDefault: jest.fn(),
       stopPropagation: jest.fn(),
       target: mockElement,
-    } as any;
+    } as unknown as WheelEvent;
 
     act(() => {
       result.current.handleWheel(mockEvent);
@@ -302,7 +311,7 @@ describe("useWheelHandler", () => {
       preventDefault: jest.fn(),
       stopPropagation: jest.fn(),
       target: mockElement,
-    } as any;
+    } as unknown as WheelEvent;
 
     act(() => {
       result.current.handleWheel(mockEvent);
@@ -339,7 +348,7 @@ describe("useWheelHandler", () => {
       preventDefault: jest.fn(),
       stopPropagation: jest.fn(),
       target: mockElement,
-    } as any;
+    } as unknown as WheelEvent;
 
     act(() => {
       result.current.handleWheel(mockEvent);
@@ -376,7 +385,7 @@ describe("useWheelHandler", () => {
       preventDefault: jest.fn(),
       stopPropagation: jest.fn(),
       target: mockElement,
-    } as any;
+    } as unknown as WheelEvent;
 
     act(() => {
       result.current.handleWheel(mockEvent);
@@ -404,7 +413,7 @@ describe("useWheelHandler", () => {
       preventDefault: jest.fn(),
       stopPropagation: jest.fn(),
       target: null,
-    } as any;
+    } as unknown as WheelEvent;
 
     act(() => {
       result.current.handleWheel(mockEvent);

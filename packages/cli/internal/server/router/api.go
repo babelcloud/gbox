@@ -38,6 +38,7 @@ func (r *APIRouter) RegisterRoutes(mux *http.ServeMux, server interface{}) {
 	mux.HandleFunc("/api/devices/{serial}", r.handlers.HandleDeviceAction)
 	mux.HandleFunc("/api/devices/{serial}/video", r.handlers.HandleDeviceVideo)
 	mux.HandleFunc("/api/devices/{serial}/audio", r.handlers.HandleDeviceAudio)
+	mux.HandleFunc("/api/devices/{serial}/stream", r.handlers.HandleDeviceStream)
 	mux.HandleFunc("/api/devices/{serial}/control", r.handlers.HandleDeviceControl)
 
 	// Box management endpoints (proxy to remote GBOX API)

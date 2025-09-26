@@ -1,17 +1,47 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/control"
+	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/scrcpy"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/audio"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/h264"
-	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/mse"
+	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/stream"
 	"github.com/babelcloud/gbox/packages/cli/internal/util"
 	"github.com/gorilla/websocket"
 )
+
+// setWebMStreamingHeaders sets HTTP headers for WebM audio streaming
+func setWebMStreamingHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "audio/webm; codecs=opus")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Range")
+}
+
+// setRawOpusStreamingHeaders sets HTTP headers for raw Opus audio streaming
+func setRawOpusStreamingHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "audio/opus")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+}
+
+// startStreamingResponse sets headers and starts the streaming response
+func startStreamingResponse(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusOK)
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+}
 
 // StreamingHandlers contains handlers for streaming routes
 type StreamingHandlers struct {
@@ -45,7 +75,7 @@ func (h *StreamingHandlers) buildURL(path string) string {
 	return path
 }
 
-// HandleVideoStream handles H.264 and MSE video streaming
+// HandleVideoStream handles H.264 video streaming
 func (h *StreamingHandlers) HandleVideoStream(w http.ResponseWriter, r *http.Request) {
 	// Extract device serial from path
 	path := strings.TrimPrefix(r.URL.Path, "/stream/video/")
@@ -61,6 +91,8 @@ func (h *StreamingHandlers) HandleVideoStream(w http.ResponseWriter, r *http.Req
 	mode := r.URL.Query().Get("mode")
 	format := r.URL.Query().Get("format")
 
+	// Debug logging for request parameters
+
 	switch mode {
 	case "h264":
 		// Check format parameter for AVC vs Annex-B
@@ -70,17 +102,22 @@ func (h *StreamingHandlers) HandleVideoStream(w http.ResponseWriter, r *http.Req
 			handler.ServeHTTP(w, r)
 		} else {
 			// Direct H.264 streaming (Annex-B format)
-			handler := h264.NewHTTPHandler(deviceSerial)
+			handler := h264.NewAnnexBHandler(deviceSerial)
 			handler.ServeHTTP(w, r)
 		}
 
-	case "mse":
-		// MSE fMP4 streaming
-		transport := mse.NewTransport(deviceSerial)
-		transport.ServeHTTP(w, r)
+	case "webm":
+		// WebM container streaming with H.264 video and Opus audio
+		handler := stream.NewWebMHandler(deviceSerial)
+		handler.ServeHTTP(w, r)
+
+	case "mp4":
+		// MP4 container streaming with H.264 video and Opus audio
+		handler := stream.NewMP4Handler(deviceSerial)
+		handler.ServeHTTP(w, r)
 
 	default:
-		http.Error(w, "Invalid mode. Supported: h264, mse", http.StatusBadRequest)
+		http.Error(w, "Invalid mode. Supported: h264, webm, mp4", http.StatusBadRequest)
 	}
 }
 
@@ -103,53 +140,96 @@ func (h *StreamingHandlers) HandleAudioStream(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Parse codec parameter
+	// Parse codec/format parameters
 	codec := r.URL.Query().Get("codec")
 	if codec == "" {
-		codec = "aac" // Default to AAC
+		codec = "aac" // default to AAC
 	}
-
-	// Parse format parameter
 	format := r.URL.Query().Get("format")
 
-	// Check for MSE-optimized WebM streaming
-	mseOptimized := r.URL.Query().Get("mse") == "true"
+	util.GetLogger().Debug("Audio parameters", "codec", codec, "format", format)
 
-	util.GetLogger().Debug("Audio parameters", "codec", codec, "format", format, "mse", mseOptimized)
-
-	// Handle MSE-optimized WebM streaming (new approach)
-	if codec == "opus" && format == "webm" && mseOptimized {
-		util.GetLogger().Debug("Using MSE WebM streaming", "device", deviceSerial)
+	switch codec {
+	case "opus":
+		// Determine streaming format and setup
 		audioService := audio.GetAudioService()
-		if err := audioService.StreamWebMForMSE(deviceSerial, w, r); err != nil {
-			util.GetLogger().Error("MSE WebM streaming error", "error", err)
-			http.Error(w, "MSE streaming failed", http.StatusInternalServerError)
+		if format == "webm" {
+			// WebM container streaming
+			util.GetLogger().Debug("Using WebM streaming", "device", deviceSerial)
+			setWebMStreamingHeaders(w)
+			startStreamingResponse(w)
+			if err := audioService.StreamWebM(deviceSerial, w, r); err != nil {
+				util.GetLogger().Error("WebM streaming error", "error", err)
+				http.Error(w, "WebM streaming failed", http.StatusInternalServerError)
+			}
+			return
 		}
-		return
+		// Raw Opus streaming
+		util.GetLogger().Debug("Using raw Opus streaming", "device", deviceSerial)
+		setRawOpusStreamingHeaders(w)
+		startStreamingResponse(w)
+		audioService.StreamOpus(deviceSerial, w)
+
+	case "aac":
+		// AAC dump: format=raw (default) or format=adts
+		withADTS := strings.ToLower(format) == "adts"
+
+		// Ensure scrcpy source in mp4 mode to use AAC encoder
+		source := scrcpy.GetOrCreateSourceWithMode(deviceSerial, "mp4")
+		scrcpy.StartSourceWithMode(deviceSerial, context.Background(), "mp4")
+
+		// Subscribe to audio stream
+		subscriberID := "audio_stream_" + deviceSerial + "_" + fmt.Sprint(time.Now().UnixNano())
+		audioCh := source.SubscribeAudio(subscriberID, 1000)
+		defer source.UnsubscribeAudio(subscriberID)
+
+		// Set headers
+		w.Header().Set("Content-Type", "audio/aac")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Transfer-Encoding", "chunked")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		// ADTS wrapper when requested
+		writeADTS := func(frame []byte) []byte {
+			if !withADTS || len(frame) == 0 {
+				return frame
+			}
+			// Assume AAC LC, 48kHz, stereo by default
+			profile := 1
+			srIdx := adtsSamplingFreqIndex(48000)
+			chCfg := 2
+			aacFrameLen := len(frame) + 7
+			hdr := make([]byte, 7)
+			hdr[0] = 0xFF
+			hdr[1] = 0xF1
+			hdr[2] = byte(((profile & 0x3) << 6) | ((srIdx & 0xF) << 2) | ((chCfg >> 2) & 0x1))
+			hdr[3] = byte(((chCfg & 0x3) << 6) | ((aacFrameLen >> 11) & 0x3))
+			hdr[4] = byte((aacFrameLen >> 3) & 0xFF)
+			hdr[5] = byte(((aacFrameLen & 0x7) << 5) | 0x1F)
+			hdr[6] = 0xFC
+			return append(hdr, frame...)
+		}
+
+		flusher, _ := w.(http.Flusher)
+		for sample := range audioCh {
+			data := writeADTS(sample.Data)
+			if len(data) == 0 {
+				continue
+			}
+			if _, err := w.Write(data); err != nil {
+				return
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+
+	default:
+		http.Error(w, "Invalid codec. Supported: opus, aac", http.StatusBadRequest)
 	}
-
-	// Only support Opus codec with WebM format
-	if codec != "opus" {
-		http.Error(w, "Invalid codec. Only 'opus' is supported", http.StatusBadRequest)
-		return
-	}
-
-	// Set WebM/Opus content type with chunked encoding for binary streaming
-	w.Header().Set("Content-Type", "audio/webm; codecs=opus")
-	w.Header().Set("Transfer-Encoding", "chunked") // Critical for binary data streaming
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-
-	// Write headers immediately to start the stream
-	w.WriteHeader(http.StatusOK)
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
-	}
-
-	// Stream Opus audio with WebM container (forced for consistency)
-	audioService := audio.GetAudioService()
-	audioService.StreamOpus(deviceSerial, w, "webm")
 }
 
 // HandleStreamInfo provides information about available streams
@@ -164,17 +244,15 @@ func (h *StreamingHandlers) HandleStreamInfo(w http.ResponseWriter, r *http.Requ
 	// For now, return basic info
 	response := map[string]interface{}{
 		"device":         deviceSerial,
-		"supportedModes": []string{"h264", "mse", "webrtc"},
+		"supportedModes": []string{"h264", "webrtc"},
 		"supportedFormats": map[string][]string{
 			"h264":  {"annexb", "avc"},
-			"mse":   {"fmp4"},
 			"audio": {"opus"},
 		},
 		"endpoints": map[string]string{
 			"video":          h.buildURL(fmt.Sprintf("/stream/video/%s", deviceSerial)),
 			"video_h264":     h.buildURL(fmt.Sprintf("/stream/video/%s?mode=h264", deviceSerial)),
 			"video_h264_avc": h.buildURL(fmt.Sprintf("/stream/video/%s?mode=h264&format=avc", deviceSerial)),
-			"video_mse":      h.buildURL(fmt.Sprintf("/stream/video/%s?mode=mse", deviceSerial)),
 			"audio":          h.buildURL(fmt.Sprintf("/stream/audio/%s?codec=opus", deviceSerial)),
 			"control":        h.buildURL(fmt.Sprintf("/stream/control/%s", deviceSerial)),
 			"webrtc":         "/webrtc/signaling", // WebRTC uses signaling endpoint
