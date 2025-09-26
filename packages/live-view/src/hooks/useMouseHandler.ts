@@ -27,7 +27,21 @@ export function useMouseHandler({
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      if (!enabled || !client || !isConnected) return;
+      console.log(`[useMouseHandler] handleMouseDown called:`, {
+        enabled,
+        hasClient: !!client,
+        isConnected,
+        clientType: client?.constructor?.name,
+      });
+
+      if (!enabled || !client || !isConnected) {
+        console.log(`[useMouseHandler] handleMouseDown blocked:`, {
+          enabled,
+          hasClient: !!client,
+          isConnected,
+        });
+        return;
+      }
       setIsMouseDragging(true);
       client.handleMouseEvent(e.nativeEvent, "down");
     },
@@ -45,8 +59,11 @@ export function useMouseHandler({
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
-      if (!enabled || !client || !isConnected) return;
+      if (!enabled || !client || !isConnected) {
+        return;
+      }
       if (isMouseDragging) {
+        console.log(`[useMouseHandler] handleMouseMove sending move event`);
         client.handleMouseEvent(e.nativeEvent, "move");
       }
     },

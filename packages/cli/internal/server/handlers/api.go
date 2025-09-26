@@ -84,6 +84,10 @@ func (h *APIHandlers) HandleDeviceControl(w http.ResponseWriter, req *http.Reque
 	h.deviceHandlers.HandleDeviceControl(w, req)
 }
 
+func (h *APIHandlers) HandleDeviceStream(w http.ResponseWriter, req *http.Request) {
+	h.deviceHandlers.HandleDeviceStream(w, req)
+}
+
 // ADB Expose endpoints - delegate to dedicated handlers
 func (h *APIHandlers) HandleADBExposeStart(w http.ResponseWriter, req *http.Request) {
 	h.adbExposeHandlers.HandleADBExposeStart(w, req)

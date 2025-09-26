@@ -43,6 +43,7 @@ type AudioPacket struct {
 	PTS        uint64
 	PacketSize uint32
 	Data       []byte
+    IsConfig   bool
 }
 
 // Device metadata
@@ -169,11 +170,14 @@ func ReadAudioPacket(reader io.Reader) (*AudioPacket, error) {
 		return nil, fmt.Errorf("failed to read packet data: %w", err)
 	}
 
-	return &AudioPacket{
-		PTS:        ptsFlags & PacketPTSMask,
-		PacketSize: packetSize,
-		Data:       data,
-	}, nil
+    // In scrcpy, audio config frames are flagged like video using PACKET_FLAG_CONFIG
+    isConfig := (ptsFlags & PacketFlagConfig) != 0
+    return &AudioPacket{
+        PTS:        ptsFlags & PacketPTSMask,
+        PacketSize: packetSize,
+        Data:       data,
+        IsConfig:   isConfig,
+    }, nil
 }
 
 // Read device metadata (following ACTUAL scrcpy protocol - only device name!)

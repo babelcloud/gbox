@@ -142,6 +142,7 @@ export class VideoRenderService {
     this.context.fillRect(0, 0, canvasWidth, canvasHeight);
 
     // Draw frame centered
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.context.drawImage(frame as any, drawX, drawY, drawWidth, drawHeight);
   }
 

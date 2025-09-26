@@ -54,7 +54,9 @@ describe("StatsService", () => {
     // Manually trigger FPS calculation by calling updateFPS directly
     // This simulates what happens when timeDiff >= 1.0
     const fps = 30;
-    (statsService as any).updateFPS(fps);
+    (statsService as unknown as { updateFPS: (fps: number) => void }).updateFPS(
+      fps
+    );
 
     expect(mockOnStatsUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ fps: 30 })
@@ -143,7 +145,7 @@ describe("StatsService", () => {
 
     const mockPC = {
       getStats: jest.fn().mockResolvedValue(mockStats),
-    } as any;
+    } as unknown as RTCPeerConnection;
 
     const metrics = await statsService.processWebRTCStats(mockPC);
 
@@ -203,7 +205,7 @@ describe("StatsService", () => {
   it("should handle errors in WebRTC stats processing", async () => {
     const mockPC = {
       getStats: jest.fn().mockRejectedValue(new Error("Stats error")),
-    } as any;
+    } as unknown as RTCPeerConnection;
 
     const consoleSpy = jest.spyOn(console, "error").mockImplementation();
 

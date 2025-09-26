@@ -131,7 +131,7 @@ func (s *Source) SendControl(msg core.ControlMessage) error {
 	if conn == nil {
 		// Don't return error for control connection not ready during startup
 		// This is expected during the initial connection phase
-		util.GetLogger().Debug("Control connection not ready, ignoring control message",
+		util.GetLogger().Warn("Control connection not ready, ignoring control message",
 			"device", s.deviceSerial, "msg_type", msg.Type)
 		return nil
 	}
@@ -144,9 +144,11 @@ func (s *Source) SendControl(msg core.ControlMessage) error {
 
 	// Send to device
 	if _, err := conn.Write(data); err != nil {
+		util.GetLogger().Error("Failed to send control message to device", "device", s.deviceSerial, "error", err)
 		return fmt.Errorf("failed to send control message: %w", err)
 	}
 
+	util.GetLogger().Debug("Control message sent successfully", "device", s.deviceSerial, "msg_type", msg.Type)
 	return nil
 }
 
@@ -333,13 +335,15 @@ func (s *Source) handleVideoStream(ctx context.Context, conn net.Conn) {
 			PTS:   int64(packet.PTS),
 		}
 
-		// Cache SPS/PPS if this is a config packet
+		// Cache SPS/PPS if this is a config packet, and do NOT publish as video sample
 		if packet.IsConfig {
+			logger.Info("Config packet received - caching SPS/PPS", "device", s.deviceSerial, "size", len(packet.Data))
 			s.mu.Lock()
 			s.spsPps = append([]byte{}, packet.Data...)
 			s.mu.Unlock()
 			s.pipeline.CacheSpsPps(packet.Data)
-			logger.Debug("SPS/PPS cached", "device", s.deviceSerial, "size", len(packet.Data))
+			logger.Info("SPS/PPS cached successfully", "device", s.deviceSerial, "size", len(packet.Data))
+			continue
 		}
 
 		// Log keyframes for monitoring
@@ -416,6 +420,11 @@ func (s *Source) handleAudioStream(ctx context.Context, conn net.Conn) {
 		// Update packet count and timestamp
 		packetCount++
 		lastPacketTime = time.Now()
+
+		// Skip audio config packets (they are not media samples)
+		if packet.IsConfig {
+			continue
+		}
 
 		// Create audio sample
 		sample := core.AudioSample{

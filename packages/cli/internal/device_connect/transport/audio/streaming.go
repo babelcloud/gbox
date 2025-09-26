@@ -115,16 +115,10 @@ func (s *AudioStreamingService) SetSource(source core.Source) {
 	s.source = source
 }
 
-// StreamOpus 流式处理 Opus 音频 - 只支持WebM格式
-func (s *AudioStreamingService) StreamOpus(deviceSerial string, writer io.Writer, format string) error {
-	logger := slog.With("device", deviceSerial, "format", format)
-	logger.Info("🎵 Starting Opus audio stream", "format", format)
-
-	// Only support WebM format
-	if format != "webm" {
-		logger.Error("❌ Unsupported format", "format", format)
-		return fmt.Errorf("unsupported format: %s. Only 'webm' is supported", format)
-	}
+// StreamOpus 流式处理 Opus 音频 - 裸格式，不封装 WebM
+func (s *AudioStreamingService) StreamOpus(deviceSerial string, writer io.Writer) error {
+	logger := slog.With("device", deviceSerial)
+	logger.Info("🎵 Starting raw Opus audio stream")
 
 	// Get audio stream from device source
 	source := scrcpy.GetSource(deviceSerial)
@@ -133,28 +127,16 @@ func (s *AudioStreamingService) StreamOpus(deviceSerial string, writer io.Writer
 		return fmt.Errorf("device not connected")
 	}
 
-	logger.Info("✅ Found scrcpy source for Opus streaming")
+	logger.Info("✅ Found scrcpy source for raw Opus streaming")
 
 	// Subscribe to audio stream
-	subscriberID := fmt.Sprintf("audio_opus_%p", writer)
+	subscriberID := fmt.Sprintf("audio_raw_opus_%p", writer)
 	audioCh := source.SubscribeAudio(subscriberID, 100)
 	defer source.UnsubscribeAudio(subscriberID)
 
-	logger.Info("🎵 Subscribed to Opus stream", "subscriberID", subscriberID)
-
-	// Create WebM muxer
-	muxer := NewWebMMuxer(writer)
-	defer muxer.Close()
-
-	// Write WebM header
-	if err := muxer.WriteHeader(); err != nil {
-		logger.Error("❌ Failed to write WebM header", "error", err)
-		return err
-	}
-	logger.Info("✅ WebM container initialized")
+	logger.Info("🎵 Subscribed to raw Opus stream", "subscriberID", subscriberID)
 
 	sampleCount := 0
-	startTime := time.Now()
 	for sample := range audioCh {
 		sampleCount++
 
@@ -163,59 +145,35 @@ func (s *AudioStreamingService) StreamOpus(deviceSerial string, writer io.Writer
 			continue
 		}
 
-		// Write frame using professional WebM muxer with comprehensive error recovery
-		timestamp := time.Since(startTime)
-
-		// Write frame using WebM muxer
-		if muxer != nil {
-			if writeErr := muxer.WriteOpusFrame(sample.Data, timestamp); writeErr != nil {
-				if writeErr == io.ErrClosedPipe {
-					logger.Info("🎵 Client disconnected, stopping audio stream", "frames_sent", sampleCount)
-				} else {
-					logger.Error("❌ Failed to write WebM frame", "error", writeErr, "frame", sampleCount)
-				}
-				// Mark muxer as failed and stop streaming
-				muxer = nil
+		// Write raw Opus data directly without WebM container
+		if _, err := writer.Write(sample.Data); err != nil {
+			if err == io.ErrClosedPipe {
+				logger.Info("🎵 Client disconnected, stopping raw audio stream", "frames_sent", sampleCount)
+			} else {
+				logger.Error("❌ Failed to write raw Opus data", "error", err, "frame", sampleCount)
 			}
-		}
-
-		// If muxer was set to nil due to panic, stop streaming
-		if muxer == nil {
-			logger.Info("🎵 Muxer failed due to panic, stopping stream", "frames_sent", sampleCount)
-			return nil
+			return err
 		}
 
 		// Log successful transmission for first few frames
 		if sampleCount <= 5 {
-			logger.Info("✅ Successfully sent WebM Opus data", "count", sampleCount, "size", len(sample.Data))
+			logger.Info("✅ Successfully sent raw Opus data", "count", sampleCount, "size", len(sample.Data))
 		}
 	}
 
 	return nil
 }
 
-// StreamWebMForMSE streams Opus audio as WebM optimized for MSE consumption
-func (s *AudioStreamingService) StreamWebMForMSE(deviceSerial string, w http.ResponseWriter, r *http.Request) error {
-	logger := slog.With("component", "mse_streaming", "device", deviceSerial)
-	logger.Info("🎵 Starting MSE-optimized WebM audio stream")
-
-	// Set HTTP headers for MSE streaming
-	w.Header().Set("Content-Type", "audio/webm; codecs=opus")
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Transfer-Encoding", "chunked")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Range")
-
-	// Start streaming immediately
-	w.WriteHeader(http.StatusOK)
+// StreamWebM streams Opus audio as WebM container
+func (s *AudioStreamingService) StreamWebM(deviceSerial string, w http.ResponseWriter, r *http.Request) error {
+	logger := slog.With("component", "webm_streaming", "device", deviceSerial)
+	logger.Info("🎵 Starting WebM audio stream")
 
 	// Ensure we can flush chunks
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		return fmt.Errorf("streaming not supported")
 	}
-	flusher.Flush()
 
 	// Set up client disconnect detection
 	closeNotifier, ok := w.(http.CloseNotifier)
@@ -243,8 +201,8 @@ func (s *AudioStreamingService) StreamWebMForMSE(deviceSerial string, w http.Res
 		return fmt.Errorf("device source not found: %s", deviceSerial)
 	}
 
-	// Subscribe to audio stream with larger buffer for MSE stability
-	subscriberID := fmt.Sprintf("mse_webm_%s_%d", deviceSerial, time.Now().UnixNano())
+	// Subscribe to audio stream with larger buffer for stability
+	subscriberID := fmt.Sprintf("webm_%s_%d", deviceSerial, time.Now().UnixNano())
 	audioCh := source.SubscribeAudio(subscriberID, 1000)
 	defer source.UnsubscribeAudio(subscriberID)
 
@@ -254,19 +212,14 @@ func (s *AudioStreamingService) StreamWebMForMSE(deviceSerial string, w http.Res
 	muxer := NewWebMMuxer(w)
 	defer muxer.Close()
 
-	// Write WebM header immediately for MSE initialization
+	// Write WebM header immediately
 	if err := muxer.WriteHeader(); err != nil {
 		logger.Error("Failed to write WebM header", "error", err)
 		return err
 	}
 	flusher.Flush()
 
-	logger.Info("✅ WebM header sent, starting audio data stream",
-		"headers", map[string]string{
-			"Content-Type":      "audio/webm; codecs=opus",
-			"Transfer-Encoding": "chunked",
-			"Cache-Control":     "no-cache, no-store, must-revalidate",
-		})
+	logger.Info("✅ WebM header sent, starting audio data stream")
 
 	startTime := time.Now()
 	frameCount := 0
@@ -317,7 +270,7 @@ func (s *AudioStreamingService) StreamWebMForMSE(deviceSerial string, w http.Res
 			if writeErr := muxer.WriteOpusFrame(sample.Data, timestamp); writeErr != nil {
 				// Check if this is a client disconnect (expected)
 				if writeErr == io.ErrClosedPipe {
-					logger.Info("🎵 Client disconnected during MSE streaming", "frames_sent", frameCount)
+					logger.Info("🎵 Client disconnected during WebM streaming", "frames_sent", frameCount)
 				} else {
 					logger.Warn("🎵 Write failed, stopping stream for client reconnect", "error", writeErr, "frame", frameCount)
 				}
@@ -330,7 +283,7 @@ func (s *AudioStreamingService) StreamWebMForMSE(deviceSerial string, w http.Res
 
 			// If muxer was set to nil due to panic, stop streaming
 			if muxer == nil {
-				logger.Info("🎵 MSE muxer failed, stopping stream", "frames_sent", frameCount)
+				logger.Info("🎵 WebM muxer failed, stopping stream", "frames_sent", frameCount)
 				connectionLost = true
 				return nil
 			}
@@ -352,7 +305,7 @@ func (s *AudioStreamingService) StreamWebMForMSE(deviceSerial string, w http.Res
 				// Log progress every 5 seconds
 				if frameCount%250 == 0 { // ~5s at 20ms frames
 					stats := muxer.GetStats()
-					logger.Info("🎵 MSE WebM streaming progress",
+					logger.Info("🎵 WebM streaming progress",
 						"frames", frameCount,
 						"duration", timestamp.Truncate(time.Millisecond),
 						"stats", stats)

@@ -10,9 +10,14 @@ class MockControlClient implements ControlClient {
     action: string;
     metaState: number;
   }> = [];
+  public isMouseDragging: boolean = false;
 
   // ControlClient interface implementation
-  connect(): Promise<void> {
+  connect(
+    _deviceSerial: string,
+    _apiUrl: string,
+    _wsUrl?: string
+  ): Promise<void> {
     return Promise.resolve();
   }
 
@@ -24,24 +29,28 @@ class MockControlClient implements ControlClient {
     return true;
   }
 
-  sendKeyEvent(keycode: number, action: string, metaState: number = 0): void {
+  sendKeyEvent(
+    keycode: number,
+    action: "down" | "up",
+    metaState: number = 0
+  ): void {
     this.keyEvents.push({ keycode, action, metaState });
   }
 
   sendTouchEvent(
-    x: number,
-    y: number,
-    action: string,
-    pressure: number = 1.0
+    _x: number,
+    _y: number,
+    _action: "down" | "up" | "move",
+    _pressure: number = 1.0
   ): void {
     // Mock implementation
   }
 
-  sendControlAction(action: string, data?: any): void {
+  sendControlAction(_action: string, _params?: unknown): void {
     // Mock implementation
   }
 
-  sendClipboardSet(text: string, paste: boolean): void {
+  sendClipboardSet(_text: string, _paste?: boolean): void {
     // Mock implementation
   }
 
@@ -49,11 +58,11 @@ class MockControlClient implements ControlClient {
     // Mock implementation
   }
 
-  handleMouseEvent(event: any, action: string): void {
+  handleMouseEvent(_event: MouseEvent, _action: "down" | "up" | "move"): void {
     // Mock implementation
   }
 
-  handleTouchEvent(event: any, action: string): void {
+  handleTouchEvent(_event: TouchEvent, _action: "down" | "up" | "move"): void {
     // Mock implementation
   }
 }
@@ -93,14 +102,15 @@ describe("useClickHandler", () => {
     const mockEvent = {
       clientX: 100,
       clientY: 200,
-    } as any;
+    } as unknown as MouseEvent;
 
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
 
     expect(consoleSpy).toHaveBeenCalledWith(
-      "[useClickHandler] Single click - position cursor"
+      "[ClickHandler] Single click - position cursor"
     );
     expect(mockClient.keyEvents).toHaveLength(0); // Single click doesn't send key events
 
@@ -121,27 +131,29 @@ describe("useClickHandler", () => {
     const mockEvent = {
       clientX: 100,
       clientY: 200,
-    } as any;
+    } as unknown as MouseEvent;
 
     // First click
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
 
     // Second click within 500ms and 50px
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
 
     expect(consoleSpy).toHaveBeenCalledWith(
-      "[useClickHandler] Double click - select word"
+      "[ClickHandler] Double click - select word"
     );
     expect(mockClient.keyEvents).toHaveLength(0); // Double click doesn't send key events
 
     consoleSpy.mockRestore();
   });
 
-  it("should handle triple click correctly", () => {
+  it("should handle triple click correctly", async () => {
     const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
 
     const { result } = renderHook(() =>
@@ -155,26 +167,33 @@ describe("useClickHandler", () => {
     const mockEvent = {
       clientX: 100,
       clientY: 200,
-    } as any;
+    } as unknown as MouseEvent;
 
     // First click
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
 
     // Second click
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
 
     // Third click
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
 
     expect(consoleSpy).toHaveBeenCalledWith(
-      "[useClickHandler] Triple click - select line"
+      "[ClickHandler] Triple click - select line"
     );
+
+    // Wait for the async key events to complete
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
     expect(mockClient.keyEvents).toHaveLength(4); // Ctrl down, A down, A up, Ctrl up
     expect(mockClient.keyEvents[0]).toEqual({
       keycode: 113, // Ctrl down
@@ -200,7 +219,7 @@ describe("useClickHandler", () => {
     consoleSpy.mockRestore();
   });
 
-  it("should reset click count after triple click", () => {
+  it("should reset click count after triple click", async () => {
     const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
 
     const { result } = renderHook(() =>
@@ -214,18 +233,24 @@ describe("useClickHandler", () => {
     const mockEvent = {
       clientX: 100,
       clientY: 200,
-    } as any;
+    } as unknown as MouseEvent;
 
     // Triple click
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
+
+    // Wait for the async key events to complete
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(mockClient.keyEvents).toHaveLength(4);
 
@@ -233,11 +258,12 @@ describe("useClickHandler", () => {
     mockClient.keyEvents = [];
 
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
 
     expect(consoleSpy).toHaveBeenCalledWith(
-      "[useClickHandler] Single click - position cursor"
+      "[ClickHandler] Single click - position cursor"
     );
     expect(mockClient.keyEvents).toHaveLength(0);
 
@@ -258,11 +284,12 @@ describe("useClickHandler", () => {
     const mockEvent = {
       clientX: 100,
       clientY: 200,
-    } as any;
+    } as unknown as MouseEvent;
 
     // First click
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
 
     // Wait more than 500ms (simulate by advancing time)
@@ -270,11 +297,12 @@ describe("useClickHandler", () => {
 
     // Second click - should be treated as single click
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
 
     expect(consoleSpy).toHaveBeenCalledWith(
-      "[useClickHandler] Single click - position cursor"
+      "[ClickHandler] Single click - position cursor"
     );
     expect(consoleSpy).toHaveBeenCalledTimes(2); // Two single clicks
 
@@ -294,16 +322,18 @@ describe("useClickHandler", () => {
 
     // First click
     act(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       result.current.handleClick({ clientX: 100, clientY: 200 } as any);
     });
 
     // Second click more than 50px away
     act(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       result.current.handleClick({ clientX: 200, clientY: 300 } as any);
     });
 
     expect(consoleSpy).toHaveBeenCalledWith(
-      "[useClickHandler] Single click - position cursor"
+      "[ClickHandler] Single click - position cursor"
     );
     expect(consoleSpy).toHaveBeenCalledTimes(2); // Two single clicks
 
@@ -324,10 +354,11 @@ describe("useClickHandler", () => {
     const mockEvent = {
       clientX: 100,
       clientY: 200,
-    } as any;
+    } as unknown as MouseEvent;
 
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
 
     expect(consoleSpy).not.toHaveBeenCalled();
@@ -350,10 +381,11 @@ describe("useClickHandler", () => {
     const mockEvent = {
       clientX: 100,
       clientY: 200,
-    } as any;
+    } as unknown as MouseEvent;
 
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
 
     expect(consoleSpy).not.toHaveBeenCalled();
@@ -376,10 +408,11 @@ describe("useClickHandler", () => {
     const mockEvent = {
       clientX: 100,
       clientY: 200,
-    } as any;
+    } as unknown as MouseEvent;
 
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
 
     expect(consoleSpy).not.toHaveBeenCalled();
@@ -388,7 +421,7 @@ describe("useClickHandler", () => {
     consoleSpy.mockRestore();
   });
 
-  it("should handle rapid clicks correctly", () => {
+  it("should handle rapid clicks correctly", async () => {
     const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
 
     const { result } = renderHook(() =>
@@ -402,25 +435,33 @@ describe("useClickHandler", () => {
     const mockEvent = {
       clientX: 100,
       clientY: 200,
-    } as any;
+    } as unknown as MouseEvent;
 
     // Rapid clicks
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
     act(() => {
-      result.current.handleClick(mockEvent);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result.current.handleClick(mockEvent as any);
     });
 
     expect(consoleSpy).toHaveBeenCalledWith(
-      "[useClickHandler] Triple click - select line"
+      "[ClickHandler] Triple click - select line"
     );
+
+    // Wait for the async key events to complete
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
     expect(mockClient.keyEvents).toHaveLength(4); // Only triple click sends key events
 
     consoleSpy.mockRestore();

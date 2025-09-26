@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AndroidLiveViewProps, Stats, Device } from '../types';
-import { WebRTCClientRefactored } from '../lib/webrtc-client';
-import { H264ClientRefactored } from '../lib/h264-client';
+import { AndroidLiveViewProps, Stats, Device, ConnectionState } from '../types';
+import { WebRTCClient } from '../lib/webrtc-client';
+import { H264Client } from '../lib/separated-client';
+import { MP4Client } from '../lib/muxed-client';
 import { DeviceList } from './DeviceList';
 import { ControlButtons } from './ControlButtons';
 import { 
@@ -18,8 +19,8 @@ import styles from './AndroidLiveView.module.css';
 
 export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
   apiUrl = 'http://localhost:29888/api',
-  wsUrl = 'ws://localhost:8080/ws',
-  mode = 'h264',
+  wsUrl = 'ws://localhost:29888',
+  mode = 'separated',
   deviceSerial,
   autoConnect = false,
   showDeviceList = true,
@@ -35,15 +36,16 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const touchIndicatorRef = useRef<HTMLDivElement>(null);
   
-  // Use a polymorphic client ref so we can switch among WebRTC/H264
-  const clientRef = useRef<WebRTCClientRefactored | H264ClientRefactored | null>(null);
+  // Use a polymorphic client ref so we can switch among WebRTC/H264/WebM
+  const clientRef = useRef<WebRTCClient | H264Client | MP4Client | null>(null);
   
   const [connectionStatus, setConnectionStatus] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
   const [stats, setStats] = useState<Stats>({ fps: 0, resolution: '', latency: 0 });
   const [keyboardCaptureEnabled] = useState(true);
-  const [currentMode, setCurrentMode] = useState<'webrtc' | 'h264'>(mode as 'webrtc' | 'h264');
+  const [currentMode, setCurrentMode] = useState<'webrtc' | 'separated' | 'muxed'>(mode as 'webrtc' | 'separated' | 'muxed');
   const [userDisconnected, setUserDisconnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [touchIndicator, setTouchIndicator] = useState<{ visible: boolean; x: number; y: number; dragging: boolean }>({
     visible: false,
     x: 0,
@@ -96,6 +98,7 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
     isConnected,
   });
 
+
   const clickHandler = useClickHandler({
     client: clientRef.current,
     enabled: isConnected,
@@ -134,13 +137,21 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
     if (currentMode === 'webrtc' && videoRef.current) {
       videoWidth = videoRef.current.videoWidth || 1080;
       videoHeight = videoRef.current.videoHeight || 2340;
-    } else if (currentMode === 'h264' && canvasRef.current) {
+    } else if (currentMode === 'separated' && canvasRef.current) {
       // Get canvas from the container
       const canvas = canvasRef.current.querySelector('canvas');
       if (canvas && canvas.width > 0 && canvas.height > 0) {
         videoWidth = canvas.width;
         videoHeight = canvas.height;
         console.log('[Video] Using H264 canvas dimensions:', { videoWidth, videoHeight });
+      }
+    } else if (currentMode === 'muxed' && containerRef.current) {
+      // For MP4 mode, find the video element created by MP4Client
+      const videoElement = containerRef.current.querySelector('video');
+      if (videoElement && videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+        videoWidth = videoElement.videoWidth;
+        videoHeight = videoElement.videoHeight;
+        console.log('[Video] Using MP4 video dimensions:', { videoWidth, videoHeight });
       }
     }
 
@@ -162,8 +173,8 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
       newHeight = availableHeight;
     }
 
-    // For H264 mode, allow video to fill more of the screen
-    if (currentMode === 'h264') {
+    // For H264 mode (separated), allow video to fill more of the screen
+    if (currentMode === 'separated') {
       // Check if we're in landscape mode (width > height)
       const isLandscape = availableWidth > availableHeight;
       
@@ -196,10 +207,29 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
     let targetElement: HTMLElement | null = null;
     if (currentMode === 'webrtc') {
       targetElement = videoRef.current;
-
-    } else if (currentMode === 'h264' && canvasRef.current) {
+    } else if (currentMode === 'separated' && canvasRef.current) {
       // Get canvas from the container
       targetElement = canvasRef.current.querySelector('canvas');
+    } else if (currentMode === 'muxed') {
+      // For MP4 mode, find the video element created by MP4Client
+      // Try multiple selectors to find the video element
+      const selectors = [
+        '#video-mp4-container video',
+        '.video-container video',
+        'video[src^="blob:"]'
+      ];
+      
+      for (const selector of selectors) {
+        targetElement = document.querySelector(selector) as HTMLVideoElement;
+        if (targetElement) {
+          console.log(`[Video] Found MP4 video element with selector: ${selector}`);
+          break;
+        }
+      }
+      
+      if (!targetElement) {
+        console.log('[Video] MP4 video element not found yet, will retry later');
+      }
     }
     
     if (targetElement) {
@@ -226,99 +256,50 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
 
   // Debounced resize handler
   const debouncedResizeVideo = React.useCallback(() => {
-    clearTimeout((window as any).resizeTimeout);
-    (window as any).resizeTimeout = setTimeout(resizeVideo, 100);
-  }, [resizeVideo]);
+    clearTimeout((window as unknown as { resizeTimeout: number }).resizeTimeout);
+    (window as unknown as { resizeTimeout: number }).resizeTimeout = setTimeout(() => {
+      resizeVideo();
+    }, 100);
+  }, []);
 
-  // Initialize client based on mode
-  const initializeClient = React.useCallback(() => {
-    if (!containerRef.current) return;
-
-    // Clean up existing client
-    if (clientRef.current) {
-      clientRef.current.disconnect();
-      clientRef.current = null;
-    }
-
-    // Create new client based on mode
-    if (currentMode === 'webrtc') {
-      clientRef.current = new WebRTCClientRefactored(containerRef.current, {
-        onConnectionStateChange: (state, message) => {
-          setConnectionStatus(message || state);
-        setIsConnected(state === 'connected');
-          if (state === 'connected') {
-            onConnect?.(currentDevice!);
-          } else if (state === 'disconnected') {
-            onDisconnect?.();
-          }
-        },
-        onError: (error) => {
-          console.error('[WebRTCClient] Error:', error);
-          onError?.(error);
-        },
-        onStatsUpdate: (stats) => {
-          setStats(stats);
-        },
-        enableAudio: true,
-        audioCodec: 'opus',
-      });
-    } else {
-      clientRef.current = new H264ClientRefactored(containerRef.current, {
-        onConnectionStateChange: (state, message) => {
-          setConnectionStatus(message || state);
-          setIsConnected(state === 'connected');
-          if (state === 'connected') {
-            onConnect?.(currentDevice!);
-        } else if (state === 'disconnected') {
-          onDisconnect?.();
-        }
-      },
-        onError: (error) => {
-          console.error('[H264Client] Error:', error);
-        onError?.(error);
-      },
-        onStatsUpdate: (stats) => {
-          setStats(stats);
-        },
-        enableAudio: true,
-        audioCodec: 'opus',
-      });
-    }
-  }, [currentMode, currentDevice, onConnect, onDisconnect, onError]);
 
   // Connect to device
-  const connectToDevice = React.useCallback(async (device: Device) => {
-    // Initialize client if it doesn't exist
+  const connectToDevice = React.useCallback(async (device: Device, forceReconnect: boolean = false) => {
+    console.log('[AndroidLiveView] connectToDevice called:', {
+      device: device.serial,
+      forceReconnect,
+      hasClient: !!clientRef.current,
+      isConnecting
+    });
+    
     if (!clientRef.current) {
-      initializeClient();
-    }
-
-    if (!clientRef.current) {
-      console.error("[AndroidLiveView] Failed to initialize client");
+      console.log('[AndroidLiveView] No client available, returning');
       return;
     }
 
+    // Prevent multiple simultaneous connections
+    if (isConnecting) {
+      console.log('[AndroidLiveView] Connection already in progress, skipping');
+      return;
+    }
+
+    console.log('[AndroidLiveView] Starting connection process');
+    setIsConnecting(true);
     try {
       setConnectionStatus('Connecting...');
-      await clientRef.current.connect(device.serial, apiUrl, wsUrl);
       
-      // For WebRTC, set up video element when ready
-      if (currentMode === 'webrtc' && videoRef.current) {
-        const webrtcClient = clientRef.current as WebRTCClientRefactored;
-        webrtcClient.setupVideoElementWhenReady();
+      if (clientRef.current instanceof MP4Client) {
+        // MP4Client needs wsUrl for control WebSocket connection
+        await clientRef.current.connect(device.serial, apiUrl, wsUrl, forceReconnect);
+      } else {
+        // Other clients (WebRTC, H264)
+        await clientRef.current.connect(device.serial, apiUrl, wsUrl);
       }
       
-      // For H264, set up canvas element
-      if (currentMode === 'h264' && canvasRef.current && clientRef.current) {
-        const h264Client = clientRef.current as H264ClientRefactored;
-        // Set the correct canvas container
-        h264Client.setCanvasContainer(canvasRef.current);
-        const canvas = h264Client.getCanvas();
-        if (canvas) {
-          // Clear the container and add the canvas
-          canvasRef.current.innerHTML = '';
-          canvasRef.current.appendChild(canvas);
-        }
+      // For WebRTC, set up video element when ready
+      if (clientRef.current instanceof WebRTCClient && videoRef.current) {
+        const webrtcClient = clientRef.current as WebRTCClient;
+        webrtcClient.setupVideoElementWhenReady();
       }
       
       // Resize video after connection
@@ -326,12 +307,15 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
     } catch (error) {
       console.error('[AndroidLiveView] Connection failed:', error);
       onError?.(error as Error);
+    } finally {
+      setIsConnecting(false);
     }
-  }, [apiUrl, wsUrl, currentMode, resizeVideo, onError, initializeClient]);
+  }, [apiUrl, wsUrl, onError]);
 
-  // Disconnect from device
+  // Disconnect from device (for mode switching)
   const disconnectFromDevice = React.useCallback(async () => {
     setUserDisconnected(true); // Mark as user-initiated disconnect
+    setIsConnecting(false); // Reset connecting state
     
     if (clientRef.current) {
       await clientRef.current.disconnect();
@@ -342,33 +326,78 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
     onDisconnect?.();
   }, [onDisconnect]);
 
+  // Reset connection (for device switching)
+  const resetDeviceConnection = React.useCallback(async () => {
+    setIsConnecting(false); // Reset connecting state
+    if (clientRef.current && clientRef.current instanceof H264Client) {
+      await clientRef.current.resetConnection();
+    } else if (clientRef.current) {
+      // For other client types, just disconnect but keep the client reference
+      // This allows for reconnection in device switching scenarios
+      clientRef.current.disconnect();
+    }
+    setIsConnected(false);
+    setConnectionStatus('');
+  }, []);
+
   // Handle mode change
-  const handleModeChange = React.useCallback((newMode: 'webrtc' | 'h264') => {
+  const handleModeChange = React.useCallback((newMode: 'webrtc' | 'separated' | 'muxed') => {
     if (newMode !== currentMode) {
-      setCurrentMode(newMode);
+      console.log(`[AndroidLiveView] Mode changing from ${currentMode} to ${newMode}`);
       
       // Update URL parameter
       const url = new URL(window.location.href);
       url.searchParams.set('mode', newMode);
       window.history.replaceState({}, '', url.toString());
       
-      if (isConnected) {
-        disconnectFromDevice();
+      // If we have a connected device, preserve the connection state
+      const wasConnected = isConnected;
+      const connectedDevice = currentDevice;
+      
+      // Reset connection state temporarily
+      setIsConnected(false);
+      setConnectionStatus('');
+      
+      setCurrentMode(newMode);
+      
+      // If we had a connected device, reconnect it in the new mode
+      if (wasConnected && connectedDevice && !isConnecting) {
+        console.log(`[AndroidLiveView] Reconnecting device ${connectedDevice.serial} in ${newMode} mode`);
+        setTimeout(() => {
+          if (clientRef.current) {
+            connectToDevice(connectedDevice, false); // Mode change doesn't need force reconnect
+          }
+        }, 100);
       }
     }
-  }, [currentMode, isConnected, disconnectFromDevice]);
+  }, [currentMode, isConnected, currentDevice]);
 
   // Handle device selection
   const handleDeviceSelect = React.useCallback(async (device: Device) => {
-    // If currently connected, disconnect first
+    console.log(`[AndroidLiveView] Device selection: ${device.serial} (currently connected: ${isConnected})`);
+    
+    // Check if it's the same device
+    const isDifferentDevice = currentDevice && currentDevice.serial !== device.serial;
+    
+    // If currently connected, reset connection (keep UI elements)
     if (isConnected) {
-      await disconnectFromDevice();
+      await resetDeviceConnection();
     }
     
     // Set new device and reset disconnect flag
     setCurrentDevice(device);
     setUserDisconnected(false); // Reset user disconnect flag when selecting new device
-  }, [isConnected, disconnectFromDevice]);
+    
+    // Connect to the new device immediately
+    if (clientRef.current) {
+      console.log('[AndroidLiveView] Connecting to new device immediately');
+      setTimeout(() => {
+        if (clientRef.current) {
+          connectToDevice(device, !!isDifferentDevice);
+        }
+      }, 50);
+    }
+  }, [isConnected, currentDevice, resetDeviceConnection, connectToDevice]);
 
   // Handle control actions
   const handleControlAction = React.useCallback((action: string) => {
@@ -396,31 +425,104 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
 
   // Effects
   useEffect(() => {
-    initializeClient();
+    console.log('[AndroidLiveView] Initializing client for mode:', currentMode);
+    
+    // Clean up existing client
+    if (clientRef.current) {
+      console.log('[AndroidLiveView] Cleaning up existing client before mode change');
+      clientRef.current.disconnect();
+      clientRef.current = null;
+    }
+
+    // Create new client based on mode
+    if (currentMode === 'webrtc' && videoRef.current) {
+      clientRef.current = new WebRTCClient(videoRef.current, {
+        onConnectionStateChange: (state, message) => {
+          setConnectionStatus(message || state);
+          setIsConnected(state === 'connected');
+          if (state === 'connected' && currentDevice) {
+            onConnect?.(currentDevice);
+          } else if (state === 'disconnected') {
+            onDisconnect?.();
+          }
+        },
+        onError: (error) => {
+          onError?.(error);
+        },
+        onStatsUpdate: (stats) => {
+          setStats(stats);
+        },
+        enableAudio: true,
+        audioCodec: 'opus',
+      });
+    } else if (currentMode === 'separated' && canvasRef.current) {
+      clientRef.current = new H264Client(canvasRef.current, {
+        onConnectionStateChange: (state: string, message?: string) => {
+          console.log(`[AndroidLiveView] H264Client connection state change:`, { state, message });
+          setConnectionStatus(message || state);
+          setIsConnected(state === 'connected');
+          console.log(`[AndroidLiveView] isConnected set to:`, state === 'connected');
+          if (state === 'connected' && currentDevice) {
+            onConnect?.(currentDevice);
+          } else if (state === 'disconnected') {
+            onDisconnect?.();
+          }
+        },
+        onError: (error: Error) => {
+          onError?.(error);
+        },
+        onStatsUpdate: (stats: Stats) => {
+          setStats(stats);
+        },
+        enableAudio: true,
+        audioCodec: 'opus',
+      });
+    } else if (currentMode === 'muxed' && containerRef.current) {
+      clientRef.current = new MP4Client({
+        onConnectionStateChange: (state: ConnectionState, message?: string) => {
+          setConnectionStatus(message || state);
+          setIsConnected(state === 'connected');
+          if (state === 'connected' && currentDevice) {
+            onConnect?.(currentDevice);
+          } else if (state === 'disconnected') {
+            onDisconnect?.();
+          }
+        },
+        onError: (error: Error) => {
+          onError?.(error);
+        },
+        onStatsUpdate: (stats: Stats) => {
+          setStats(stats);
+        },
+      });
+    }
+
     return () => {
-          if (clientRef.current) {
+      if (clientRef.current) {
         clientRef.current.disconnect();
+        clientRef.current = null;
       }
     };
-  }, [initializeClient]);
+  }, [currentMode]);
 
+  // Remove automatic connection useEffect to prevent multiple triggers
+  // Connection will be handled manually in handleDeviceSelect and handleModeChange
+
+  // Handle device switching - recreate client if needed
   useEffect(() => {
-    if (currentDevice && !isConnected && !userDisconnected) {
-      connectToDevice(currentDevice);
+    if (currentDevice && !isConnected && !userDisconnected && !clientRef.current) {
+      console.log('[AndroidLiveView] Device switched, need to recreate client');
+      // The client creation will be handled by the mode change useEffect
+      // This is just to ensure we don't miss device switches
     }
-  }, [currentDevice, isConnected, userDisconnected, connectToDevice]);
+  }, [currentDevice, isConnected, userDisconnected]);
 
   useEffect(() => {
     window.addEventListener('resize', debouncedResizeVideo);
     return () => {
       window.removeEventListener('resize', debouncedResizeVideo);
     };
-  }, [debouncedResizeVideo]);
-
-  // Update control handler client reference
-  useEffect(() => {
-    // This will be handled by the control handler internally
-  }, [clientRef.current]);
+  }, []);
 
   return (
     <div className={`${styles.androidLiveView} ${className || ''}`}>
@@ -441,10 +543,16 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
                 <div className={styles.modeSwitcherTitle}>Streaming Mode</div>
                 <div className={styles.modeButtonGroup}>
                   <button
-                    onClick={() => handleModeChange('h264')}
-                    className={`${styles.modeBtn} ${currentMode === 'h264' ? styles.active : ''}`}
+                    onClick={() => handleModeChange('separated')}
+                    className={`${styles.modeBtn} ${currentMode === 'separated' ? styles.active : ''}`}
                   >
-                    H264+WebM+MSE
+                    Separated
+                  </button>
+                  <button
+                    onClick={() => handleModeChange('muxed')}
+                    className={`${styles.modeBtn} ${currentMode === 'muxed' ? styles.active : ''}`}
+                  >
+                    Muxed
                   </button>
                   <button
                     onClick={() => handleModeChange('webrtc')}
@@ -530,7 +638,7 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
                   }
                 }}
                 onClick={clickHandler.handleClick}
-                onWheel={wheelHandler.handleWheel as any}
+                onWheel={wheelHandler.handleWheel as unknown as React.WheelEventHandler<HTMLDivElement>}
                 tabIndex={0}
               >
                 {currentMode === 'webrtc' ? (
@@ -541,10 +649,11 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
                     playsInline
                     controls={false}
                   />
+                ) : currentMode === 'muxed' ? (
+                  <div ref={containerRef} id="video-mp4-container" className={styles.clientContainer} />
                 ) : (
                   <div ref={canvasRef} className={styles.video} />
                 )}
-                <div ref={containerRef} className={styles.clientContainer} />
               </div>
 
               {/* Android Control Buttons */}

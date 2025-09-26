@@ -9,20 +9,20 @@ import (
 	"github.com/babelcloud/gbox/packages/cli/internal/util"
 )
 
-// HTTPHandler handles HTTP-based H.264 streaming
-type HTTPHandler struct {
+// AnnexBHandler handles HTTP-based Annex-B format H.264 streaming
+type AnnexBHandler struct {
 	deviceSerial string
 }
 
-// NewHTTPHandler creates a new HTTP handler for H.264 streaming
-func NewHTTPHandler(deviceSerial string) *HTTPHandler {
-	return &HTTPHandler{
+// NewAnnexBHandler creates a new HTTP handler for Annex-B format H.264 streaming
+func NewAnnexBHandler(deviceSerial string) *AnnexBHandler {
+	return &AnnexBHandler{
 		deviceSerial: deviceSerial,
 	}
 }
 
-// ServeHTTP implements http.Handler for direct H.264 streaming
-func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// ServeHTTP implements http.Handler for Annex-B format H.264 streaming
+func (h *AnnexBHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logger := util.GetLogger()
 	logger.Info("Starting H.264 HTTP stream", "device", h.deviceSerial)
 
@@ -43,7 +43,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	subscriberID := fmt.Sprintf("h264_http_%d", time.Now().UnixNano())
 
 	// Subscribe to video stream
-	videoCh := source.SubscribeVideo(subscriberID, 100)
+	videoCh := source.SubscribeVideo(subscriberID, 1000)
 	defer source.UnsubscribeVideo(subscriberID)
 
 	// Send SPS/PPS first if available

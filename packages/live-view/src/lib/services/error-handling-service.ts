@@ -17,7 +17,7 @@ export interface ErrorContext {
   component: string;
   operation: string;
   timestamp: number;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ErrorRecoveryStrategy {
@@ -497,7 +497,7 @@ export class ErrorHandlingService {
   static createErrorContext(
     component: string,
     operation: string,
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ): ErrorContext {
     return {
       component,

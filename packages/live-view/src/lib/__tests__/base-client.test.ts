@@ -30,6 +30,10 @@ class MockBaseClient extends BaseClient {
   protected getLastWsUrl(): string | undefined {
     return this.lastWsUrl;
   }
+
+  measurePing(): Promise<number> {
+    return Promise.resolve(0);
+  }
 }
 
 // Mock HTML element
@@ -41,7 +45,7 @@ const mockContainer = {
   })),
   clientWidth: 800,
   clientHeight: 600,
-} as any;
+} as unknown as HTMLElement;
 
 // Mock canvas and context
 const mockCanvas = {
@@ -184,12 +188,15 @@ describe("BaseClient", () => {
   it("should handle connection errors", async () => {
     // Mock establishConnection to throw error
     jest
-      .spyOn(baseClient as any, "establishConnection")
+      .spyOn(
+        baseClient as unknown as { establishConnection: () => Promise<void> },
+        "establishConnection"
+      )
       .mockRejectedValue(new Error("Connection failed"));
 
     try {
       await baseClient.connect("device123", "http://api.example.com");
-    } catch (error) {
+    } catch (_error) {
       // Expected to throw
     }
 
@@ -245,10 +252,15 @@ describe("BaseClient", () => {
     expect(baseClient.isControlConnected()).toBe(false);
 
     // Mock connected state
-    (baseClient as any).isConnected = true;
-    (baseClient as any).isControlConnectedInternal = jest
-      .fn()
-      .mockReturnValue(true);
+    (
+      baseClient as unknown as {
+        isConnected: boolean;
+        isControlConnectedInternal: jest.Mock;
+      }
+    ).isConnected = true;
+    (
+      baseClient as unknown as { isControlConnectedInternal: jest.Mock }
+    ).isControlConnectedInternal = jest.fn().mockReturnValue(true);
 
     expect(baseClient.isControlConnected()).toBe(true);
   });
@@ -282,12 +294,21 @@ describe("BaseClient", () => {
 
   it("should handle error with context", () => {
     const error = new Error("Test error");
-    
+
     // Start the error handling service first
     baseClient.errorHandling.start();
-    
+
     // Call handleError directly
-    (baseClient as any).handleError(error, "TestComponent", "testOperation", {
+    (
+      baseClient as unknown as {
+        handleError: (
+          error: Error,
+          component: string,
+          operation: string,
+          context: Record<string, unknown>
+        ) => void;
+      }
+    ).handleError(error, "TestComponent", "testOperation", {
       test: "data",
     });
 
@@ -296,7 +317,11 @@ describe("BaseClient", () => {
   });
 
   it("should update connection state", () => {
-    (baseClient as any).updateConnectionState("connecting", "Test message");
+    (
+      baseClient as unknown as {
+        updateConnectionState: (state: string, message: string) => void;
+      }
+    ).updateConnectionState("connecting", "Test message");
 
     expect(mockOnConnectionStateChange).toHaveBeenCalledWith(
       "connecting",
@@ -305,26 +330,74 @@ describe("BaseClient", () => {
   });
 
   it("should start and stop services", () => {
-    (baseClient as any).startServices();
-    (baseClient as any).stopServices();
+    (
+      baseClient as unknown as {
+        startServices: () => void;
+        stopServices: () => void;
+      }
+    ).startServices();
+    (
+      baseClient as unknown as {
+        startServices: () => void;
+        stopServices: () => void;
+      }
+    ).stopServices();
 
     // Should not throw errors
     expect(baseClient).toBeDefined();
   });
 
   it("should handle reconnection", () => {
-    (baseClient as any).isReconnecting = false;
-    (baseClient as any).currentDevice = "device123";
-    (baseClient as any).getLastApiUrl = jest
-      .fn()
-      .mockReturnValue("http://api.example.com");
-    (baseClient as any).getLastWsUrl = jest
-      .fn()
-      .mockReturnValue("ws://ws.example.com");
+    (
+      baseClient as unknown as {
+        isReconnecting: boolean;
+        currentDevice: string;
+        getLastApiUrl: jest.Mock;
+        getLastWsUrl: jest.Mock;
+        startReconnection: () => void;
+      }
+    ).isReconnecting = false;
+    (
+      baseClient as unknown as {
+        isReconnecting: boolean;
+        currentDevice: string;
+        getLastApiUrl: jest.Mock;
+        getLastWsUrl: jest.Mock;
+        startReconnection: () => void;
+      }
+    ).currentDevice = "device123";
+    (
+      baseClient as unknown as {
+        isReconnecting: boolean;
+        currentDevice: string;
+        getLastApiUrl: jest.Mock;
+        getLastWsUrl: jest.Mock;
+        startReconnection: () => void;
+      }
+    ).getLastApiUrl = jest.fn().mockReturnValue("http://api.example.com");
+    (
+      baseClient as unknown as {
+        isReconnecting: boolean;
+        currentDevice: string;
+        getLastApiUrl: jest.Mock;
+        getLastWsUrl: jest.Mock;
+        startReconnection: () => void;
+      }
+    ).getLastWsUrl = jest.fn().mockReturnValue("ws://ws.example.com");
 
-    (baseClient as any).startReconnection();
+    (
+      baseClient as unknown as {
+        isReconnecting: boolean;
+        currentDevice: string;
+        getLastApiUrl: jest.Mock;
+        getLastWsUrl: jest.Mock;
+        startReconnection: () => void;
+      }
+    ).startReconnection();
 
-    expect((baseClient as any).isReconnecting).toBe(true);
+    expect(
+      (baseClient as unknown as { isReconnecting: boolean }).isReconnecting
+    ).toBe(true);
     expect(mockOnConnectionStateChange).toHaveBeenCalledWith(
       "connecting",
       "Reconnecting..."
@@ -332,11 +405,23 @@ describe("BaseClient", () => {
   });
 
   it("should stop reconnection", () => {
-    (baseClient as any).isReconnecting = true;
+    (
+      baseClient as unknown as {
+        isReconnecting: boolean;
+        stopReconnection: () => void;
+      }
+    ).isReconnecting = true;
 
-    (baseClient as any).stopReconnection();
+    (
+      baseClient as unknown as {
+        isReconnecting: boolean;
+        stopReconnection: () => void;
+      }
+    ).stopReconnection();
 
-    expect((baseClient as any).isReconnecting).toBe(false);
+    expect(
+      (baseClient as unknown as { isReconnecting: boolean }).isReconnecting
+    ).toBe(false);
   });
 
   it("should destroy properly", () => {

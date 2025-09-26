@@ -1,8 +1,9 @@
 export { LiveView } from "./components/LiveView";
 export { AndroidLiveView } from "./components/AndroidLiveView";
 export type { LiveViewProps, AndroidLiveViewProps } from "./types";
-export { WebRTCClientRefactored } from "./lib/webrtc-client";
-export { H264ClientRefactored } from "./lib/h264-client";
+export { WebRTCClient } from "./lib/webrtc-client";
+export { H264Client } from "./lib/separated-client";
+export { MP4Client } from "./lib/muxed-client";
 // Specialized control hooks
 export { useClipboardHandler } from "./hooks/useClipboardHandler";
 export { useControlHandler } from "./hooks/useControlHandler";

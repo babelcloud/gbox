@@ -1,12 +1,16 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os/exec"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/scrcpy"
 	"github.com/gorilla/websocket"
 )
 
@@ -117,7 +121,31 @@ func (h *DeviceHandlers) HandleDeviceVideo(w http.ResponseWriter, req *http.Requ
 
 	// Modify the request path to match the expected format for streaming handlers
 	req.URL.Path = "/stream/video/" + deviceSerial
+	// Convert codec/format parameters to mode/format for streaming handlers
+	query := req.URL.Query()
+	codec := query.Get("codec")
+	format := query.Get("format")
+	mode := query.Get("mode") // Check if mode is already provided
 
+	// Set mode based on codec and format, or use existing mode
+	if mode != "" {
+		// Mode is already provided, just pass through the query string
+		req.URL.RawQuery = query.Encode()
+	} else if codec == "h264" {
+		if format == "avc" {
+			req.URL.RawQuery = "mode=h264&format=avc"
+		} else if format == "annexb" {
+			req.URL.RawQuery = "mode=h264&format=annexb"
+		} else if format == "webm" {
+			req.URL.RawQuery = "mode=webm"
+		} else {
+			req.URL.RawQuery = "mode=h264" // default to annexb
+		}
+	} else {
+		req.URL.RawQuery = "mode=h264" // default
+	}
+
+	log.Printf("[HandleDeviceVideo] Delegating to streaming handler with path: %s, query: %s", req.URL.Path, req.URL.RawQuery)
 	streamingHandlers.HandleVideoStream(w, req)
 }
 
@@ -146,6 +174,181 @@ func (h *DeviceHandlers) HandleDeviceAudio(w http.ResponseWriter, req *http.Requ
 	streamingHandlers.HandleAudioStream(w, req)
 }
 
+func (h *DeviceHandlers) HandleDeviceStream(w http.ResponseWriter, req *http.Request) {
+	// Extract device serial from path: /api/devices/{serial}/stream
+	path := strings.TrimPrefix(req.URL.Path, "/api/devices/")
+	parts := strings.Split(path, "/")
+	deviceSerial := parts[0]
+
+	if deviceSerial == "" {
+		http.Error(w, "Device serial required", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("[HandleDeviceStream] Processing stream request for device: %s", deviceSerial)
+
+	// Parse query parameters
+	codec := req.URL.Query().Get("codec")
+	format := req.URL.Query().Get("format")
+
+	log.Printf("[HandleDeviceStream] Parameters - codec: %s, format: %s", codec, format)
+
+	// Validate parameters - Go's url.Query().Get() automatically decodes URL encoding
+	if codec != "h264+opus" && codec != "h264+aac" {
+		http.Error(w, "Invalid codec. Only 'h264+opus' and 'h264+aac' are supported for mixed streams", http.StatusBadRequest)
+		return
+	}
+
+	if format != "webm" && format != "mp4" {
+		http.Error(w, "Invalid format. Only 'webm' and 'mp4' are supported for mixed streams", http.StatusBadRequest)
+		return
+	}
+
+	// Delegate to streaming handlers for mixed stream
+	// Note: This creates a new instance - in production, consider using dependency injection
+	streamingHandlers := &StreamingHandlers{}
+	streamingHandlers.SetServerService(h.serverService)
+	streamingHandlers.SetPathPrefix("/api")
+
+	// Modify the request path to match the expected format for streaming handlers
+	req.URL.Path = "/stream/video/" + deviceSerial
+	req.URL.RawQuery = "mode=" + format // Use the requested format mode for mixed stream
+
+	log.Printf("[HandleDeviceStream] Delegating to streaming handler with path: %s, mode: %s", req.URL.Path, format)
+	streamingHandlers.HandleVideoStream(w, req)
+}
+
+// HandleDeviceAudioDump streams raw AAC frames for debugging.
+// Query params:
+//
+//	adts=1|0    wrap raw AAC with ADTS headers (default 0)
+//	sr=48000    sampling rate hint for ADTS (default 48000)
+//	ch=2        channel count hint for ADTS (default 2)
+func (h *DeviceHandlers) HandleDeviceAudioDump(w http.ResponseWriter, req *http.Request) {
+	// Extract device serial from path: /api/devices/{serial}/audio.dump
+	path := strings.TrimPrefix(req.URL.Path, "/api/devices/")
+	parts := strings.Split(path, "/")
+	deviceSerial := parts[0]
+
+	if deviceSerial == "" {
+		http.Error(w, "Device serial required", http.StatusBadRequest)
+		return
+	}
+
+	// Parse query params
+	q := req.URL.Query()
+	withADTS := q.Get("adts") == "1" || strings.ToLower(q.Get("adts")) == "true"
+
+	// Defaults suitable for scrcpy AAC
+	sampleRate := 48000
+	channelCount := 2
+	if v := q.Get("sr"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			sampleRate = n
+		}
+	}
+	if v := q.Get("ch"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			channelCount = n
+		}
+	}
+
+	// Set headers
+	w.Header().Set("Content-Type", "audio/aac")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+
+	// Use existing streaming handlers pipeline
+	streamingHandlers := NewStreamingHandlers()
+	streamingHandlers.SetServerService(h.serverService)
+	streamingHandlers.SetPathPrefix("/api")
+
+	// Start/attach scrcpy source in AAC/MP4 mode to ensure AAC and subscribe directly
+	source := scrcpy.GetOrCreateSourceWithMode(deviceSerial, "mp4")
+	scrcpy.StartSourceWithMode(deviceSerial, context.Background(), "mp4")
+
+	// Subscribe to audio stream
+	subscriberID := fmt.Sprintf("audio_dump_%s_%d", deviceSerial, time.Now().UnixNano())
+	audioCh := source.SubscribeAudio(subscriberID, 1000)
+	defer source.UnsubscribeAudio(subscriberID)
+
+	// Prepare ADTS helper if needed
+	writeADTS := func(frame []byte) []byte {
+		if !withADTS || len(frame) == 0 {
+			return frame
+		}
+		// Build ADTS header (7 bytes, no CRC)
+		// AAC LC profile = 2 (in ADTS: profile-1 => 1)
+		profile := 1 // AAC LC
+		srIdx := adtsSamplingFreqIndex(sampleRate)
+		chCfg := channelCount
+		aacFrameLen := len(frame) + 7
+		hdr := make([]byte, 7)
+		hdr[0] = 0xFF
+		hdr[1] = 0xF1 // 1111 0001 (sync + MPEG-4, no CRC)
+		hdr[2] = byte(((profile & 0x3) << 6) | ((srIdx & 0xF) << 2) | ((chCfg >> 2) & 0x1))
+		hdr[3] = byte(((chCfg & 0x3) << 6) | ((aacFrameLen >> 11) & 0x3))
+		hdr[4] = byte((aacFrameLen >> 3) & 0xFF)
+		hdr[5] = byte(((aacFrameLen & 0x7) << 5) | 0x1F)
+		hdr[6] = 0xFC
+		return append(hdr, frame...)
+	}
+
+	// Stream loop
+	flusher, _ := w.(http.Flusher)
+	for sample := range audioCh {
+		data := writeADTS(sample.Data)
+		if len(data) == 0 {
+			continue
+		}
+		if _, err := w.Write(data); err != nil {
+			return
+		}
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+}
+
+// adtsSamplingFreqIndex maps sample rate to ADTS index
+func adtsSamplingFreqIndex(sr int) int {
+	// Table per ISO/IEC 14496-3
+	switch sr {
+	case 96000:
+		return 0
+	case 88200:
+		return 1
+	case 64000:
+		return 2
+	case 48000:
+		return 3
+	case 44100:
+		return 4
+	case 32000:
+		return 5
+	case 24000:
+		return 6
+	case 22050:
+		return 7
+	case 16000:
+		return 8
+	case 12000:
+		return 9
+	case 11025:
+		return 10
+	case 8000:
+		return 11
+	case 7350:
+		return 12
+	default:
+		// Fallback to 48000
+		return 3
+	}
+}
 func (h *DeviceHandlers) HandleDeviceControl(w http.ResponseWriter, req *http.Request) {
 	// Extract device serial from path: /api/devices/{serial}/control
 	path := strings.TrimPrefix(req.URL.Path, "/api/devices/")

@@ -9,7 +9,7 @@ export type ConnectionState =
 export interface ClientOptions {
   onConnectionStateChange?: (state: ConnectionState, message?: string) => void;
   onError?: (error: Error) => void;
-  onStatsUpdate?: (stats: any) => void;
+  onStatsUpdate?: (stats: Stats) => void;
   enableAudio?: boolean;
   audioCodec?: "opus" | "aac";
 }
@@ -42,7 +42,7 @@ export interface ControlClient {
     action: "down" | "up" | "move",
     pressure?: number
   ): void;
-  sendControlAction(action: string, params?: any): void;
+  sendControlAction(action: string, params?: Record<string, unknown>): void;
   sendClipboardSet(text: string, paste?: boolean): void;
   requestKeyframe(): void;
 
@@ -178,7 +178,7 @@ export interface ErrorContext {
   component: string;
   operation: string;
   timestamp: number;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ErrorRecoveryStrategy {
@@ -212,7 +212,10 @@ export abstract class BaseClient implements ControlClient {
     action: "down" | "up" | "move",
     pressure?: number
   ): void;
-  abstract sendControlAction(action: string, params?: any): void;
+  abstract sendControlAction(
+    action: string,
+    params?: Record<string, unknown>
+  ): void;
   abstract sendClipboardSet(text: string, paste?: boolean): void;
   abstract requestKeyframe(): void;
   abstract handleMouseEvent(
@@ -248,7 +251,7 @@ export interface ReconnectionCallbacks {
 export interface LiveViewProps {
   apiUrl?: string;
   wsUrl?: string;
-  mode?: "webrtc" | "h264";
+  mode?: "webrtc" | "separated" | "muxed";
   autoConnect?: boolean;
   showControls?: boolean;
   showDeviceList?: boolean;

@@ -7,7 +7,7 @@ import {
   ClientOptions,
 } from "./types";
 
-export class WebRTCClientRefactored extends BaseClient {
+export class WebRTCClient extends BaseClient {
   private ws: WebSocket | null = null;
   private pc: RTCPeerConnection | null = null;
   private dataChannel: RTCDataChannel | null = null;
@@ -286,7 +286,7 @@ export class WebRTCClientRefactored extends BaseClient {
 
         // Handle ping responses for latency measurement
         this.handlePingResponse(message);
-      } catch (e) {
+      } catch (_e) {
         // Not JSON
       }
     };
@@ -433,7 +433,9 @@ export class WebRTCClientRefactored extends BaseClient {
 
     this.audioElement = document.createElement("audio");
     this.audioElement.autoplay = true;
-    (this.audioElement as any).playsInline = true;
+    (
+      this.audioElement as HTMLAudioElement & { playsInline?: boolean }
+    ).playsInline = true;
     this.audioElement.controls = false;
     this.audioElement.preload = "none";
     this.audioElement.srcObject = stream;
@@ -447,9 +449,15 @@ export class WebRTCClientRefactored extends BaseClient {
     // Optimize audio for low latency
     if ("setSinkId" in this.audioElement) {
       // Use default audio device for lowest latency
-      (this.audioElement as any).setSinkId("default").catch(() => {
-        // Ignore if setSinkId fails
-      });
+      (
+        this.audioElement as HTMLAudioElement & {
+          setSinkId?: (id: string) => Promise<void>;
+        }
+      )
+        .setSinkId?.("default")
+        .catch(() => {
+          // Ignore if setSinkId fails
+        });
     }
 
     this.audioElement.play().catch((e) => {
@@ -491,16 +499,23 @@ export class WebRTCClientRefactored extends BaseClient {
         console.log("[WebRTC] WebSocket connected, creating offer");
 
         try {
+          if (!this.pc) {
+            throw new Error("PeerConnection not initialized");
+          }
+          if (!this.ws) {
+            throw new Error("WebSocket not connected");
+          }
+
           // Create and send offer
-          const offer = await this.pc!.createOffer();
+          const offer = await this.pc.createOffer();
           console.log(
             "[WebRTC] Offer SDP preview:",
             offer.sdp?.substring(0, 200) + "..."
           );
-          await this.pc!.setLocalDescription(offer);
+          await this.pc.setLocalDescription(offer);
 
           // Send offer with deviceSerial and proper structure
-          this.ws!.send(
+          this.ws.send(
             JSON.stringify({
               type: "offer",
               deviceSerial: deviceSerial,
@@ -531,17 +546,21 @@ export class WebRTCClientRefactored extends BaseClient {
   private handleSignalingMessage(message: SignalingMessage): void {
     switch (message.type) {
       case "offer":
-        this.handleOffer(message.sdp!);
+        if (message.sdp) {
+          this.handleOffer(message.sdp);
+        }
         break;
       case "answer":
         this.handleAnswer(message);
         break;
       case "ice-candidate":
-        this.handleIceCandidate(message.candidate!);
+        if (message.candidate) {
+          this.handleIceCandidate(message.candidate);
+        }
         break;
       case "error":
         this.handleError(
-          new Error(message.error!),
+          new Error(message.error || "Unknown error"),
           "WebRTCClient",
           "signaling"
         );
@@ -862,49 +881,63 @@ export class WebRTCClientRefactored extends BaseClient {
       let resolution = "";
       let webrtcLatency = 0;
 
-      stats.forEach((report: any) => {
-        if (
-          report.type === "inbound-rtp" &&
-          (report.mediaType === "video" || report.kind === "video")
-        ) {
-          const width = report.frameWidth || 0;
-          const height = report.frameHeight || 0;
+      stats.forEach(
+        (report: {
+          type: string;
+          mediaType?: string;
+          kind?: string;
+          frameWidth?: number;
+          frameHeight?: number;
+          framesDecoded?: number;
+          timestamp?: number;
+          framesPerSecond?: number;
+          state?: string;
+          currentRoundTripTime?: number;
+        }) => {
+          if (
+            report.type === "inbound-rtp" &&
+            (report.mediaType === "video" || report.kind === "video")
+          ) {
+            const width = report.frameWidth || 0;
+            const height = report.frameHeight || 0;
 
-          // Use direct framesPerSecond if available (most reliable)
-          if (report.framesPerSecond) {
-            fps = Math.round(report.framesPerSecond);
-          }
-          // Fallback: calculate FPS from frames decoded difference
-          else if (report.framesDecoded) {
-            const currentTime = Date.now();
-            const currentFramesDecoded = report.framesDecoded || 0;
+            // Use direct framesPerSecond if available (most reliable)
+            if (report.framesPerSecond) {
+              fps = Math.round(report.framesPerSecond);
+            }
+            // Fallback: calculate FPS from frames decoded difference
+            else if (report.framesDecoded) {
+              const currentTime = Date.now();
+              const currentFramesDecoded = report.framesDecoded || 0;
 
-            if (this.lastFramesDecoded > 0 && this.lastStatsTime > 0) {
-              const timeDiff = (currentTime - this.lastStatsTime) / 1000; // in seconds
-              const framesDiff = currentFramesDecoded - this.lastFramesDecoded;
-              if (timeDiff > 0 && framesDiff >= 0) {
-                fps = Math.round(framesDiff / timeDiff);
+              if (this.lastFramesDecoded > 0 && this.lastStatsTime > 0) {
+                const timeDiff = (currentTime - this.lastStatsTime) / 1000; // in seconds
+                const framesDiff =
+                  currentFramesDecoded - this.lastFramesDecoded;
+                if (timeDiff > 0 && framesDiff >= 0) {
+                  fps = Math.round(framesDiff / timeDiff);
+                }
               }
+
+              this.lastFramesDecoded = currentFramesDecoded;
+              this.lastStatsTime = currentTime;
             }
 
-            this.lastFramesDecoded = currentFramesDecoded;
-            this.lastStatsTime = currentTime;
+            if (width && height) {
+              resolution = `${width}x${height}`;
+            }
           }
 
-          if (width && height) {
-            resolution = `${width}x${height}`;
+          // Get latency from candidate-pair stats (as fallback)
+          if (
+            report.type === "candidate-pair" &&
+            report.state === "succeeded" &&
+            report.currentRoundTripTime
+          ) {
+            webrtcLatency = Math.round(report.currentRoundTripTime * 1000); // Convert to ms
           }
         }
-
-        // Get latency from candidate-pair stats (as fallback)
-        if (
-          report.type === "candidate-pair" &&
-          report.state === "succeeded" &&
-          report.currentRoundTripTime
-        ) {
-          webrtcLatency = Math.round(report.currentRoundTripTime * 1000); // Convert to ms
-        }
-      });
+      );
 
       // Use ping-pong latency if available, otherwise use WebRTC latency
       const latency = this.getAverageLatency() || webrtcLatency;

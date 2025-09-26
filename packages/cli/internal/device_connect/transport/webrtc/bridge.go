@@ -15,7 +15,6 @@ type Bridge struct {
 	transport *Transport
 	source    *scrcpy.Source
 
-
 	// Backward compatibility fields
 	DeviceSerial string
 	VideoWidth   int
@@ -28,8 +27,8 @@ type Bridge struct {
 // NewBridge creates a new WebRTC bridge for a device (backward compatibility)
 func NewBridge(deviceSerial string, adbPath string) (*Bridge, error) {
 
-	// Start scrcpy source
-	src, err := scrcpy.StartSource(deviceSerial, context.Background())
+	// Start scrcpy source with explicit webrtc mode
+	src, err := scrcpy.StartSourceWithMode(deviceSerial, context.Background(), "webrtc")
 	if err != nil {
 		return nil, fmt.Errorf("failed to start scrcpy source: %w", err)
 	}
@@ -108,4 +107,3 @@ func (b *Bridge) GetVideoTrack() interface{} {
 func (b *Bridge) GetAudioTrack() interface{} {
 	return b.transport.audioTrack
 }
-

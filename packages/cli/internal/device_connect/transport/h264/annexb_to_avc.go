@@ -25,6 +25,16 @@ func (c *AnnexBToAVCConverter) Convert(data []byte) ([]byte, error) {
 		return nil, nil
 	}
 
+	// Debug: Log first few conversions (can be removed in production)
+	// if len(data) >= 4 {
+	//	firstBytes := fmt.Sprintf("%02x %02x %02x %02x", data[0], data[1], data[2], data[3])
+	//	if data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x00 && data[3] == 0x01 {
+	//		fmt.Printf("[AnnexBToAVC] Converting Annex-B data (start code: %s), size: %d\n", firstBytes, len(data))
+	//	} else {
+	//		fmt.Printf("[AnnexBToAVC] Converting non-Annex-B data (first bytes: %s), size: %d\n", firstBytes, len(data))
+	//	}
+	// }
+
 	// Reset buffer
 	c.buffer = c.buffer[:0]
 
@@ -228,6 +238,24 @@ func ValidateAVCData(data []byte) bool {
 func ConvertAnnexBToAVC(data []byte) ([]byte, error) {
 	converter := NewAnnexBToAVCConverter()
 	return converter.Convert(data)
+}
+
+// PrependParameterSetsAVCC prepends SPS/PPS (Annex-B NAL payloads) to an AVCC-access unit
+// sps, pps are raw NAL payloads (without start codes). Returns new AVCC buffer.
+func PrependParameterSetsAVCC(avcc []byte, sps []byte, pps []byte) []byte {
+	if len(avcc) == 0 || len(sps) == 0 || len(pps) == 0 {
+		return avcc
+	}
+	// Build length-prefixed SPS and PPS
+	spsLen := uint32(len(sps))
+	ppsLen := uint32(len(pps))
+	out := make([]byte, 0, 4+len(sps)+4+len(pps)+len(avcc))
+	out = append(out, byte(spsLen>>24), byte(spsLen>>16), byte(spsLen>>8), byte(spsLen))
+	out = append(out, sps...)
+	out = append(out, byte(ppsLen>>24), byte(ppsLen>>16), byte(ppsLen>>8), byte(ppsLen))
+	out = append(out, pps...)
+	out = append(out, avcc...)
+	return out
 }
 
 // ConvertAVCToAnnexB converts AVC format back to Annex-B format (for testing)

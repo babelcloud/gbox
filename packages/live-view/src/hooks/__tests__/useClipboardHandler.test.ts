@@ -9,9 +9,15 @@ class MockControlClient implements ControlClient {
     text: string;
     paste: boolean;
   }> = [];
+  public controlActions: Array<{ action: string; data: unknown }> = [];
+  public isMouseDragging: boolean = false;
 
   // ControlClient interface implementation
-  connect(): Promise<void> {
+  connect(
+    _deviceSerial: string,
+    _apiUrl: string,
+    _wsUrl?: string
+  ): Promise<void> {
     return Promise.resolve();
   }
 
@@ -23,31 +29,40 @@ class MockControlClient implements ControlClient {
     return true;
   }
 
-  sendKeyEvent(keycode: number, action: string, repeat: number = 0): void {
+  sendKeyEvent(
+    _keycode: number,
+    _action: "down" | "up",
+    _metaState: number = 0
+  ): void {
     // Mock implementation
   }
 
-  sendTouchEvent(x: number, y: number, action: string, pressure: number = 1.0): void {
+  sendTouchEvent(
+    _x: number,
+    _y: number,
+    _action: "down" | "up" | "move",
+    _pressure: number = 1.0
+  ): void {
     // Mock implementation
   }
 
-  sendControlAction(action: string, data?: any): void {
-    // Mock implementation
+  sendControlAction(action: string, params?: unknown): void {
+    this.controlActions.push({ action, data: params || {} });
   }
 
-  sendClipboardSet(text: string, paste: boolean): void {
-    this.clipboardEvents.push({ text, paste });
+  sendClipboardSet(text: string, paste?: boolean): void {
+    this.clipboardEvents.push({ text, paste: paste || false });
   }
 
   requestKeyframe(): void {
     // Mock implementation
   }
 
-  handleMouseEvent(event: any, action: string): void {
+  handleMouseEvent(_event: MouseEvent, _action: "down" | "up" | "move"): void {
     // Mock implementation
   }
 
-  handleTouchEvent(event: any, action: string): void {
+  handleTouchEvent(_event: TouchEvent, _action: "down" | "up" | "move"): void {
     // Mock implementation
   }
 }
@@ -123,10 +138,10 @@ describe("useClipboardHandler", () => {
       result.current.handleClipboardCopy();
     });
 
-    expect(mockClient.clipboardEvents).toHaveLength(1);
-    expect(mockClient.clipboardEvents[0]).toEqual({
-      text: "",
-      paste: false,
+    expect(mockClient.controlActions).toHaveLength(1);
+    expect(mockClient.controlActions[0]).toEqual({
+      action: "clipboard_get",
+      data: {},
     });
   });
 

@@ -1,5 +1,6 @@
-// WebRTCClientRefactored tests
-import { WebRTCClientRefactored } from "../webrtc-client";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// WebRTCClient tests
+import { WebRTCClient } from "../webrtc-client";
 
 // Mock HTML elements
 const mockContainer = {
@@ -10,7 +11,7 @@ const mockContainer = {
   })),
   clientWidth: 800,
   clientHeight: 600,
-} as any;
+} as unknown as HTMLElement;
 
 // Mock canvas and context
 const mockCanvas = {
@@ -105,17 +106,17 @@ const mockDataChannel = {
 };
 
 // Mock MediaStream and MediaStreamTrack
-(global as any).MediaStream = jest.fn(() => ({
+(global as Record<string, unknown>).MediaStream = jest.fn(() => ({
   getVideoTracks: jest.fn(() => []),
   getAudioTracks: jest.fn(() => []),
-})) as any;
+})) as unknown as typeof MediaStream;
 
-(global as any).MediaStreamTrack = jest.fn(() => ({
+(global as Record<string, unknown>).MediaStreamTrack = jest.fn(() => ({
   kind: "video",
   id: "test-track",
   enabled: true,
   muted: false,
-})) as any;
+})) as unknown as typeof MediaStreamTrack;
 
 // Mock DOM methods
 Object.defineProperty(document, "createElement", {
@@ -134,18 +135,22 @@ Object.defineProperty(document, "createElement", {
 mockCanvas.getContext.mockReturnValue(mockContext);
 
 // Mock WebSocket constructor
-(global as any).WebSocket = jest.fn(() => mockWebSocket) as any;
+(global as Record<string, unknown>).WebSocket = jest.fn(
+  () => mockWebSocket
+) as unknown as typeof WebSocket;
 
 // Mock RTCPeerConnection constructor
-(global as any).RTCPeerConnection = jest.fn(() => mockPeerConnection) as any;
+(global as Record<string, unknown>).RTCPeerConnection = jest.fn(
+  () => mockPeerConnection
+) as unknown as typeof RTCPeerConnection;
 
 // Mock RTCDataChannel
 Object.defineProperty(mockPeerConnection, "createDataChannel", {
   value: jest.fn(() => mockDataChannel),
 });
 
-describe("WebRTCClientRefactored", () => {
-  let webrtcClient: WebRTCClientRefactored;
+describe("WebRTCClient", () => {
+  let webrtcClient: WebRTCClient;
   let mockOnConnectionStateChange: jest.Mock;
   let mockOnError: jest.Mock;
   let mockOnStatsUpdate: jest.Mock;
@@ -158,7 +163,7 @@ describe("WebRTCClientRefactored", () => {
     mockOnError = jest.fn();
     mockOnStatsUpdate = jest.fn();
 
-    webrtcClient = new WebRTCClientRefactored(mockContainer, {
+    webrtcClient = new WebRTCClient(mockContainer, {
       onConnectionStateChange: mockOnConnectionStateChange,
       onError: mockOnError,
       onStatsUpdate: mockOnStatsUpdate,
@@ -172,15 +177,18 @@ describe("WebRTCClientRefactored", () => {
     jest.useRealTimers();
   });
 
-  it("should create WebRTCClientRefactored instance", () => {
+  it("should create WebRTCClient instance", () => {
     expect(webrtcClient).toBeDefined();
-    expect(webrtcClient).toBeInstanceOf(WebRTCClientRefactored);
+    expect(webrtcClient).toBeInstanceOf(WebRTCClient);
   });
 
   it("should connect successfully", async () => {
     // Mock establishConnection to succeed immediately
     jest
-      .spyOn(webrtcClient as any, "establishConnection")
+      .spyOn(
+        webrtcClient as unknown as { establishConnection: () => Promise<void> },
+        "establishConnection"
+      )
       .mockResolvedValue(undefined);
 
     await webrtcClient.connect(
@@ -196,10 +204,28 @@ describe("WebRTCClientRefactored", () => {
 
   it("should disconnect successfully", async () => {
     // Mock connected state
-    (webrtcClient as any).isConnected = true;
-    (webrtcClient as any).ws = mockWebSocket;
-    (webrtcClient as any).pc = mockPeerConnection;
-    (webrtcClient as any).dataChannel = mockDataChannel;
+    (webrtcClient as unknown as { isConnected: boolean }).isConnected = true;
+    (
+      webrtcClient as unknown as {
+        ws: unknown;
+        pc: unknown;
+        dataChannel: unknown;
+      }
+    ).ws = mockWebSocket;
+    (
+      webrtcClient as unknown as {
+        ws: unknown;
+        pc: unknown;
+        dataChannel: unknown;
+      }
+    ).pc = mockPeerConnection;
+    (
+      webrtcClient as unknown as {
+        ws: unknown;
+        pc: unknown;
+        dataChannel: unknown;
+      }
+    ).dataChannel = mockDataChannel;
 
     // Then disconnect
     await webrtcClient.disconnect();
@@ -214,7 +240,10 @@ describe("WebRTCClientRefactored", () => {
   it("should handle connection errors", async () => {
     // Mock connection failure by making establishConnection throw
     jest
-      .spyOn(webrtcClient as any, "establishConnection")
+      .spyOn(
+        webrtcClient as unknown as { establishConnection: () => Promise<void> },
+        "establishConnection"
+      )
       .mockRejectedValue(new Error("Connection failed"));
 
     try {
@@ -223,7 +252,7 @@ describe("WebRTCClientRefactored", () => {
         "http://api.example.com",
         "ws://ws.example.com"
       );
-    } catch (error) {
+    } catch (_error) {
       // Expected to throw
     }
 
@@ -233,7 +262,7 @@ describe("WebRTCClientRefactored", () => {
 
   it("should send control messages", () => {
     // Mock connected state
-    mockWebSocket.readyState = 1 as any; // WebSocket.OPEN
+    mockWebSocket.readyState = WebSocket.OPEN as unknown as 0; // WebSocket.OPEN
     mockDataChannel.readyState = "open";
 
     webrtcClient.sendKeyEvent(26, "down");
@@ -258,7 +287,7 @@ describe("WebRTCClientRefactored", () => {
           height: 300,
         }),
       },
-    } as any;
+    } as unknown as MouseEvent;
 
     webrtcClient.handleMouseEvent(mockMouseEvent, "down");
 
@@ -282,9 +311,9 @@ describe("WebRTCClientRefactored", () => {
           height: 300,
         }),
       },
-    } as any;
+    } as unknown as MouseEvent;
 
-    webrtcClient.handleTouchEvent(mockTouchEvent, "down");
+    webrtcClient.handleTouchEvent(mockTouchEvent as any, "down");
 
     // Should not throw errors
     expect(webrtcClient).toBeDefined();
@@ -294,10 +323,11 @@ describe("WebRTCClientRefactored", () => {
     expect(webrtcClient.isControlConnected()).toBe(false);
 
     // Mock connected state
-    (webrtcClient as any).isConnected = true;
-    (webrtcClient as any).ws = mockWebSocket;
-    (webrtcClient as any).dataChannel = mockDataChannel;
-    mockWebSocket.readyState = 1 as any; // WebSocket.OPEN
+    (webrtcClient as unknown as { isConnected: boolean }).isConnected = true;
+    (webrtcClient as unknown as { ws: unknown }).ws = mockWebSocket;
+    (webrtcClient as unknown as { dataChannel: unknown }).dataChannel =
+      mockDataChannel;
+    mockWebSocket.readyState = WebSocket.OPEN as unknown as 0;
     mockDataChannel.readyState = "open";
 
     expect(webrtcClient.isControlConnected()).toBe(true);
@@ -310,10 +340,11 @@ describe("WebRTCClientRefactored", () => {
     // Mock the video render service setupVideoElement method
     jest
       .spyOn(webrtcClient.videoRender, "setupVideoElement")
-      .mockReturnValue(mockVideoElement as any);
+      .mockReturnValue(mockVideoElement as unknown as HTMLVideoElement);
 
     // Mock internal state
-    (webrtcClient as any).videoElement = mockVideoElement;
+    (webrtcClient as unknown as { videoElement: unknown }).videoElement =
+      mockVideoElement;
 
     const videoElement2 = webrtcClient.getVideoElement();
     expect(videoElement2).toBe(mockVideoElement);
@@ -325,12 +356,14 @@ describe("WebRTCClientRefactored", () => {
     mockPeerConnection.setLocalDescription.mockResolvedValue(undefined);
 
     // Mock internal state
-    (webrtcClient as any).pc = mockPeerConnection;
-    (webrtcClient as any).ws = mockWebSocket;
-    mockWebSocket.readyState = 1 as any; // WebSocket.OPEN
+    (webrtcClient as unknown as { pc: unknown }).pc = mockPeerConnection;
+    (webrtcClient as unknown as { ws: unknown }).ws = mockWebSocket;
+    mockWebSocket.readyState = WebSocket.OPEN as unknown as 0; // WebSocket.OPEN
 
     // Call handleOffer directly
-    await (webrtcClient as any).handleOffer("test-offer-sdp");
+    await (
+      webrtcClient as unknown as { handleOffer: (sdp: string) => Promise<void> }
+    ).handleOffer("test-offer-sdp");
 
     expect(mockPeerConnection.setRemoteDescription).toHaveBeenCalledWith({
       type: "offer",
@@ -349,7 +382,7 @@ describe("WebRTCClientRefactored", () => {
     mockPeerConnection.addIceCandidate.mockResolvedValue(undefined);
 
     // Mock internal state
-    (webrtcClient as any).pc = mockPeerConnection;
+    (webrtcClient as unknown as { pc: unknown }).pc = mockPeerConnection;
 
     const candidate = {
       candidate: "test-candidate",
@@ -358,7 +391,11 @@ describe("WebRTCClientRefactored", () => {
     };
 
     // Call handleIceCandidate directly
-    await (webrtcClient as any).handleIceCandidate(candidate);
+    await (
+      webrtcClient as unknown as {
+        handleIceCandidate: (candidate: unknown) => Promise<void>;
+      }
+    ).handleIceCandidate(candidate);
 
     expect(mockPeerConnection.addIceCandidate).toHaveBeenCalledWith({
       candidate: "test-candidate",
@@ -370,14 +407,22 @@ describe("WebRTCClientRefactored", () => {
   it("should handle data channel", () => {
     // Mock data channel event
     if (mockPeerConnection.ondatachannel) {
-      (mockPeerConnection as any).ondatachannel({
+      (
+        mockPeerConnection as unknown as {
+          ondatachannel: ((event: { channel: unknown }) => void) | null;
+        }
+      ).ondatachannel?.({
         channel: mockDataChannel,
       } as any);
     }
 
     // Simulate data channel open
     if (mockDataChannel.onopen) {
-      (mockDataChannel as any).onopen(new Event("open"));
+      (
+        mockDataChannel as unknown as {
+          onopen: ((event: Event) => void) | null;
+        }
+      ).onopen?.(new Event("open"));
     }
 
     expect(webrtcClient).toBeDefined();
@@ -385,18 +430,27 @@ describe("WebRTCClientRefactored", () => {
 
   it("should handle connection state changes", () => {
     // Mock internal state
-    (webrtcClient as any).pc = mockPeerConnection;
+    (webrtcClient as unknown as { pc: unknown }).pc = mockPeerConnection;
 
     // Start error handling service
     webrtcClient.errorHandling.start();
 
     // Setup WebRTC handlers to register the callback
-    (webrtcClient as any).setupWebRTCHandlers();
+    (
+      webrtcClient as unknown as { setupWebRTCHandlers: () => void }
+    ).setupWebRTCHandlers();
 
     // Simulate connection state change
     if (mockPeerConnection.onconnectionstatechange) {
       mockPeerConnection.connectionState = "failed";
-      (mockPeerConnection as any).onconnectionstatechange();
+      const onConnectionStateChange = (
+        mockPeerConnection as unknown as {
+          onconnectionstatechange: (() => void) | null;
+        }
+      ).onconnectionstatechange;
+      if (onConnectionStateChange) {
+        onConnectionStateChange();
+      }
     }
 
     // The error should be handled by the error handling service
@@ -405,11 +459,16 @@ describe("WebRTCClientRefactored", () => {
 
   it("should handle WebSocket close", () => {
     // Mock connected state
-    (webrtcClient as any).isConnected = true;
+    (webrtcClient as unknown as { isConnected: boolean }).isConnected = true;
 
     // Simulate WebSocket close
     if (mockWebSocket.onclose) {
-      (mockWebSocket as any).onclose(new Event("close"));
+      const onClose = (
+        mockWebSocket as unknown as { onclose: ((event: Event) => void) | null }
+      ).onclose;
+      if (onClose) {
+        onClose(new Event("close"));
+      }
     }
 
     // Should start reconnection
@@ -418,11 +477,14 @@ describe("WebRTCClientRefactored", () => {
 
   it("should send pending control messages when data channel opens", () => {
     // Mock internal state
-    (webrtcClient as any).dataChannel = mockDataChannel;
+    (webrtcClient as unknown as { dataChannel: unknown }).dataChannel =
+      mockDataChannel;
     mockDataChannel.readyState = "open";
 
     // Add pending message
-    (webrtcClient as any).pendingControlMessages = [
+    (
+      webrtcClient as unknown as { pendingControlMessages: unknown[] }
+    ).pendingControlMessages = [
       {
         type: "key",
         keycode: 26,
@@ -431,7 +493,9 @@ describe("WebRTCClientRefactored", () => {
     ];
 
     // Call sendPendingControlMessages directly
-    (webrtcClient as any).sendPendingControlMessages();
+    (
+      webrtcClient as unknown as { sendPendingControlMessages: () => void }
+    ).sendPendingControlMessages();
 
     expect(mockDataChannel.send).toHaveBeenCalledWith(
       JSON.stringify({
