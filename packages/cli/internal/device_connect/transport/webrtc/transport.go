@@ -10,6 +10,7 @@ import (
 
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/core"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/pipeline"
+	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/control"
 	"github.com/babelcloud/gbox/packages/cli/internal/util"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
@@ -27,8 +28,7 @@ type Transport struct {
 	audioTrack *webrtc.TrackLocalStaticSample
 
 	// Control handler
-	controlHandler *ControlHandlerWrapper
-
+	controlHandler *control.Handler
 
 	// Control flow
 	ctx    context.Context
@@ -74,7 +74,7 @@ func NewTransport(deviceSerial string, pipeline *pipeline.Pipeline) (*Transport,
 	})
 
 	// Create control handler (DataChannel will be assigned when received)
-	transport.controlHandler = NewControlHandlerWrapper(nil, 1080, 1920)
+	transport.controlHandler = control.NewHandler(nil, nil, 1080, 1920)
 
 	// Pre-create video and audio tracks for WebRTC negotiation
 	videoTrack, err := addVideoTrack(pc, "h264")
@@ -98,7 +98,6 @@ func NewTransport(deviceSerial string, pipeline *pipeline.Pipeline) (*Transport,
 
 	return transport, nil
 }
-
 
 // Start starts the WebRTC transport using pipeline
 func (t *Transport) Start(source core.Source) error {
@@ -267,7 +266,6 @@ func (t *Transport) Close() error {
 	log.Printf("WebRTC transport closed for device: %s", t.deviceSerial)
 	return nil
 }
-
 
 // min returns the minimum of two durations
 func min(a, b time.Duration) time.Duration {

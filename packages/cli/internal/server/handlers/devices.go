@@ -1,17 +1,12 @@
 package handlers
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net/http"
-	"os/exec"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/control"
-	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/scrcpy"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/audio"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/h264"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/stream"
@@ -78,7 +73,7 @@ func (h *DeviceHandlers) HandleDeviceList(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	devices, err := h.getADBDevices()
+	devices, err := getADBDevices()
 	if err != nil {
 		log.Printf("Failed to get devices: %v", err)
 		RespondJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -335,134 +330,6 @@ func (h *DeviceHandlers) HandleDeviceStream(w http.ResponseWriter, req *http.Req
 	}
 }
 
-// HandleDeviceAudioDump streams raw AAC frames for debugging.
-// Query params:
-//
-//	adts=1|0    wrap raw AAC with ADTS headers (default 0)
-//	sr=48000    sampling rate hint for ADTS (default 48000)
-//	ch=2        channel count hint for ADTS (default 2)
-func (h *DeviceHandlers) HandleDeviceAudioDump(w http.ResponseWriter, req *http.Request) {
-	// Extract device serial from path: /api/devices/{serial}/audio.dump
-	path := strings.TrimPrefix(req.URL.Path, "/api/devices/")
-	parts := strings.Split(path, "/")
-	deviceSerial := parts[0]
-
-	if deviceSerial == "" {
-		http.Error(w, "Device serial required", http.StatusBadRequest)
-		return
-	}
-
-	// Parse query params
-	q := req.URL.Query()
-	withADTS := q.Get("adts") == "1" || strings.ToLower(q.Get("adts")) == "true"
-
-	// Defaults suitable for scrcpy AAC
-	sampleRate := 48000
-	channelCount := 2
-	if v := q.Get("sr"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			sampleRate = n
-		}
-	}
-	if v := q.Get("ch"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			channelCount = n
-		}
-	}
-
-	// Set headers
-	w.Header().Set("Content-Type", "audio/aac")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Transfer-Encoding", "chunked")
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
-	}
-
-	// Direct AAC streaming implementation
-
-	// Start/attach scrcpy source in AAC/MP4 mode to ensure AAC and subscribe directly
-	source := scrcpy.GetOrCreateSourceWithMode(deviceSerial, "mp4")
-	scrcpy.StartSourceWithMode(deviceSerial, context.Background(), "mp4")
-
-	// Subscribe to audio stream
-	subscriberID := fmt.Sprintf("audio_dump_%s_%d", deviceSerial, time.Now().UnixNano())
-	audioCh := source.SubscribeAudio(subscriberID, 1000)
-	defer source.UnsubscribeAudio(subscriberID)
-
-	// Prepare ADTS helper if needed
-	writeADTS := func(frame []byte) []byte {
-		if !withADTS || len(frame) == 0 {
-			return frame
-		}
-		// Build ADTS header (7 bytes, no CRC)
-		// AAC LC profile = 2 (in ADTS: profile-1 => 1)
-		profile := 1 // AAC LC
-		srIdx := adtsSamplingFreqIndex(sampleRate)
-		chCfg := channelCount
-		aacFrameLen := len(frame) + 7
-		hdr := make([]byte, 7)
-		hdr[0] = 0xFF
-		hdr[1] = 0xF1 // 1111 0001 (sync + MPEG-4, no CRC)
-		hdr[2] = byte(((profile & 0x3) << 6) | ((srIdx & 0xF) << 2) | ((chCfg >> 2) & 0x1))
-		hdr[3] = byte(((chCfg & 0x3) << 6) | ((aacFrameLen >> 11) & 0x3))
-		hdr[4] = byte((aacFrameLen >> 3) & 0xFF)
-		hdr[5] = byte(((aacFrameLen & 0x7) << 5) | 0x1F)
-		hdr[6] = 0xFC
-		return append(hdr, frame...)
-	}
-
-	// Stream loop
-	flusher, _ := w.(http.Flusher)
-	for sample := range audioCh {
-		data := writeADTS(sample.Data)
-		if len(data) == 0 {
-			continue
-		}
-		if _, err := w.Write(data); err != nil {
-			return
-		}
-		if flusher != nil {
-			flusher.Flush()
-		}
-	}
-}
-
-// adtsSamplingFreqIndex maps sample rate to ADTS index
-func adtsSamplingFreqIndex(sr int) int {
-	// Table per ISO/IEC 14496-3
-	switch sr {
-	case 96000:
-		return 0
-	case 88200:
-		return 1
-	case 64000:
-		return 2
-	case 48000:
-		return 3
-	case 44100:
-		return 4
-	case 32000:
-		return 5
-	case 24000:
-		return 6
-	case 22050:
-		return 7
-	case 16000:
-		return 8
-	case 12000:
-		return 9
-	case 11025:
-		return 10
-	case 8000:
-		return 11
-	case 7350:
-		return 12
-	default:
-		// Fallback to 48000
-		return 3
-	}
-}
 func (h *DeviceHandlers) HandleDeviceControl(w http.ResponseWriter, req *http.Request) {
 	// Extract device serial from path: /api/devices/{serial}/control
 	path := strings.TrimPrefix(req.URL.Path, "/api/devices/")
@@ -685,46 +552,4 @@ func (h *DeviceHandlers) handleWebSocketICECandidate(conn *websocket.Conn, msg m
 func (h *DeviceHandlers) handleWebSocketDisconnect(conn *websocket.Conn, msg map[string]interface{}) {
 	// TODO: Implement WebSocket disconnect handling
 	log.Printf("WebSocket disconnect: %v", msg)
-}
-
-func (h *DeviceHandlers) getADBDevices() ([]map[string]interface{}, error) {
-	cmd := exec.Command("adb", "devices", "-l")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute adb devices: %v", err)
-	}
-
-	lines := strings.Split(string(output), "\n")
-	var devices []map[string]interface{}
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "List of devices") {
-			continue
-		}
-
-		parts := strings.Fields(line)
-		if len(parts) >= 2 {
-			device := map[string]interface{}{
-				"id":     parts[0],
-				"status": parts[1],
-			}
-
-			// Parse additional device info if available
-			if len(parts) > 2 {
-				for _, part := range parts[2:] {
-					if strings.Contains(part, ":") {
-						kv := strings.SplitN(part, ":", 2)
-						if len(kv) == 2 {
-							device[kv[0]] = kv[1]
-						}
-					}
-				}
-			}
-
-			devices = append(devices, device)
-		}
-	}
-
-	return devices, nil
 }
