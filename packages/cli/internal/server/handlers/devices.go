@@ -18,6 +18,39 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// setWebMStreamingHeaders sets HTTP headers for WebM audio streaming
+func setWebMStreamingHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "audio/webm; codecs=opus")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Range")
+}
+
+// setRawOpusStreamingHeaders sets HTTP headers for raw Opus audio streaming
+func setRawOpusStreamingHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "audio/opus")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+}
+
+// startStreamingResponse sets headers and starts the streaming response
+func startStreamingResponse(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusOK)
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+var controlUpgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Allow all origins for now
+	},
+}
+
 // DeviceHandlers contains handlers for device management
 type DeviceHandlers struct {
 	serverService  ServerService
@@ -346,10 +379,7 @@ func (h *DeviceHandlers) HandleDeviceAudioDump(w http.ResponseWriter, req *http.
 		f.Flush()
 	}
 
-	// Use existing streaming handlers pipeline
-	streamingHandlers := NewStreamingHandlers()
-	streamingHandlers.SetServerService(h.serverService)
-	streamingHandlers.SetPathPrefix("/api")
+	// Direct AAC streaming implementation
 
 	// Start/attach scrcpy source in AAC/MP4 mode to ensure AAC and subscribe directly
 	source := scrcpy.GetOrCreateSourceWithMode(deviceSerial, "mp4")

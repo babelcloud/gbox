@@ -47,7 +47,6 @@ func (r *APIRouter) RegisterRoutes(mux *http.ServeMux, server interface{}) {
 	// Box management endpoints (proxy to remote GBOX API)
 	mux.HandleFunc("/api/boxes", boxHandlers.HandleBoxList)
 
-	// Note: Streaming endpoints are handled by StreamingRouter
 	// Note: ADB Expose endpoints are handled by ADBExposeRouter
 
 	// Server management endpoints
