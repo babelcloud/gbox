@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/audio"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/h264"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/stream"
+	"github.com/babelcloud/gbox/packages/cli/internal/util"
 	"github.com/gorilla/websocket"
 )
 
@@ -191,13 +194,11 @@ func (h *DeviceHandlers) HandleDeviceVideo(w http.ResponseWriter, req *http.Requ
 
 	case "webm":
 		// WebM container streaming with H.264 video and Opus audio
-		handler := stream.NewWebMHandler(deviceSerial)
-		handler.ServeHTTP(w, req)
+		h.HandleWebMStream(w, req, deviceSerial)
 
 	case "mp4":
 		// MP4 container streaming with H.264 video and Opus audio
-		handler := stream.NewMP4Handler(deviceSerial)
-		handler.ServeHTTP(w, req)
+		h.HandleMP4Stream(w, req, deviceSerial)
 
 	default:
 		http.Error(w, "Invalid mode. Supported: h264, webm, mp4", http.StatusBadRequest)
@@ -317,13 +318,11 @@ func (h *DeviceHandlers) HandleDeviceStream(w http.ResponseWriter, req *http.Req
 	switch format {
 	case "webm":
 		// WebM container streaming with H.264 video and Opus audio
-		handler := stream.NewWebMHandler(deviceSerial)
-		handler.ServeHTTP(w, req)
+		h.HandleWebMStream(w, req, deviceSerial)
 
 	case "mp4":
 		// MP4 container streaming with H.264 video and AAC audio
-		handler := stream.NewMP4Handler(deviceSerial)
-		handler.ServeHTTP(w, req)
+		h.HandleMP4Stream(w, req, deviceSerial)
 
 	default:
 		http.Error(w, "Invalid format. Supported: webm, mp4", http.StatusBadRequest)
@@ -379,7 +378,7 @@ func (h *DeviceHandlers) HandleDeviceControl(w http.ResponseWriter, req *http.Re
 			continue
 		}
 
-		log.Printf("[HandleDeviceControl] Control message received for device: %s, type: %s", deviceSerial, msgType)
+		slog.Debug("Control message received", "device", deviceSerial, "type", msgType)
 
 		switch msgType {
 		// WebRTC signaling messages
@@ -552,4 +551,93 @@ func (h *DeviceHandlers) handleWebSocketICECandidate(conn *websocket.Conn, msg m
 func (h *DeviceHandlers) handleWebSocketDisconnect(conn *websocket.Conn, msg map[string]interface{}) {
 	// TODO: Implement WebSocket disconnect handling
 	log.Printf("WebSocket disconnect: %v", msg)
+}
+
+// HandleWebMStream handles WebM streaming
+func (h *DeviceHandlers) HandleWebMStream(w http.ResponseWriter, r *http.Request, deviceSerial string) {
+	logger := util.GetLogger()
+	logger.Info("Starting WebM mixed stream", "device", deviceSerial)
+
+	// Set headers for WebM streaming
+	w.Header().Set("Content-Type", "video/webm; codecs=avc1.42E01E,opus")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// Create WebM stream writer
+	writer := stream.NewWebMMuxer(w)
+	defer writer.Close()
+
+	// Start streaming with the writer
+	if err := h.startStream(deviceSerial, writer, "webm"); err != nil {
+		logger.Error("Failed to start WebM stream", "device", deviceSerial, "error", err)
+		http.Error(w, fmt.Sprintf("Failed to start stream: %v", err), http.StatusInternalServerError)
+		return
+	}
+}
+
+// HandleMP4Stream handles MP4 container streaming
+func (h *DeviceHandlers) HandleMP4Stream(w http.ResponseWriter, r *http.Request, deviceSerial string) {
+	logger := util.GetLogger()
+	logger.Info("Starting fMP4 stream", "device", deviceSerial)
+
+	// Set headers for fMP4 streaming
+	w.Header().Set("Content-Type", "video/mp4")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// Create MP4 stream writer
+	writer := stream.NewFMP4Muxer(w, logger)
+	defer writer.Close()
+
+	// Start streaming with the writer
+	if err := h.startStream(deviceSerial, writer, "mp4"); err != nil {
+		logger.Error("Failed to start MP4 stream", "device", deviceSerial, "error", err)
+		http.Error(w, fmt.Sprintf("Failed to start stream: %v", err), http.StatusInternalServerError)
+		return
+	}
+}
+
+// startStream starts a mixed audio/video stream with the given writer using StreamManager
+func (h *DeviceHandlers) startStream(deviceSerial string, writer stream.Muxer, mode string) error {
+	logger := util.GetLogger()
+
+	// Create stream manager for protocol abstraction
+	streamManager := stream.NewStreamManager(logger)
+
+	// Configure stream
+	config := stream.StreamConfig{
+		DeviceSerial: deviceSerial,
+		Mode:         mode,
+		VideoWidth:   1920, // Will be updated from source
+		VideoHeight:  1080, // Will be updated from source
+	}
+
+	// Start stream using stream manager
+	result, err := streamManager.StartStream(context.Background(), config)
+	if err != nil {
+		return fmt.Errorf("failed to start stream: %w", err)
+	}
+	defer result.Cleanup()
+
+	// Get actual device dimensions
+	_, videoWidth, videoHeight := result.Source.GetConnectionInfo()
+	logger.Info("Device video dimensions", "width", videoWidth, "height", videoHeight)
+
+	// Initialize the stream writer with device dimensions
+	if err := writer.Initialize(videoWidth, videoHeight, result.CodecParams); err != nil {
+		return fmt.Errorf("failed to initialize stream writer: %w", err)
+	}
+
+	// Convert channels to muxer format
+	videoSampleCh, audioSampleCh := streamManager.ConvertToMuxerSamples(result.VideoCh, result.AudioCh)
+
+	// Start streaming
+	logger.Info("Mixed stream started", "device", deviceSerial, "mode", mode)
+
+	// Use the writer's streaming method
+	return writer.Stream(videoSampleCh, audioSampleCh)
 }

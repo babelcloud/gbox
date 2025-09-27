@@ -1,9 +1,11 @@
 package stream
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/at-wat/ebml-go/mkvcore"
@@ -222,4 +224,82 @@ func (m *WebMMuxer) getVideoHeight() int {
 		return m.videoHeight
 	}
 	return 1080 // Default height
+}
+
+// Initialize implements the Muxer interface
+func (m *WebMMuxer) Initialize(width, height int, params *CodecParams) error {
+	if m.initialized {
+		return nil
+	}
+
+	m.videoWidth = width
+	m.videoHeight = height
+
+	err := m.WriteHeader()
+	if err == nil {
+		m.initialized = true
+	}
+	return err
+}
+
+// Stream implements the Muxer interface
+func (m *WebMMuxer) Stream(videoCh <-chan VideoSample, audioCh <-chan AudioSample) error {
+	if !m.initialized {
+		return fmt.Errorf("muxer not initialized")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// 视频处理协程
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case sample, ok := <-videoCh:
+				if !ok {
+					return
+				}
+				if err := m.WriteVideoFrame(
+					sample.Data,
+					time.Duration(sample.PTS)*time.Nanosecond,
+				); err != nil {
+					m.logger.Error("Failed to write video frame", "error", err)
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+
+	// 音频处理协程
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case sample, ok := <-audioCh:
+				if !ok {
+					return
+				}
+				if err := m.WriteAudioFrame(
+					sample.Data,
+					time.Duration(sample.PTS)*time.Nanosecond,
+				); err != nil {
+					m.logger.Error("Failed to write audio frame", "error", err)
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+
+	wg.Wait()
+	return nil
 }
