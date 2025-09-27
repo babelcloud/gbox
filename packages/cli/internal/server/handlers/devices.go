@@ -10,14 +10,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/control"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/scrcpy"
+	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/audio"
+	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/h264"
+	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/stream"
 	"github.com/gorilla/websocket"
 )
 
 // DeviceHandlers contains handlers for device management
 type DeviceHandlers struct {
-	serverService ServerService
-	upgrader      websocket.Upgrader
+	serverService  ServerService
+	upgrader       websocket.Upgrader
+	webrtcHandlers *WebRTCHandlers
 }
 
 // NewDeviceHandlers creates a new device handlers instance
@@ -29,6 +34,7 @@ func NewDeviceHandlers(serverSvc ServerService) *DeviceHandlers {
 				return true // Allow all origins for now
 			},
 		},
+		webrtcHandlers: NewWebRTCHandlers(serverSvc),
 	}
 }
 
@@ -114,39 +120,60 @@ func (h *DeviceHandlers) HandleDeviceVideo(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	// Create streaming handlers and delegate to video stream handler
-	streamingHandlers := NewStreamingHandlers()
-	streamingHandlers.SetServerService(h.serverService)
-	streamingHandlers.SetPathPrefix("/api")
-
-	// Modify the request path to match the expected format for streaming handlers
-	req.URL.Path = "/stream/video/" + deviceSerial
-	// Convert codec/format parameters to mode/format for streaming handlers
+	// Parse mode and format parameters
 	query := req.URL.Query()
 	codec := query.Get("codec")
 	format := query.Get("format")
 	mode := query.Get("mode") // Check if mode is already provided
 
 	// Set mode based on codec and format, or use existing mode
-	if mode != "" {
-		// Mode is already provided, just pass through the query string
-		req.URL.RawQuery = query.Encode()
-	} else if codec == "h264" {
-		if format == "avc" {
-			req.URL.RawQuery = "mode=h264&format=avc"
-		} else if format == "annexb" {
-			req.URL.RawQuery = "mode=h264&format=annexb"
-		} else if format == "webm" {
-			req.URL.RawQuery = "mode=webm"
+	if mode == "" {
+		if codec == "h264" {
+			if format == "avc" {
+				mode = "h264"
+				format = "avc"
+			} else if format == "annexb" {
+				mode = "h264"
+				format = "annexb"
+			} else if format == "webm" {
+				mode = "webm"
+			} else {
+				mode = "h264" // default to annexb
+			}
 		} else {
-			req.URL.RawQuery = "mode=h264" // default to annexb
+			mode = "h264" // default
 		}
-	} else {
-		req.URL.RawQuery = "mode=h264" // default
 	}
 
-	log.Printf("[HandleDeviceVideo] Delegating to streaming handler with path: %s, query: %s", req.URL.Path, req.URL.RawQuery)
-	streamingHandlers.HandleVideoStream(w, req)
+	log.Printf("[HandleDeviceVideo] Processing video request for device: %s, mode: %s, format: %s", deviceSerial, mode, format)
+
+	// Direct video streaming implementation
+	switch mode {
+	case "h264":
+		// Check format parameter for AVC vs Annex-B
+		if format == "avc" {
+			// AVC format H.264 streaming (for WebCodecs)
+			handler := h264.NewAVCHTTPHandler(deviceSerial)
+			handler.ServeHTTP(w, req)
+		} else {
+			// Direct H.264 streaming (Annex-B format)
+			handler := h264.NewAnnexBHandler(deviceSerial)
+			handler.ServeHTTP(w, req)
+		}
+
+	case "webm":
+		// WebM container streaming with H.264 video and Opus audio
+		handler := stream.NewWebMHandler(deviceSerial)
+		handler.ServeHTTP(w, req)
+
+	case "mp4":
+		// MP4 container streaming with H.264 video and Opus audio
+		handler := stream.NewMP4Handler(deviceSerial)
+		handler.ServeHTTP(w, req)
+
+	default:
+		http.Error(w, "Invalid mode. Supported: h264, webm, mp4", http.StatusBadRequest)
+	}
 }
 
 func (h *DeviceHandlers) HandleDeviceAudio(w http.ResponseWriter, req *http.Request) {
@@ -162,16 +189,68 @@ func (h *DeviceHandlers) HandleDeviceAudio(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	// Create streaming handlers and delegate to audio stream handler
-	streamingHandlers := NewStreamingHandlers()
-	streamingHandlers.SetServerService(h.serverService)
-	streamingHandlers.SetPathPrefix("/api")
+	if !isValidDeviceSerial(deviceSerial) {
+		http.Error(w, "Invalid device serial", http.StatusBadRequest)
+		return
+	}
 
-	// Modify the request path to match the expected format for streaming handlers
-	req.URL.Path = "/stream/audio/" + deviceSerial
+	// Parse codec/format parameters
+	codec := req.URL.Query().Get("codec")
+	if codec == "" {
+		codec = "aac" // default to AAC
+	}
+	format := req.URL.Query().Get("format")
 
-	log.Printf("[HandleDeviceAudio] Delegating to streaming handler with path: %s", req.URL.Path)
-	streamingHandlers.HandleAudioStream(w, req)
+	log.Printf("[HandleDeviceAudio] Audio parameters - codec: %s, format: %s", codec, format)
+
+	// Direct audio streaming implementation
+	switch codec {
+	case "opus":
+		// Determine streaming format and setup
+		audioService := audio.GetAudioService()
+		if format == "webm" {
+			// WebM container streaming
+			log.Printf("[HandleDeviceAudio] Using WebM streaming for device: %s", deviceSerial)
+			setWebMStreamingHeaders(w)
+			startStreamingResponse(w)
+			if err := audioService.StreamWebM(deviceSerial, w, req); err != nil {
+				log.Printf("[HandleDeviceAudio] WebM streaming error: %v", err)
+				http.Error(w, "WebM streaming failed", http.StatusInternalServerError)
+			}
+			return
+		}
+		// Raw Opus streaming
+		log.Printf("[HandleDeviceAudio] Using raw Opus streaming for device: %s", deviceSerial)
+		setRawOpusStreamingHeaders(w)
+		startStreamingResponse(w)
+		audioService.StreamOpus(deviceSerial, w)
+
+	case "aac":
+		// AAC dump: format=raw (default) or format=adts
+		withADTS := strings.ToLower(format) == "adts"
+
+		// Ensure scrcpy source in mp4 mode to use AAC encoder
+		// This is handled by the audio service
+		log.Printf("[HandleDeviceAudio] Using AAC streaming for device: %s, withADTS: %v", deviceSerial, withADTS)
+
+		// Set appropriate headers for AAC streaming
+		if withADTS {
+			w.Header().Set("Content-Type", "audio/aac")
+		} else {
+			w.Header().Set("Content-Type", "audio/aac")
+		}
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+
+		startStreamingResponse(w)
+		// Note: AAC streaming is not implemented in the current audio service
+		// This would need to be implemented if AAC streaming is required
+		http.Error(w, "AAC streaming not implemented", http.StatusNotImplemented)
+
+	default:
+		http.Error(w, "Invalid codec. Supported: opus, aac", http.StatusBadRequest)
+	}
 }
 
 func (h *DeviceHandlers) HandleDeviceStream(w http.ResponseWriter, req *http.Request) {
@@ -204,18 +283,23 @@ func (h *DeviceHandlers) HandleDeviceStream(w http.ResponseWriter, req *http.Req
 		return
 	}
 
-	// Delegate to streaming handlers for mixed stream
-	// Note: This creates a new instance - in production, consider using dependency injection
-	streamingHandlers := &StreamingHandlers{}
-	streamingHandlers.SetServerService(h.serverService)
-	streamingHandlers.SetPathPrefix("/api")
+	// Direct mixed stream implementation
+	log.Printf("[HandleDeviceStream] Using %s format for mixed stream", format)
 
-	// Modify the request path to match the expected format for streaming handlers
-	req.URL.Path = "/stream/video/" + deviceSerial
-	req.URL.RawQuery = "mode=" + format // Use the requested format mode for mixed stream
+	switch format {
+	case "webm":
+		// WebM container streaming with H.264 video and Opus audio
+		handler := stream.NewWebMHandler(deviceSerial)
+		handler.ServeHTTP(w, req)
 
-	log.Printf("[HandleDeviceStream] Delegating to streaming handler with path: %s, mode: %s", req.URL.Path, format)
-	streamingHandlers.HandleVideoStream(w, req)
+	case "mp4":
+		// MP4 container streaming with H.264 video and AAC audio
+		handler := stream.NewMP4Handler(deviceSerial)
+		handler.ServeHTTP(w, req)
+
+	default:
+		http.Error(w, "Invalid format. Supported: webm, mp4", http.StatusBadRequest)
+	}
 }
 
 // HandleDeviceAudioDump streams raw AAC frames for debugging.
@@ -360,15 +444,105 @@ func (h *DeviceHandlers) HandleDeviceControl(w http.ResponseWriter, req *http.Re
 		return
 	}
 
-	// Create streaming handlers and delegate to control WebSocket handler
-	streamingHandlers := NewStreamingHandlers()
-	streamingHandlers.SetServerService(h.serverService)
-	streamingHandlers.SetPathPrefix("/api")
+	if !isValidDeviceSerial(deviceSerial) {
+		http.Error(w, "Invalid device serial", http.StatusBadRequest)
+		return
+	}
 
-	// Modify the request path to match the expected format for streaming handlers
-	req.URL.Path = "/stream/control/" + deviceSerial
+	log.Printf("[HandleDeviceControl] Processing control WebSocket request for device: %s", deviceSerial)
 
-	streamingHandlers.HandleControlWebSocket(w, req)
+	// Direct control WebSocket implementation
+	conn, err := controlUpgrader.Upgrade(w, req, nil)
+	if err != nil {
+		log.Printf("[HandleDeviceControl] Failed to upgrade control WebSocket: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	log.Printf("[HandleDeviceControl] Control WebSocket connection established for device: %s", deviceSerial)
+
+	// Delegate to control service
+	controlService := control.GetControlService()
+
+	// Handle WebSocket messages
+	for {
+		var msg map[string]interface{}
+		if err := conn.ReadJSON(&msg); err != nil {
+			// Check for normal close conditions
+			if websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
+				log.Printf("[HandleDeviceControl] Control WebSocket closed normally for device: %s", deviceSerial)
+			} else if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("[HandleDeviceControl] Control WebSocket read error for device: %s: %v", deviceSerial, err)
+			}
+			break
+		}
+
+		msgType, ok := msg["type"].(string)
+		if !ok {
+			continue
+		}
+
+		log.Printf("[HandleDeviceControl] Control message received for device: %s, type: %s", deviceSerial, msgType)
+
+		switch msgType {
+		// WebRTC signaling messages
+		case "ping", "offer", "answer", "ice-candidate":
+			h.handleWebRTCMessage(conn, msg, msgType, deviceSerial)
+
+		// Device control messages
+		case "key":
+			// Handle key events
+			controlService.HandleKeyEvent(msg, deviceSerial)
+
+		case "text":
+			// Handle text input (clipboard event)
+			clipboardMsg := map[string]interface{}{
+				"text":  msg["text"],
+				"paste": true,
+			}
+			controlService.HandleClipboardEvent(clipboardMsg, deviceSerial)
+
+		case "touch":
+			// Handle touch events
+			controlService.HandleTouchEvent(msg, deviceSerial)
+
+		case "scroll":
+			// Handle scroll events
+			controlService.HandleScrollEvent(msg, deviceSerial)
+
+		case "clipboard_set":
+			controlService.HandleClipboardEvent(msg, deviceSerial)
+
+		case "reset_video":
+			controlService.HandleVideoResetEvent(msg, deviceSerial)
+
+		default:
+			log.Printf("[HandleDeviceControl] Unknown message type for device: %s: %s", deviceSerial, msgType)
+		}
+	}
+}
+
+// handleWebRTCMessage handles WebRTC signaling messages
+func (h *DeviceHandlers) handleWebRTCMessage(conn *websocket.Conn, msg map[string]interface{}, msgType, deviceSerial string) {
+	if h.webrtcHandlers == nil {
+		log.Printf("[HandleDeviceControl] WebRTC handlers not initialized")
+		return
+	}
+
+	log.Printf("[HandleDeviceControl] Delegating WebRTC message to handler: type=%s, device=%s", msgType, deviceSerial)
+
+	switch msgType {
+	case "ping":
+		h.webrtcHandlers.HandlePing(conn, msg)
+	case "offer":
+		h.webrtcHandlers.HandleOffer(conn, msg, deviceSerial)
+	case "answer":
+		h.webrtcHandlers.HandleAnswer(conn, msg, deviceSerial)
+	case "ice-candidate":
+		h.webrtcHandlers.HandleIceCandidate(conn, msg, deviceSerial)
+	default:
+		log.Printf("[HandleDeviceControl] Unknown WebRTC message type: %s", msgType)
+	}
 }
 
 // HandleWebSocket handles WebSocket connections for device communication

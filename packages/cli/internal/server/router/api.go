@@ -22,6 +22,9 @@ func (r *APIRouter) RegisterRoutes(mux *http.ServeMux, server interface{}) {
 	// Create handlers instance with actual server service
 	r.handlers = handlers.NewAPIHandlers(serverService)
 
+	// Create device handlers separately for direct routing
+	deviceHandlers := handlers.NewDeviceHandlers(serverService)
+
 	// Create box handlers separately
 	boxHandlers := handlers.NewBoxHandlers(serverService)
 
@@ -29,28 +32,23 @@ func (r *APIRouter) RegisterRoutes(mux *http.ServeMux, server interface{}) {
 	mux.HandleFunc("/api/health", r.handlers.HandleHealth)
 	mux.HandleFunc("/api/status", r.handlers.HandleStatus)
 
-	// Device management endpoints
-	mux.HandleFunc("/api/devices", r.handlers.HandleDeviceList)
-	mux.HandleFunc("/api/devices/register", r.handlers.HandleDeviceRegister)
-	mux.HandleFunc("/api/devices/unregister", r.handlers.HandleDeviceUnregister)
+	// Device management endpoints - direct routing to device handlers
+	mux.HandleFunc("/api/devices", deviceHandlers.HandleDeviceList)
+	mux.HandleFunc("/api/devices/register", deviceHandlers.HandleDeviceRegister)
+	mux.HandleFunc("/api/devices/unregister", deviceHandlers.HandleDeviceUnregister)
 
-	// Device-specific endpoints with path patterns
-	mux.HandleFunc("/api/devices/{serial}", r.handlers.HandleDeviceAction)
-	mux.HandleFunc("/api/devices/{serial}/video", r.handlers.HandleDeviceVideo)
-	mux.HandleFunc("/api/devices/{serial}/audio", r.handlers.HandleDeviceAudio)
-	mux.HandleFunc("/api/devices/{serial}/stream", r.handlers.HandleDeviceStream)
-	mux.HandleFunc("/api/devices/{serial}/control", r.handlers.HandleDeviceControl)
+	// Device-specific endpoints with path patterns - direct routing to device handlers
+	mux.HandleFunc("/api/devices/{serial}", deviceHandlers.HandleDeviceAction)
+	mux.HandleFunc("/api/devices/{serial}/video", deviceHandlers.HandleDeviceVideo)
+	mux.HandleFunc("/api/devices/{serial}/audio", deviceHandlers.HandleDeviceAudio)
+	mux.HandleFunc("/api/devices/{serial}/stream", deviceHandlers.HandleDeviceStream)
+	mux.HandleFunc("/api/devices/{serial}/control", deviceHandlers.HandleDeviceControl)
 
 	// Box management endpoints (proxy to remote GBOX API)
 	mux.HandleFunc("/api/boxes", boxHandlers.HandleBoxList)
 
 	// Note: Streaming endpoints are handled by StreamingRouter
-
-	// ADB Expose endpoints
-	mux.HandleFunc("/api/adb-expose/start", r.handlers.HandleADBExposeStart)
-	mux.HandleFunc("/api/adb-expose/stop", r.handlers.HandleADBExposeStop)
-	mux.HandleFunc("/api/adb-expose/status", r.handlers.HandleADBExposeStatus)
-	mux.HandleFunc("/api/adb-expose/list", r.handlers.HandleADBExposeList)
+	// Note: ADB Expose endpoints are handled by ADBExposeRouter
 
 	// Server management endpoints
 	mux.HandleFunc("/api/server/shutdown", r.handlers.HandleServerShutdown)

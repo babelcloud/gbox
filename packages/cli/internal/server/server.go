@@ -142,8 +142,7 @@ func (s *GBoxServer) setupRoutes() {
 	// Register routers in order of specificity (most specific first)
 	routers := []router.Router{
 		&router.APIRouter{},
-		&router.StreamingRouter{},
-		&router.ADBRouter{},
+		&router.ADBExposeRouter{},
 		&router.AssetsRouter{},
 		&router.PagesRouter{}, // Must be last as it includes root handler
 	}
