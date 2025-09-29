@@ -83,7 +83,7 @@ export function handleLogcat(logger: MCPLogger) {
       await logger.info(`Running command: ${command.join(" ")}`, { boxId });
 
       const result = await box.command({
-        commands: command,
+        command: command.join(" "),
       });
 
       if (result.exitCode !== 0) {

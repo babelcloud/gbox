@@ -11,7 +11,6 @@ export const UI_ACTION_DESCRIPTION =
   "Tap the email input field\n" +
   "Tap the submit button\n" +
   "Tap the plus button in the upper right corner\n" +
-  "Scroll up to next \n" +
   "Fill the search field with text: 'gbox ai' \n" +
   "Swipe to next screen\n" +
   "Swipe up to next video\n" +
