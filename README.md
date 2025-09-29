@@ -1,5 +1,7 @@
 # GBOX
 
+![GBOX Animation](https://github.com/user-attachments/assets/50a6ebb4-d432-4364-b651-1738855a4b1f)
+
 **GBOX** provides environments for AI Agents to operate computer and mobile devices.
 
 ![GBOX Introduction](https://github.com/user-attachments/assets/eded50bd-4498-4bca-85f8-fb3ec272e032)
