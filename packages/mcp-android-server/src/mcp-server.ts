@@ -237,13 +237,6 @@ mcpServer.tool(
 // );
 
 // mcpServer.tool(
-//   UI_ACTION_TOOL,
-//   UI_ACTION_DESCRIPTION,
-//   uiActionParamsSchema,
-//   handleUiAction(logger)
-// );
-
-// mcpServer.tool(
 //   UNINSTALL_APK_TOOL,
 //   UNINSTALL_APK_DESCRIPTION,
 //   uninstallApkParamsSchema,
