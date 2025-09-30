@@ -101,7 +101,7 @@ func outputDevicesJSON(devices []device_connect.DeviceInfo) error {
 		}
 
 		simpleDevices = append(simpleDevices, SimpleDeviceInfo{
-			DeviceID:         device.Udid,
+			DeviceID:         device.Id,
 			Name:             device.ProductModel,
 			Type:             deviceType,
 			ConnectionStatus: status,
@@ -130,8 +130,8 @@ func outputDevicesText(devices []device_connect.DeviceInfo) error {
 
 	// Find maximum widths for each column
 	for _, device := range devices {
-		if len(device.Udid) > deviceIDWidth {
-			deviceIDWidth = len(device.Udid)
+		if len(device.Id) > deviceIDWidth {
+			deviceIDWidth = len(device.Id)
 		}
 		if len(device.ProductModel) > nameWidth {
 			nameWidth = len(device.ProductModel)
