@@ -47,11 +47,11 @@ export function handleAdbShell(logger: MCPLogger) {
       const commandParts = shellCommand.split(" ");
 
       const commandParams: {
-        commands: string[];
+        command: string;
         timeout?: string;
         workingDir?: string;
       } = {
-        commands: commandParts,
+        command: commandParts.join(" "),
       };
 
       if (timeout) {

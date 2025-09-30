@@ -17,12 +17,6 @@ import {
   handleDrag,
 } from "./tools/drag.js";
 import {
-  handleScroll,
-  SCROLL_DESCRIPTION,
-  SCROLL_TOOL,
-  scrollParamsSchema,
-} from "./tools/scroll.js";
-import {
   handleTap,
   TAP_DESCRIPTION,
   TAP_TOOL,
@@ -72,6 +66,12 @@ import {
   START_BOX_TOOL,
   startBoxParamsSchema,
 } from "./tools/start-box.js";
+import {
+  handleLongPress,
+  LONG_PRESS_DESCRIPTION,
+  LONG_PRESS_TOOL,
+  longPressParamsSchema,
+} from "./tools/long-press.js";
 
 const isSse = config.mode === "sse";
 
@@ -200,13 +200,6 @@ mcpServer.tool(
 );
 
 mcpServer.tool(
-  SCROLL_TOOL,
-  SCROLL_DESCRIPTION,
-  scrollParamsSchema,
-  handleScroll(logger)
-);
-
-mcpServer.tool(
   SWIPE_TOOL,
   SWIPE_DESCRIPTION,
   swipeParamsSchema,
@@ -222,6 +215,13 @@ mcpServer.tool(
   handleType(logger)
 );
 
+mcpServer.tool(
+  LONG_PRESS_TOOL,
+  LONG_PRESS_DESCRIPTION,
+  longPressParamsSchema,
+  handleLongPress(logger)
+);
+
 // mcpServer.tool(
 //   LIST_BOXES_TOOL,
 //   LIST_BOXES_DESCRIPTION,
@@ -234,13 +234,6 @@ mcpServer.tool(
 //   GET_BOX_DESCRIPTION,
 //   getBoxParamsSchema,
 //   handleGetBox(logger)
-// );
-
-// mcpServer.tool(
-//   UI_ACTION_TOOL,
-//   UI_ACTION_DESCRIPTION,
-//   uiActionParamsSchema,
-//   handleUiAction(logger)
 // );
 
 // mcpServer.tool(
