@@ -66,7 +66,7 @@ Or copy paste the following content into your Claude Code/Cursor MCP config:
       "command": "npx",
       "args": [
         "-y",
-        "@gbox.ai/mcp-android-server@latest"
+        "@gbox.ai/mcp-server@latest"
       ]
     }
   }

@@ -31,40 +31,6 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 8
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "pnpm"
-          cache-dependency-path: |
-            packages/mcp-android-server/pnpm-lock.yaml
-
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "PNPM_HOME=$(dirname $(which pnpm))" >> $GITHUB_ENV
-          cd packages/mcp-android-server
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v3
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('packages/mcp-android-server/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
-      - name: Install dependencies and build mcp-android-server
-        run: |
-          cd packages/mcp-android-server
-          pnpm install
-          pnpm build
-
       - name: Set github client secret env
         run: echo "GBOX_GITHUB_CLIENT_SECRET=${{ secrets.GBOX_GITHUB_CLIENT_SECRET }}" >> $GITHUB_ENV
 
