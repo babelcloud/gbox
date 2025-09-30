@@ -1,291 +1,114 @@
 package adb_expose
 
 import (
-	"encoding/binary"
+	"bytes"
+	"encoding/json"
 	"fmt"
-	"log"
-	"net"
-	"sync"
+	"net/http"
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
-const (
-	TypeOpen = iota + 1
-	TypeData
-	TypeClose
-	TypeError
-	TypeAck
-)
-
-type Config struct {
-	APIKey      string
-	BoxID       string
-	GboxURL     string
-	LocalAddr   string
-	TargetPorts []int
+// ForwardInfo represents information about a port forward
+type ForwardInfo struct {
+	BoxID       string    `json:"box_id"`
+	LocalPorts  []int     `json:"local_ports"`
+	RemotePorts []int     `json:"remote_ports"`
+	Status      string    `json:"status"`
+	StartedAt   time.Time `json:"started_at"`
+	Error       string    `json:"error,omitempty"`
 }
 
-type PortForwardRequest struct {
-	Ports []int `json:"ports"`
+// Client represents an ADB expose client
+type Client struct {
+	serverURL string
+	client    *http.Client
 }
 
-type PortForwardResponse struct {
-	URL string `json:"url"`
-}
-
-type Stream struct {
-	id        uint32
-	localConn net.Conn
-	closeCh   chan struct{}
-	readyCh   chan struct{}
-	mu        sync.Mutex
-	closed    bool
-	ready     bool
-}
-
-type MultiplexClient struct {
-	ws      *websocket.Conn
-	streams map[uint32]*Stream
-	mu      sync.RWMutex
-	nextID  uint32
-	muID    sync.Mutex
-	closeCh chan struct{}
-	writeMu sync.Mutex
-}
-
-func NewMultiplexClient(ws *websocket.Conn) *MultiplexClient {
-	return &MultiplexClient{
-		ws:      ws,
-		streams: make(map[uint32]*Stream),
-		closeCh: make(chan struct{}),
+// NewClient creates a new ADB expose client
+func NewClient(serverURL string) *Client {
+	return &Client{
+		serverURL: serverURL,
+		client: &http.Client{
+			Timeout: 10 * time.Second,
+		},
 	}
 }
 
-func (m *MultiplexClient) Close() {
-	select {
-	case <-m.closeCh:
-	default:
-		close(m.closeCh)
+// Start starts ADB port exposure for a box
+func (c *Client) Start(boxID string, localPorts, remotePorts []int) error {
+	reqBody := map[string]interface{}{
+		"box_id":       boxID,
+		"local_ports":  localPorts,
+		"remote_ports": remotePorts,
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	for _, stream := range m.streams {
-		stream.Close()
-	}
-	m.streams = nil
+	return c.makeRequest("POST", "/api/adb-expose/start", reqBody)
 }
 
-func (m *MultiplexClient) Run() error {
-	for {
-		select {
-		case <-m.closeCh:
-			return nil
-		default:
-			messageType, data, err := m.ws.ReadMessage()
-			if err != nil {
-				return fmt.Errorf("websocket read error: %v", err)
-			}
-
-			if messageType != websocket.BinaryMessage {
-				continue
-			}
-
-			msgType, streamID, payload, err := parseMessage(data)
-			if err != nil {
-				log.Printf("parse message error: %v", err)
-				continue
-			}
-
-			switch msgType {
-			case TypeData:
-				m.HandleData(streamID, payload)
-			case TypeClose:
-				m.HandleClose(streamID)
-			case TypeError:
-				m.HandleError(streamID, payload)
-			case TypeAck:
-				m.HandleAck(streamID)
-			default:
-				log.Printf("unknown message type: %d", msgType)
-			}
-		}
+// Stop stops ADB port exposure for a box
+func (c *Client) Stop(boxID string) error {
+	reqBody := map[string]interface{}{
+		"box_id": boxID,
 	}
+
+	return c.makeRequest("POST", "/api/adb-expose/stop", reqBody)
 }
 
-func (m *MultiplexClient) HandleData(streamID uint32, payload []byte) {
-	m.mu.RLock()
-	stream, exists := m.streams[streamID]
-	m.mu.RUnlock()
-
-	if !exists {
-		log.Printf("stream %d not found", streamID)
-		return
-	}
-
-	_, err := stream.localConn.Write(payload)
+// List returns all active ADB port exposures
+func (c *Client) List() ([]ForwardInfo, error) {
+	resp, err := c.client.Get(c.serverURL + "/api/adb-expose/list")
 	if err != nil {
-		log.Printf("localConn.Write error: %v", err)
-		stream.Close()
-		m.RemoveStream(streamID)
+		return nil, fmt.Errorf("failed to send request: %v", err)
 	}
-}
+	defer resp.Body.Close()
 
-func (m *MultiplexClient) HandleClose(streamID uint32) {
-	m.mu.RLock()
-	stream, exists := m.streams[streamID]
-	m.mu.RUnlock()
-
-	if exists {
-		stream.Close()
-		m.RemoveStream(streamID)
-	}
-}
-
-func (m *MultiplexClient) HandleError(streamID uint32, payload []byte) {
-	log.Printf("server error for stream %d: %s", streamID, string(payload))
-	m.HandleClose(streamID)
-}
-
-func (m *MultiplexClient) HandleAck(streamID uint32) {
-	m.mu.RLock()
-	stream, exists := m.streams[streamID]
-	m.mu.RUnlock()
-
-	if !exists {
-		log.Printf("received ack for unknown stream %d", streamID)
-		return
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("server returned status %d", resp.StatusCode)
 	}
 
-	stream.mu.Lock()
-	if !stream.ready {
-		stream.ready = true
-		close(stream.readyCh)
+	var result struct {
+		Forwards []ForwardInfo `json:"forwards"`
 	}
-	stream.mu.Unlock()
-}
-
-func (m *MultiplexClient) NewStreamID() uint32 {
-	m.muID.Lock()
-	defer m.muID.Unlock()
-	// client use even id, server use odd id
-	// if future need client to access server, server use odd id
-	m.nextID += 2
-	return m.nextID
-}
-
-func (m *MultiplexClient) SendMessage(msgType byte, streamID uint32, payload []byte) error {
-	m.writeMu.Lock()
-	defer m.writeMu.Unlock()
-
-	message := make([]byte, 5+len(payload))
-	message[0] = msgType
-	binary.BigEndian.PutUint32(message[1:5], streamID)
-	copy(message[5:], payload)
-
-	return m.ws.WriteMessage(websocket.BinaryMessage, message)
-}
-
-func (m *MultiplexClient) HandleStream(stream *Stream) {
-	defer func() {
-		stream.Close()
-		m.RemoveStream(stream.id)
-	}()
-
-	select {
-	case <-stream.readyCh:
-	case <-stream.closeCh:
-		return
-	case <-time.After(10 * time.Second):
-		log.Printf("timeout waiting for server ack for stream %d", stream.id)
-		m.SendMessage(TypeClose, stream.id, nil)
-		return
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %v", err)
 	}
 
-	buf := make([]byte, 4096)
-	for {
-		select {
-		case <-stream.closeCh:
-			return
-		default:
-			n, err := stream.localConn.Read(buf)
-			if err != nil {
-				m.SendMessage(TypeClose, stream.id, nil)
-				return
-			}
-
-			err = m.SendMessage(TypeData, stream.id, buf[:n])
-			if err != nil {
-				log.Printf("sendMessage error: %v", err)
-				return
-			}
-		}
-	}
+	return result.Forwards, nil
 }
 
-func (m *MultiplexClient) RemoveStream(streamID uint32) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.streams, streamID)
-}
-
-func (m *MultiplexClient) AddStream(streamID uint32, localConn net.Conn) *Stream {
-	stream := &Stream{
-		id:        streamID,
-		localConn: localConn,
-		closeCh:   make(chan struct{}),
-		readyCh:   make(chan struct{}),
-		ready:     false,
-	}
-
-	m.mu.Lock()
-	if m.streams == nil {
-		m.mu.Unlock()
-		log.Printf("streams map is nil, client may be closed")
-		stream.Close()
-		return stream
-	}
-	m.streams[streamID] = stream
-	m.mu.Unlock()
-
-	go m.HandleStream(stream)
-
-	return stream
-}
-
-func (s *Stream) Close() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.closed {
-		s.closed = true
-		close(s.closeCh)
-		if !s.ready {
-			close(s.readyCh)
-		}
-		s.localConn.Close()
-	}
-}
-
-func HandleLocalConnWithClient(localConn net.Conn, client *MultiplexClient, remotePort int) {
-	defer func() {
-		localConn.Close()
-	}()
-
-	streamID := client.NewStreamID()
-	stream := client.AddStream(streamID, localConn)
-
-	// start multiplexing
-	// the payload is <any_valid_ip>:<remote_port>
-	// remote server limit the ip, so we use any valid ip as payload
-	// And the <remote_port> must be in the port-forward-url response, remote server will check it
-	err := client.SendMessage(TypeOpen, streamID, []byte(fmt.Sprintf("127.0.0.1:%d", remotePort)))
+// makeRequest makes an HTTP request to the server
+func (c *Client) makeRequest(method, endpoint string, reqBody interface{}) error {
+	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
-		log.Printf("send open message error: %v", err)
-		return
+		return fmt.Errorf("failed to marshal request: %v", err)
 	}
 
-	<-stream.closeCh
+	resp, err := c.client.Post(c.serverURL+endpoint, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to parse response: %v", err)
+	}
+
+	if resp.StatusCode == http.StatusConflict {
+		fmt.Printf("ADB port is already exposed for box %s\n", reqBody.(map[string]interface{})["box_id"])
+		return nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		errorMsg, _ := result["error"].(string)
+		return fmt.Errorf("server error: %s", errorMsg)
+	}
+
+	success, _ := result["success"].(bool)
+	if !success {
+		errorMsg, _ := result["error"].(string)
+		return fmt.Errorf("operation failed: %s", errorMsg)
+	}
+
+	return nil
 }

@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>ADB Expose - GBOX Local Server</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a;
+            color: #fff;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .header {
+            max-width: 1200px;
+            margin: 0 auto 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        h1 {
+            font-size: 2rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .add-forward {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        label {
+            color: #888;
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+        }
+        input, select {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            color: #fff;
+            padding: 0.75rem;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 0.75rem 2rem;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        .forwards-list {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 1.5rem;
+        }
+        .exposes-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        .exposes-table th,
+        .exposes-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .exposes-table th {
+            background: rgba(255, 255, 255, 0.05);
+            color: #888;
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+        .exposes-table td {
+            color: #fff;
+        }
+        .box-id {
+            color: #667eea;
+            font-weight: 500;
+            font-family: monospace;
+        }
+        .port {
+            color: #aaa;
+            font-family: monospace;
+        }
+        .remove-btn {
+            background: #ef4444;
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+            border: none;
+            border-radius: 4px;
+            color: white;
+            cursor: pointer;
+        }
+        .remove-btn:hover {
+            background: #dc2626;
+        }
+        .remove-btn:disabled {
+            background: #6b7280;
+            cursor: not-allowed;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #666;
+        }
+        .back-link {
+            color: #667eea;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        
+        button:disabled {
+            background: #374151 !important;
+            color: #6b7280 !important;
+            cursor: not-allowed !important;
+            opacity: 0.6;
+        }
+        
+        button:disabled:hover {
+            background: #374151 !important;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔌 ADB Expose</h1>
+        <a href="/" class="back-link">← Back to Home</a>
+    </div>
+    
+    <div class="container">
+        <div class="add-forward">
+            <h2 style="margin-bottom: 1rem;">Add Box Port Forward</h2>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Box ID</label>
+                    <select id="boxId" required>
+                        <option value="">Select a box...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Local Port</label>
+                    <input type="number" id="localPort" value="5555" min="1" max="65535" required>
+                    <small style="color: #666; font-size: 0.8rem;">Local port to bind to</small>
+                </div>
+            </div>
+            <button id="startButton" onclick="addForward()" disabled>Expose</button>
+        </div>
+        
+        <div class="forwards-list">
+            <h2 style="margin-bottom: 1rem;">Active ADB Port Exposes</h2>
+            <div id="forwardsList">
+                <!-- Table will be dynamically generated here -->
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Load boxes
+        function loadBoxes() {
+            // Load both boxes and active forwards to filter out already exposed boxes
+            Promise.all([
+                fetch('/api/boxes?type=android').then(res => res.json()),
+                fetch('/api/adb-expose/list').then(res => res.json())
+            ])
+            .then(([boxesData, forwardsData]) => {
+                const select = document.getElementById('boxId');
+                select.innerHTML = '<option value="">Select a box...</option>';
+                
+                // Get list of already exposed box IDs
+                const exposedBoxIds = new Set();
+                if (forwardsData.forwards && forwardsData.forwards.length > 0) {
+                    forwardsData.forwards.forEach(forward => {
+                        exposedBoxIds.add(forward.box_id);
+                    });
+                }
+                
+                if (boxesData.boxes && boxesData.boxes.length > 0) {
+                    boxesData.boxes.forEach(box => {
+                        // Skip boxes that are already exposed
+                        if (exposedBoxIds.has(box.id)) {
+                            return;
+                        }
+                        
+                        const option = document.createElement('option');
+                        option.value = box.id;
+                        // Show name as primary, device type as secondary, and status
+                        const displayName = box.name && box.name !== box.id ? box.name : box.id;
+                        const deviceType = box.deviceType || 'virtual'; // virtual or physical
+                        const secondaryInfo = box.name && box.name !== box.id ? deviceType : deviceType;
+                        option.textContent = `${displayName} (${secondaryInfo}) - ${box.status}`;
+                        select.appendChild(option);
+                    });
+                    
+                    // If no available boxes after filtering
+                    if (select.children.length === 1) {
+                        select.innerHTML = '<option value="">All boxes are already exposed</option>';
+                    }
+                } else {
+                    select.innerHTML = '<option value="">No Android boxes available</option>';
+                }
+                updateButtonState(); // Update button state after loading boxes
+            })
+            .catch(err => {
+                console.error('Failed to load boxes:', err);
+                document.getElementById('boxId').innerHTML = '<option value="">Failed to load boxes</option>';
+                updateButtonState(); // Update button state even on error
+            });
+        }
+        
+        // Load forwards
+        function loadForwards() {
+            fetch('/api/adb-expose/list')
+                .then(res => res.json())
+                .then(data => {
+                    const forwardsListContainer = document.querySelector('.forwards-list');
+                    if (data.forwards && data.forwards.length > 0) {
+                        // Show the container and populate with table
+                        forwardsListContainer.style.display = 'block';
+                        const list = document.getElementById('forwardsList');
+                        const tableHTML = '<table class="exposes-table">' +
+                            '<thead>' +
+                            '<tr>' +
+                            '<th>Box ID</th>' +
+                            '<th>Port</th>' +
+                            '<th>Action</th>' +
+                            '</tr>' +
+                            '</thead>' +
+                            '<tbody>' +
+                            data.forwards.map(forward => {
+                                const localPort = forward.local_ports && forward.local_ports.length > 0 ? forward.local_ports[0] : '';
+                                
+                                return '<tr>' +
+                                    '<td class="box-id">' + forward.box_id + '</td>' +
+                                    '<td class="port">' + localPort + '</td>' +
+                                    '<td>' +
+                                    '<button class="remove-btn" onclick="removeForward(\'' + forward.box_id + '\')">' +
+                                    'Stop' +
+                                    '</button>' +
+                                    '</td>' +
+                                    '</tr>';
+                            }).join('') +
+                            '</tbody>' +
+                            '</table>';
+                        list.innerHTML = tableHTML;
+                    } else {
+                        // Hide the entire container if no data
+                        forwardsListContainer.style.display = 'none';
+                    }
+                })
+                .catch(err => {
+                    console.error('Failed to load forwards:', err);
+                    const forwardsListContainer = document.querySelector('.forwards-list');
+                    forwardsListContainer.style.display = 'block'; // Show container for error
+                    document.getElementById('forwardsList').innerHTML = 
+                        '<div class="empty-state">Failed to load ADB port exposes</div>';
+                });
+        }
+        
+        // Load both boxes and forwards (used after operations that change state)
+        function loadBoxesAndForwards() {
+            loadBoxes();
+            loadForwards();
+        }
+        
+        // Update button state based on form validity
+        function updateButtonState() {
+            const boxId = document.getElementById('boxId').value.trim();
+            const localPort = parseInt(document.getElementById('localPort').value);
+            const button = document.getElementById('startButton');
+            
+            const isValid = boxId && localPort && localPort >= 1 && localPort <= 65535;
+            button.disabled = !isValid;
+            
+            // Only reset button text if form becomes valid (user selects a box)
+            if (isValid && button.textContent === 'Exposing...') {
+                button.textContent = 'Expose';
+            }
+        }
+        
+        // Add forward
+        function addForward() {
+            const boxId = document.getElementById('boxId').value.trim();
+            const localPort = parseInt(document.getElementById('localPort').value);
+            const button = document.getElementById('startButton');
+            
+            // Button should be disabled if form is invalid, but double-check
+            if (!boxId || !localPort || localPort < 1 || localPort > 65535) {
+                return; // Do nothing if form is invalid
+            }
+            
+            // Disable button immediately to prevent duplicate clicks
+            button.disabled = true;
+            button.textContent = 'Exposing...';
+            
+            fetch('/api/adb-expose/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    box_id: boxId,
+                    local_ports: [localPort],
+                    remote_ports: [5555]
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    loadBoxesAndForwards(); // Reload both boxes and forwards
+                    // Clear inputs
+                    document.getElementById('boxId').value = '';
+                    document.getElementById('localPort').value = '5555';
+                    // Reset button state after successful operation
+                    button.disabled = true; // Keep disabled since form is now empty
+                    button.textContent = 'Expose'; // Reset text to default
+                } else {
+                    alert('Failed to start port forward: ' + (data.error || 'Unknown error'));
+                    // Restore button state on failure
+                    button.disabled = false;
+                    button.textContent = 'Expose';
+                }
+            })
+            .catch(err => {
+                console.error('Failed to start port forward:', err);
+                alert('Failed to start port forward: ' + err.message);
+                // Restore button state on error
+                button.disabled = false;
+                button.textContent = 'Expose';
+            });
+        }
+        
+        // Remove forward
+        function removeForward(boxId) {
+            // Find the button that was clicked and disable it
+            const buttons = document.querySelectorAll('.remove-btn');
+            let clickedButton = null;
+            buttons.forEach(btn => {
+                if (btn.onclick && btn.onclick.toString().includes(boxId)) {
+                    clickedButton = btn;
+                }
+            });
+            
+            if (clickedButton) {
+                clickedButton.disabled = true;
+                clickedButton.textContent = 'Stopping...';
+            }
+            
+            fetch('/api/adb-expose/stop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    box_id: boxId
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    loadBoxesAndForwards(); // Reload both boxes and forwards
+                } else {
+                    alert('Failed to stop port forward: ' + (data.error || 'Unknown error'));
+                    // Restore button state on failure
+                    if (clickedButton) {
+                        clickedButton.disabled = false;
+                        clickedButton.textContent = 'Stop';
+                    }
+                }
+            })
+            .catch(err => {
+                console.error('Failed to stop port forward:', err);
+                alert('Failed to stop port forward: ' + err.message);
+                // Restore button state on error
+                if (clickedButton) {
+                    clickedButton.disabled = false;
+                    clickedButton.textContent = 'Stop';
+                }
+            });
+        }
+        
+        // Initial load
+        loadBoxesAndForwards();
+        
+        // Add event listeners for form changes
+        document.getElementById('boxId').addEventListener('change', updateButtonState);
+        document.getElementById('localPort').addEventListener('input', updateButtonState);
+        
+        // Refresh forwards every 5 seconds (boxes don't need frequent refresh)
+        setInterval(loadForwards, 5000);
+    </script>
+</body>
+</html>

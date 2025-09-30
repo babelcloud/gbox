@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GBOX Local Server</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%);
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+        .container {
+            max-width: 900px;
+            width: 100%;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        h1 { 
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle {
+            color: #888;
+            font-size: 1.2rem;
+        }
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 2rem;
+            transition: transform 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(102, 126, 234, 0.2);
+            border-color: rgba(102, 126, 234, 0.5);
+        }
+        .card-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+        .card-title {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+            color: #fff;
+        }
+        .card-description {
+            color: #aaa;
+            line-height: 1.6;
+        }
+        .status {
+            position: fixed;
+            top: 2rem;
+            right: 2rem;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 1rem;
+            font-size: 0.8rem;
+            color: #aaa;
+            max-width: 280px;
+        }
+        .status-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.75rem;
+            color: #4ade80;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            background: #4ade80;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+        }
+        .status-item {
+            margin-bottom: 0.25rem;
+            display: flex;
+            justify-content: space-between;
+        }
+        .status-label {
+            color: #888;
+        }
+        .status-value {
+            color: #fff;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="status" id="serverStatus">
+        <div class="status-header">
+            <div class="status-indicator"></div>
+            Server Running
+        </div>
+        <div class="status-item">
+            <span class="status-label">Version:</span>
+            <span class="status-value" id="version">Loading...</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">Build ID:</span>
+            <span class="status-value" id="buildId">Loading...</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">Port:</span>
+            <span class="status-value" id="port">Loading...</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">Uptime:</span>
+            <span class="status-value" id="uptime">Loading...</span>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="header">
+            <h1>GBOX Local Server</h1>
+            <p class="subtitle">Local service for GBOX CLI</p>
+        </div>
+        
+        <div class="cards">
+            <a href="/live-view" class="card">
+                <div class="card-icon">📱</div>
+                <h2 class="card-title">Device Connect</h2>
+                <p class="card-description">
+                    Real-time Android device streaming and control via WebRTC
+                </p>
+            </a>
+            
+            <a href="/adb-expose" class="card">
+                <div class="card-icon">🔌</div>
+                <h2 class="card-title">ADB Expose</h2>
+                <p class="card-description">
+                    Manage ADB port forwarding for Android devices
+                </p>
+            </a>
+        </div>
+    </div>
+
+    <script>
+        async function loadServerInfo() {
+            try {
+                console.log('Loading server info...');
+                const response = await fetch('/api/server/info');
+                console.log('Response status:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                }
+                
+                const info = await response.json();
+                console.log('Server info:', info);
+                
+                document.getElementById('version').textContent = info.version || 'Unknown';
+                
+                // Format build ID to be more readable
+                let buildIdText = 'Unknown';
+                if (info.build_id) {
+                    // Extract just the date part for display
+                    const buildId = info.build_id;
+                    if (buildId.includes('T')) {
+                        // Format: 2025-09-11T16:51:14+08:00-unknown -> 2025-09-11 16:51
+                        const dateTime = buildId.split('T')[0] + ' ' + buildId.split('T')[1].split('+')[0].substring(0, 5);
+                        buildIdText = dateTime;
+                    } else {
+                        buildIdText = buildId.substring(0, 16) + '...';
+                    }
+                }
+                document.getElementById('buildId').textContent = buildIdText;
+                
+                document.getElementById('port').textContent = info.port || 'Unknown';
+                document.getElementById('uptime').textContent = info.uptime || 'Unknown';
+                
+                console.log('Server info loaded successfully');
+            } catch (error) {
+                console.error('Failed to load server info:', error);
+                document.getElementById('version').textContent = 'Error';
+                document.getElementById('buildId').textContent = 'Error';
+                document.getElementById('port').textContent = 'Error';
+                document.getElementById('uptime').textContent = 'Error';
+                
+                // Update status indicator to show error
+                const statusIndicator = document.querySelector('.status-indicator');
+                const statusHeader = document.querySelector('.status-header');
+                if (statusIndicator) statusIndicator.style.background = '#ef4444';
+                if (statusHeader) statusHeader.textContent = 'Server Error';
+            }
+        }
+        
+        // Load server info when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded, starting to load server info...');
+            loadServerInfo();
+        });
+        
+        // Update uptime every 5 seconds
+        setInterval(async () => {
+            try {
+                const response = await fetch('/api/server/info');
+                if (response.ok) {
+                    const info = await response.json();
+                    document.getElementById('uptime').textContent = info.uptime || 'Unknown';
+                }
+            } catch (error) {
+                console.error('Failed to update uptime:', error);
+            }
+        }, 5000);
+    </script>
+</body>
+</html>

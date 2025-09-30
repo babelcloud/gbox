@@ -1,0 +1,75 @@
+.controlButtons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 12px 10px;
+  border-radius: 16px;
+  z-index: 1000;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  margin: 0;
+  box-sizing: border-box;
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  min-width: 60px;
+  overflow: hidden;
+}
+
+
+.controlBtn {
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  padding: 0;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+  position: relative;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.controlBtn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
+  color: #4CAF50;
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+}
+
+.controlBtn:active {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(0.95);
+}
+
+.controlBtn svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+
+.separator {
+  width: 44px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.15);
+  cursor: default;
+  border-radius: 0;
+  margin: 4px 0;
+}
+
+.controlBtn.active {
+  background: rgba(76, 175, 80, 0.3);
+  border: 2px solid #4CAF50;
+}
+
+.controlBtn.active:hover {
+  background: rgba(76, 175, 80, 0.4);
+  border-color: #45a049;
+}
