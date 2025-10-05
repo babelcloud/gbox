@@ -40,7 +40,7 @@ func NewMcpExportCommand() *cobra.Command {
 		Short: "Export MCP configuration for Claude Desktop/Cursor (Android only)",
 		Long: `Export MCP server configuration for Claude Desktop, Cursor, or Claude-Code (Android only).
 
-Only Android MCP server is supported. The configuration will use npx @gbox.ai/mcp-android-server.
+Only Android MCP server is supported. The configuration will use npx @gbox.ai/mcp-server.
 `,
 		Example: `  # Export Android MCP server configuration (default)
   gbox mcp export --merge-to claude
@@ -140,7 +140,7 @@ func exportConfig(mergeTo string, dryRun bool, scope string) error {
 		McpServers: map[string]McpServerEntry{
 			"gbox-android": {
 				Command: "npx",
-				Args:    []string{"-y", "@gbox.ai/mcp-android-server@latest"},
+				Args:    []string{"-y", "@gbox.ai/mcp-server@latest"},
 			},
 		},
 	}
@@ -186,7 +186,7 @@ func exportConfig(mergeTo string, dryRun bool, scope string) error {
 		fmt.Println("  gbox mcp export --merge-to cursor      # For Cursor")
 		fmt.Println("  gbox mcp export --merge-to claude-code # For Claude-Code (generates claude mcp add command)")
 		fmt.Println()
-		fmt.Println("Note: Android server will use the published npm package @gbox.ai/mcp-android-server@latest via npx.")
+		fmt.Println("Note: Android server will use the published npm package @gbox.ai/mcp-server@latest via npx.")
 	}
 	return nil
 }
@@ -251,14 +251,14 @@ func outputClaudeCodeCommand(dryRun bool, scope string) error {
 	cmdArgs = append(cmdArgs, "mcp", "add", serverName)
 	cmdArgs = append(cmdArgs, envArgs...)
 	cmdArgs = append(cmdArgs, "-s", scope)
-	cmdArgs = append(cmdArgs, "--", "npx", "-y", "@gbox.ai/mcp-android-server")
+	cmdArgs = append(cmdArgs, "--", "npx", "-y", "@gbox.ai/mcp-server")
 
 	if dryRun {
 		fmt.Println("Copy and execute the following command in your target directory:")
 		fmt.Println("----------------------------------------")
 		fmt.Printf("claude %s\n", strings.Join(cmdArgs, " "))
 		fmt.Println()
-		fmt.Println("Note: Android mcp server will use the published npm package @gbox.ai/mcp-android-server@latest via npx.")
+		fmt.Println("Note: Android mcp server will use the published npm package @gbox.ai/mcp-server@latest via npx.")
 	} else {
 		return executeClaudeCommand(cmdArgs, serverName)
 	}
@@ -273,7 +273,7 @@ func executeClaudeCommand(cmdArgs []string, serverName string) error {
 	claudeCmd.Stderr = os.Stderr
 
 	fmt.Printf("Executing: claude %s\n", strings.Join(cmdArgs, " "))
-	
+
 	if err := claudeCmd.Run(); err != nil {
 		return fmt.Errorf("failed to execute claude mcp add command: %w", err)
 	}
