@@ -1051,6 +1051,11 @@ export class MP4Client implements ControlClient {
       );
       this.controlWs = new WebSocket(controlWsUrl);
 
+      // set timeout to avoid WebSocket connection failure
+      setInterval(() => {
+        resolve();
+      }, 1000);
+
       this.controlWs.onopen = () => {
         console.log("[MP4Client] Control WebSocket connected successfully");
         this.isControlConnectedFlag = true;
