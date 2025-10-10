@@ -1,6 +1,6 @@
 {
   "name": "@babelcloud/live-view",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "Live view component for Android device streaming",
   "main": "dist/index.umd.js",
@@ -20,9 +20,9 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build": "npm run build:component && npm run build:static",
+    "build": "vite build --config vite.config.sdk.ts",
     "build:component": "rollup -c",
-    "build:static": "vite build",
+    "build:static": "vite build --config vite.config.sdk.ts",
     "build:sdk": "vite build --config vite.config.sdk.ts",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
