@@ -6,19 +6,15 @@ import (
 	"time"
 )
 
-// APIHandlers contains handlers for all /api/* routes
+// APIHandlers contains handlers for general API routes (health, status, server management)
 type APIHandlers struct {
-	serverService     ServerService
-	adbExposeHandlers *ADBExposeHandlers
-	deviceHandlers    *DeviceHandlers
+	serverService ServerService
 }
 
 // NewAPIHandlers creates a new API handlers instance
 func NewAPIHandlers(serverSvc ServerService) *APIHandlers {
 	return &APIHandlers{
-		serverService:     serverSvc,
-		adbExposeHandlers: NewADBExposeHandlers(),
-		deviceHandlers:    NewDeviceHandlers(serverSvc),
+		serverService: serverSvc,
 	}
 }
 
@@ -54,56 +50,8 @@ func (h *APIHandlers) HandleStatus(w http.ResponseWriter, req *http.Request) {
 	RespondJSON(w, http.StatusOK, status)
 }
 
-// Device management endpoints - delegate to dedicated handlers
-func (h *APIHandlers) HandleDeviceList(w http.ResponseWriter, req *http.Request) {
-	h.deviceHandlers.HandleDeviceList(w, req)
-}
-
-func (h *APIHandlers) HandleDeviceRegister(w http.ResponseWriter, req *http.Request) {
-	h.deviceHandlers.HandleDeviceRegister(w, req)
-}
-
-func (h *APIHandlers) HandleDeviceUnregister(w http.ResponseWriter, req *http.Request) {
-	h.deviceHandlers.HandleDeviceUnregister(w, req)
-}
-
-// Device-specific handlers
-func (h *APIHandlers) HandleDeviceAction(w http.ResponseWriter, req *http.Request) {
-	h.deviceHandlers.HandleDeviceAction(w, req)
-}
-
-func (h *APIHandlers) HandleDeviceVideo(w http.ResponseWriter, req *http.Request) {
-	h.deviceHandlers.HandleDeviceVideo(w, req)
-}
-
-func (h *APIHandlers) HandleDeviceAudio(w http.ResponseWriter, req *http.Request) {
-	h.deviceHandlers.HandleDeviceAudio(w, req)
-}
-
-func (h *APIHandlers) HandleDeviceControl(w http.ResponseWriter, req *http.Request) {
-	h.deviceHandlers.HandleDeviceControl(w, req)
-}
-
-func (h *APIHandlers) HandleDeviceStream(w http.ResponseWriter, req *http.Request) {
-	h.deviceHandlers.HandleDeviceStream(w, req)
-}
-
-// ADB Expose endpoints - delegate to dedicated handlers
-func (h *APIHandlers) HandleADBExposeStart(w http.ResponseWriter, req *http.Request) {
-	h.adbExposeHandlers.HandleADBExposeStart(w, req)
-}
-
-func (h *APIHandlers) HandleADBExposeStop(w http.ResponseWriter, req *http.Request) {
-	h.adbExposeHandlers.HandleADBExposeStop(w, req)
-}
-
-func (h *APIHandlers) HandleADBExposeStatus(w http.ResponseWriter, req *http.Request) {
-	h.adbExposeHandlers.HandleADBExposeStatus(w, req)
-}
-
-func (h *APIHandlers) HandleADBExposeList(w http.ResponseWriter, req *http.Request) {
-	h.adbExposeHandlers.HandleADBExposeList(w, req)
-}
+// Device management endpoints are now handled directly by DeviceHandlers in the router
+// ADB Expose endpoints are now handled directly by ADBExposeHandlers in the ADBExposeRouter
 
 // Server management endpoints
 func (h *APIHandlers) HandleServerShutdown(w http.ResponseWriter, req *http.Request) {
