@@ -3,18 +3,28 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Live view component for Android device streaming",
-  "main": "dist/index.js",
-  "module": "dist/index.esm.js",
+  "main": "dist/index.umd.js",
+  "module": "dist/index.es.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.es.js",
+      "require": "./dist/index.umd.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./style.css": "./dist/style.css"
+  },
   "files": [
     "dist",
-    "static"
+    "static",
+    "README.md"
   ],
   "scripts": {
     "dev": "vite",
     "build": "npm run build:component && npm run build:static",
     "build:component": "rollup -c",
     "build:static": "vite build",
+    "build:sdk": "vite build --config vite.config.sdk.ts",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
     "lint": "eslint src",
