@@ -1,5 +1,5 @@
 {
-  "name": "@gbox/live-view",
+  "name": "@babelcloud/live-view",
   "version": "0.1.0",
   "type": "module",
   "description": "Live view component for Android device streaming",
@@ -71,7 +71,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/gbox-ai/gbox.git",
+    "url": "https://github.com/babelcloud/gbox.git",
     "directory": "packages/live-view"
   },
   "keywords": [
