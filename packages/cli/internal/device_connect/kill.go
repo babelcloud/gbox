@@ -132,29 +132,42 @@ func FindGboxDeviceProxyProcesses() ([]int, error) {
 
 // KillProcess kills a process by PID
 func KillProcess(pid int, force bool) error {
-	var cmd *exec.Cmd
+    // On Unix, the device proxy is started in its own process group. To ensure
+    // all child processes (e.g., frpc) are terminated, send the signal to the
+    // process group using a negative PID first, then fall back to the single PID.
+    if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+        // Try killing the entire process group
+        if force {
+            if err := exec.Command("kill", "-9", fmt.Sprintf("-%d", pid)).Run(); err == nil {
+                return nil
+            }
+            // Fall back to killing only the leader
+            return exec.Command("kill", "-9", fmt.Sprintf("%d", pid)).Run()
+        }
+        if err := exec.Command("kill", fmt.Sprintf("-%d", pid)).Run(); err == nil {
+            return nil
+        }
+        return exec.Command("kill", fmt.Sprintf("%d", pid)).Run()
+    }
 
-	if force {
-		switch runtime.GOOS {
-		case "darwin", "linux":
-			cmd = exec.Command("kill", "-9", fmt.Sprintf("%d", pid))
-		case "windows":
-			cmd = exec.Command("taskkill", "/F", "/PID", fmt.Sprintf("%d", pid))
-		default:
-			return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
-		}
-	} else {
-		switch runtime.GOOS {
-		case "darwin", "linux":
-			cmd = exec.Command("kill", fmt.Sprintf("%d", pid))
-		case "windows":
-			cmd = exec.Command("taskkill", "/PID", fmt.Sprintf("%d", pid))
-		default:
-			return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
-		}
-	}
-
-	return cmd.Run()
+    // Windows behavior unchanged
+    var cmd *exec.Cmd
+    if force {
+        switch runtime.GOOS {
+        case "windows":
+            cmd = exec.Command("taskkill", "/F", "/PID", fmt.Sprintf("%d", pid))
+        default:
+            return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+        }
+    } else {
+        switch runtime.GOOS {
+        case "windows":
+            cmd = exec.Command("taskkill", "/PID", fmt.Sprintf("%d", pid))
+        default:
+            return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+        }
+    }
+    return cmd.Run()
 }
 
 // GetProcessCommand returns the command and arguments for a given process ID

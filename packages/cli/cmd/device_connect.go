@@ -224,7 +224,7 @@ func isServiceRunning() (bool, error) {
 
 func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 	client := getDeviceClient()
-    devices, err := getDevicesWithValidation(client, 60*time.Second)
+	devices, err := getDevicesWithValidation(client, 60*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to get available devices: %v", err)
 	}
@@ -257,9 +257,29 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 			statusColor.Sprint(status))
 	}
 	fmt.Println()
-	fmt.Print("Enter a number: ")
-	var choice int
-	fmt.Scanf("%d", &choice)
+    fmt.Print("Enter a number: ")
+    var choice int
+
+    // Trap Ctrl+C while waiting for input so we can cleanup proxy first
+    intCh := make(chan os.Signal, 1)
+    signal.Notify(intCh, syscall.SIGINT, syscall.SIGTERM)
+    defer signal.Stop(intCh)
+
+    inputDone := make(chan struct{})
+    go func() {
+        // Read user input
+        fmt.Scanf("%d", &choice)
+        close(inputDone)
+    }()
+
+    select {
+    case <-intCh:
+        // User pressed Ctrl+C during selection; stop proxy first then exit gracefully
+        _ = executeKillServer()
+        return nil
+    case <-inputDone:
+        // proceed
+    }
 	if choice < 1 || choice > len(devices) {
 		return fmt.Errorf("invalid selection: %d", choice)
 	}
@@ -271,7 +291,7 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 func connectToDevice(deviceID string, opts *DeviceConnectOptions) error {
 	client := getDeviceClient()
 
-    device, err := getDeviceInfoWithRetry(client, deviceID, 60*time.Second)
+	device, err := getDeviceInfoWithRetry(client, deviceID, 60*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to get device info: %v", err)
 	}
@@ -325,7 +345,7 @@ func connectToDevice(deviceID string, opts *DeviceConnectOptions) error {
 // executeKillServer calls the existing kill-server functionality
 func executeKillServer() error {
 	opts := &DeviceConnectKillServerOptions{
-		Force: false,
+        Force: true,
 		All:   false,
 	}
 	// Create a dummy command for ExecuteDeviceConnectKillServer
@@ -333,69 +353,81 @@ func executeKillServer() error {
 	return ExecuteDeviceConnectKillServer(nil, opts)
 }
 
-// getDevicesWithRetry polls the devices endpoint until it succeeds or timeout is reached
-func getDevicesWithRetry(client *device_connect.Client, timeout time.Duration) ([]device_connect.DeviceInfo, error) {
-    deadline := time.Now().Add(timeout)
-    var lastErr error
-    for {
-        devices, err := client.GetDevices()
-        if err == nil {
-            return devices, nil
-        }
-        lastErr = err
-        if time.Now().After(deadline) {
-            return nil, lastErr
-        }
-        time.Sleep(1 * time.Second)
-    }
-}
-
 // getDeviceInfoWithRetry waits for the API to be ready and then looks up the device
 func getDeviceInfoWithRetry(client *device_connect.Client, deviceID string, timeout time.Duration) (*device_connect.DeviceInfo, error) {
-    devices, err := getDevicesWithValidation(client, timeout)
-    if err != nil {
-        return nil, err
-    }
-    for _, d := range devices {
-        if d.Id == deviceID {
-            return &d, nil
-        }
-    }
-    return nil, fmt.Errorf("device not found: %s", deviceID)
+	devices, err := getDevicesWithValidation(client, timeout)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range devices {
+		if d.Id == deviceID {
+			return &d, nil
+		}
+	}
+	return nil, fmt.Errorf("device not found: %s", deviceID)
 }
 
 // getDevicesWithValidation retries fetching devices until at least one device has a non-empty serial number,
 // or until the timeout is reached. This avoids the abnormal "-usb" entries when the upstream is not ready.
 func getDevicesWithValidation(client *device_connect.Client, timeout time.Duration) ([]device_connect.DeviceInfo, error) {
-    deadline := time.Now().Add(timeout)
-    var lastErr error
-    for {
-        devices, err := client.GetDevices()
-        if err == nil {
-            if !allSerialMissing(devices) {
-                return devices, nil
-            }
-            lastErr = fmt.Errorf("devices contain empty serial numbers; retrying")
-        } else {
-            lastErr = err
-        }
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	var lastDevices []device_connect.DeviceInfo
+	for {
+		devices, err := client.GetDevices()
+		if err == nil {
+			lastDevices = devices
+			if !hasAnyEmptySerial(devices) {
+				return devices, nil
+			}
+			lastErr = fmt.Errorf("some devices missing serial numbers; retrying")
+		} else {
+			lastErr = err
+		}
 
-        if time.Now().After(deadline) {
-            return nil, lastErr
-        }
-        time.Sleep(1 * time.Second)
-    }
+		if time.Now().After(deadline) {
+			if len(lastDevices) > 0 {
+				valid := filterValidDevices(lastDevices)
+				if len(valid) > 0 {
+					return valid, nil
+				}
+			}
+			return nil, lastErr
+		}
+		time.Sleep(1 * time.Second)
+	}
 }
 
 // allSerialMissing returns true when every device has an empty SerialNo
 func allSerialMissing(devices []device_connect.DeviceInfo) bool {
-    if len(devices) == 0 {
-        return false
-    }
-    for _, d := range devices {
-        if d.SerialNo != "" {
-            return false
-        }
-    }
-    return true
+	if len(devices) == 0 {
+		return false
+	}
+	for _, d := range devices {
+		if d.SerialNo != "" {
+			return false
+		}
+	}
+	return true
+}
+
+// hasAnyEmptySerial returns true if any device has an empty SerialNo
+func hasAnyEmptySerial(devices []device_connect.DeviceInfo) bool {
+	for _, d := range devices {
+		if d.SerialNo == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// filterValidDevices returns only devices with a non-empty SerialNo
+func filterValidDevices(devices []device_connect.DeviceInfo) []device_connect.DeviceInfo {
+	var result []device_connect.DeviceInfo
+	for _, d := range devices {
+		if d.SerialNo != "" {
+			result = append(result, d)
+		}
+	}
+	return result
 }

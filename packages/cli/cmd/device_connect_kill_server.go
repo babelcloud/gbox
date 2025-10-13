@@ -115,8 +115,8 @@ func ExecuteDeviceConnectKillServer(cmd *cobra.Command, opts *DeviceConnectKillS
 		os.Remove(pidFile)
 	}
 
-	// Only use port and name-based killing when --all flag is set
-	if opts.All {
+    // Use port and name-based killing when --all flag is set, or when PID kill did not suffice
+    if opts.All {
 		// Method 2: Find and kill processes by port, but only if they are device-proxy processes
 		portProcesses, err := device_connect.FindProcessesOnPort(device_connect.DefaultPort)
 		if err == nil && len(portProcesses) > 0 {
@@ -191,9 +191,68 @@ func ExecuteDeviceConnectKillServer(cmd *cobra.Command, opts *DeviceConnectKillS
 			fmt.Println("Use 'gbox device-connect kill-server --all --force' to force kill all remaining processes.")
 			return nil
 		}
-	} else {
-		// When not using --all, just report success if PID file was handled
-		fmt.Println("Device proxy service stopped successfully.")
-		return nil
-	}
+    } else {
+        // When not using --all, verify no device proxy remains; if remains, perform a final forced cleanup sweep
+        remainingPortProcesses, _ := device_connect.FindProcessesOnPort(device_connect.DefaultPort)
+        remainingNameProcesses, _ := device_connect.FindGboxDeviceProxyProcesses()
+        stillRunning := false
+        for _, pid := range remainingPortProcesses {
+            if device_connect.IsDeviceProxyProcess(pid) {
+                stillRunning = true
+                break
+            }
+        }
+        if !stillRunning && len(remainingNameProcesses) == 0 {
+            fmt.Println("Device proxy service stopped successfully.")
+            return nil
+        }
+
+        // Final sweep: force kill anything that looks like device-proxy
+        for _, pid := range remainingPortProcesses {
+            if device_connect.IsDeviceProxyProcess(pid) {
+                _ = device_connect.KillProcess(pid, true)
+            }
+        }
+        for _, pid := range remainingNameProcesses {
+            _ = device_connect.KillProcess(pid, true)
+        }
+
+        // Re-check
+        finalPortProcesses, _ := device_connect.FindProcessesOnPort(device_connect.DefaultPort)
+        finalNameProcesses, _ := device_connect.FindGboxDeviceProxyProcesses()
+        var finalDeviceProxyPorts []int
+        for _, pid := range finalPortProcesses {
+            if device_connect.IsDeviceProxyProcess(pid) {
+                finalDeviceProxyPorts = append(finalDeviceProxyPorts, pid)
+            }
+        }
+        if len(finalDeviceProxyPorts) == 0 && len(finalNameProcesses) == 0 {
+            fmt.Println("Device proxy service stopped successfully.")
+            return nil
+        }
+
+        fmt.Println("Warning: Some device proxy processes may still be running:")
+        if len(finalDeviceProxyPorts) > 0 {
+            fmt.Printf("  Device proxy processes using port %d:\n", device_connect.DefaultPort)
+            for _, pid := range finalDeviceProxyPorts {
+                if cmd, err := device_connect.GetProcessCommand(pid); err == nil {
+                    fmt.Printf("    PID %d: %s\n", pid, cmd)
+                } else {
+                    fmt.Printf("    PID %d: <command not available>\n", pid)
+                }
+            }
+        }
+        if len(finalNameProcesses) > 0 {
+            fmt.Println("  Device proxy processes found by name:")
+            for _, pid := range finalNameProcesses {
+                if cmd, err := device_connect.GetProcessCommand(pid); err == nil {
+                    fmt.Printf("    PID %d: %s\n", pid, cmd)
+                } else {
+                    fmt.Printf("    PID %d: <command not available>\n", pid)
+                }
+            }
+        }
+        fmt.Println("Try 'gbox device-connect kill-server --all --force' if they persist.")
+        return nil
+    }
 }
