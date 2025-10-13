@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect"
@@ -154,12 +155,12 @@ to remote cloud services for remote access and debugging.`,
 func ExecuteDeviceConnect(cmd *cobra.Command, opts *DeviceConnectOptions, args []string) error {
 	if !checkAdbInstalled() {
 		printAdbInstallationHint()
-		return fmt.Errorf("ADB is not installed or not in your PATH. Please install ADB and try again.")
+		return fmt.Errorf("ADB is not installed or not in your PATH; please install ADB and try again")
 	}
 
 	if !checkFrpcInstalled() {
 		printFrpcInstallationHint()
-		return fmt.Errorf("frpc is not installed or not in your PATH. Please install frpc and try again.")
+		return fmt.Errorf("frpc is not installed or not in your PATH; please install frpc and try again")
 	}
 
 	// Ensure device proxy service is running
@@ -223,7 +224,7 @@ func isServiceRunning() (bool, error) {
 
 func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 	client := getDeviceClient()
-	devices, err := client.GetDevices()
+    devices, err := getDevicesWithValidation(client, 60*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to get available devices: %v", err)
 	}
@@ -270,7 +271,7 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 func connectToDevice(deviceID string, opts *DeviceConnectOptions) error {
 	client := getDeviceClient()
 
-	device, err := client.GetDeviceInfo(deviceID)
+    device, err := getDeviceInfoWithRetry(client, deviceID, 60*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to get device info: %v", err)
 	}
@@ -330,4 +331,71 @@ func executeKillServer() error {
 	// Create a dummy command for ExecuteDeviceConnectKillServer
 	// We only need this for the function signature, the actual cmd parameter is not used in the implementation
 	return ExecuteDeviceConnectKillServer(nil, opts)
+}
+
+// getDevicesWithRetry polls the devices endpoint until it succeeds or timeout is reached
+func getDevicesWithRetry(client *device_connect.Client, timeout time.Duration) ([]device_connect.DeviceInfo, error) {
+    deadline := time.Now().Add(timeout)
+    var lastErr error
+    for {
+        devices, err := client.GetDevices()
+        if err == nil {
+            return devices, nil
+        }
+        lastErr = err
+        if time.Now().After(deadline) {
+            return nil, lastErr
+        }
+        time.Sleep(1 * time.Second)
+    }
+}
+
+// getDeviceInfoWithRetry waits for the API to be ready and then looks up the device
+func getDeviceInfoWithRetry(client *device_connect.Client, deviceID string, timeout time.Duration) (*device_connect.DeviceInfo, error) {
+    devices, err := getDevicesWithValidation(client, timeout)
+    if err != nil {
+        return nil, err
+    }
+    for _, d := range devices {
+        if d.Id == deviceID {
+            return &d, nil
+        }
+    }
+    return nil, fmt.Errorf("device not found: %s", deviceID)
+}
+
+// getDevicesWithValidation retries fetching devices until at least one device has a non-empty serial number,
+// or until the timeout is reached. This avoids the abnormal "-usb" entries when the upstream is not ready.
+func getDevicesWithValidation(client *device_connect.Client, timeout time.Duration) ([]device_connect.DeviceInfo, error) {
+    deadline := time.Now().Add(timeout)
+    var lastErr error
+    for {
+        devices, err := client.GetDevices()
+        if err == nil {
+            if !allSerialMissing(devices) {
+                return devices, nil
+            }
+            lastErr = fmt.Errorf("devices contain empty serial numbers; retrying")
+        } else {
+            lastErr = err
+        }
+
+        if time.Now().After(deadline) {
+            return nil, lastErr
+        }
+        time.Sleep(1 * time.Second)
+    }
+}
+
+// allSerialMissing returns true when every device has an empty SerialNo
+func allSerialMissing(devices []device_connect.DeviceInfo) bool {
+    if len(devices) == 0 {
+        return false
+    }
+    for _, d := range devices {
+        if d.SerialNo != "" {
+            return false
+        }
+    }
+    return true
 }
