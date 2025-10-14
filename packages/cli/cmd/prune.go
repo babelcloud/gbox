@@ -41,7 +41,7 @@ func NewPruneCommand() *cobra.Command {
 func runPrune(opts *PruneOptions) error {
 	// Get cache directories
 	gboxHome := config.GetGboxHome()
-	deviceProxyHome := config.GetDeviceProxyHome()
+	cliHome := config.GetGboxCliHome()
 
 	// Ask for confirmation if not forced
 	if !opts.Force {
@@ -63,25 +63,28 @@ func runPrune(opts *PruneOptions) error {
 	var cleanedItems []string
 	var errors []error
 
-	// Prune device proxy cache
-	if err := pruneDeviceProxyCache(deviceProxyHome, &cleanedItems, &errors); err != nil {
-		errors = append(errors, fmt.Errorf("failed to prune device proxy cache: %v", err))
+	// Prune CLI cache directory (contains all cache files)
+	if err := pruneData(cliHome, opts.All, &cleanedItems, &errors); err != nil {
+		errors = append(errors, fmt.Errorf("failed to prune CLI cache: %v", err))
 	}
 
-	// Prune other cache files in gbox home
-	if err := pruneGboxCache(gboxHome, opts.All, &cleanedItems, &errors); err != nil {
-		errors = append(errors, fmt.Errorf("failed to prune gbox cache: %v", err))
+	// Prune device-proxy directory (created by device proxy binary at runtime)
+	deviceProxyHome := filepath.Join(gboxHome, "device-proxy")
+	if err := pruneDeviceProxyHome(deviceProxyHome, &cleanedItems, &errors); err != nil {
+		errors = append(errors, fmt.Errorf("failed to prune device-proxy directory: %v", err))
+	}
+
+	// Prune credentials and profiles from gbox home (only if --all is specified)
+	if opts.All {
+		if err := pruneCredentialsAndProfiles(gboxHome, &cleanedItems, &errors); err != nil {
+			errors = append(errors, fmt.Errorf("failed to prune credentials and profiles: %v", err))
+		}
 	}
 
 	// Report results
-	if len(cleanedItems) > 0 {
-		fmt.Println("\nCleaned cache items:")
-		for _, item := range cleanedItems {
-			fmt.Printf("  - %s\n", item)
-		}
-	} else {
+	if len(cleanedItems) <= 0 {
 		fmt.Println("\nNo cache items found to clean.")
-	}
+	} 
 
 	if len(errors) > 0 {
 		fmt.Println("\nErrors encountered:")
@@ -95,14 +98,14 @@ func runPrune(opts *PruneOptions) error {
 	return nil
 }
 
-// pruneDeviceProxyCache prunes device proxy related cache files
-func pruneDeviceProxyCache(deviceProxyHome string, cleanedItems *[]string, errors *[]error) error {
-	if _, err := os.Stat(deviceProxyHome); os.IsNotExist(err) {
+// pruneData prunes all CLI cache files from the unified cache directory
+func pruneData(cliHome string, cleanCredentials bool, cleanedItems *[]string, errors *[]error) error {
+	if _, err := os.Stat(cliHome); os.IsNotExist(err) {
 		return nil // Directory doesn't exist, nothing to clean
 	}
 
 	// Clean version cache file
-	versionCachePath := filepath.Join(deviceProxyHome, "version.json")
+	versionCachePath := filepath.Join(cliHome, "version.json")
 	if err := os.Remove(versionCachePath); err == nil {
 		*cleanedItems = append(*cleanedItems, versionCachePath)
 	} else if !os.IsNotExist(err) {
@@ -114,7 +117,7 @@ func pruneDeviceProxyCache(deviceProxyHome string, cleanedItems *[]string, error
 	if runtime.GOOS == "windows" {
 		binaryName += ".exe"
 	}
-	binaryPath := filepath.Join(deviceProxyHome, binaryName)
+	binaryPath := filepath.Join(cliHome, binaryName)
 	if err := os.Remove(binaryPath); err == nil {
 		*cleanedItems = append(*cleanedItems, binaryPath)
 	} else if !os.IsNotExist(err) {
@@ -122,7 +125,7 @@ func pruneDeviceProxyCache(deviceProxyHome string, cleanedItems *[]string, error
 	}
 
 	// Clean any downloaded asset files (tar.gz, zip, etc.)
-	entries, err := os.ReadDir(deviceProxyHome)
+	entries, err := os.ReadDir(cliHome)
 	if err != nil {
 		return err
 	}
@@ -135,7 +138,7 @@ func pruneDeviceProxyCache(deviceProxyHome string, cleanedItems *[]string, error
 		fileName := entry.Name()
 		// Check if it's a downloaded asset file
 		if isAssetFile(fileName) {
-			assetPath := filepath.Join(deviceProxyHome, fileName)
+			assetPath := filepath.Join(cliHome, fileName)
 			if err := os.Remove(assetPath); err == nil {
 				*cleanedItems = append(*cleanedItems, assetPath)
 			} else if !os.IsNotExist(err) {
@@ -144,37 +147,10 @@ func pruneDeviceProxyCache(deviceProxyHome string, cleanedItems *[]string, error
 		}
 	}
 
-	return nil
-}
-
-// pruneGboxCache prunes other gbox cache files
-func pruneGboxCache(gboxHome string, cleanCredentials bool, cleanedItems *[]string, errors *[]error) error {
-	if _, err := os.Stat(gboxHome); os.IsNotExist(err) {
-		return nil // Directory doesn't exist, nothing to clean
-	}
-
-	// Clean credentials file only if --all is specified
-	if cleanCredentials {
-		credentialsPath := filepath.Join(gboxHome, "credentials.json")
-		if err := os.Remove(credentialsPath); err == nil {
-			*cleanedItems = append(*cleanedItems, credentialsPath)
-		} else if !os.IsNotExist(err) {
-			*errors = append(*errors, fmt.Errorf("failed to remove credentials file: %v", err))
-		}
-
-		// Clean profiles file only if --all is specified
-		profilesPath := filepath.Join(gboxHome, "profiles.toml")
-		if err := os.Remove(profilesPath); err == nil {
-			*cleanedItems = append(*cleanedItems, profilesPath)
-		} else if !os.IsNotExist(err) {
-			*errors = append(*errors, fmt.Errorf("failed to remove profiles file: %v", err))
-		}
-	}
-
 	// Clean log files
-	logPatterns := []string{"gbox-adb-expose-*.log", "*.log"}
+	logPatterns := []string{"gbox-adb-expose-*.log", "device-proxy.log", "*.log"}
 	for _, pattern := range logPatterns {
-		matches, err := filepath.Glob(filepath.Join(gboxHome, pattern))
+		matches, err := filepath.Glob(filepath.Join(cliHome, pattern))
 		if err != nil {
 			*errors = append(*errors, fmt.Errorf("failed to glob log files with pattern %s: %v", pattern, err))
 			continue
@@ -190,9 +166,9 @@ func pruneGboxCache(gboxHome string, cleanCredentials bool, cleanedItems *[]stri
 	}
 
 	// Clean PID files
-	pidPatterns := []string{"gbox-adb-expose-*.pid", "*.pid"}
+	pidPatterns := []string{"gbox-adb-expose-*.pid", "device-proxy.pid", "*.pid"}
 	for _, pattern := range pidPatterns {
-		matches, err := filepath.Glob(filepath.Join(gboxHome, pattern))
+		matches, err := filepath.Glob(filepath.Join(cliHome, pattern))
 		if err != nil {
 			*errors = append(*errors, fmt.Errorf("failed to glob PID files with pattern %s: %v", pattern, err))
 			continue
@@ -205,6 +181,47 @@ func pruneGboxCache(gboxHome string, cleanCredentials bool, cleanedItems *[]stri
 				*errors = append(*errors, fmt.Errorf("failed to remove PID file %s: %v", match, err))
 			}
 		}
+	}
+
+	return nil
+}
+
+// pruneDeviceProxyHome prunes the device-proxy directory created by device proxy binary at runtime
+func pruneDeviceProxyHome(deviceProxyHome string, cleanedItems *[]string, errors *[]error) error {
+	if _, err := os.Stat(deviceProxyHome); os.IsNotExist(err) {
+		return nil // Directory doesn't exist, nothing to clean
+	}
+
+	// Remove the entire device-proxy directory and all its contents
+	if err := os.RemoveAll(deviceProxyHome); err != nil {
+		*errors = append(*errors, fmt.Errorf("failed to remove device-proxy directory: %v", err))
+		return err
+	}
+
+	*cleanedItems = append(*cleanedItems, deviceProxyHome)
+	return nil
+}
+
+// pruneCredentialsAndProfiles prunes credentials and profiles from gbox home
+func pruneCredentialsAndProfiles(gboxHome string, cleanedItems *[]string, errors *[]error) error {
+	if _, err := os.Stat(gboxHome); os.IsNotExist(err) {
+		return nil // Directory doesn't exist, nothing to clean
+	}
+
+	// Clean credentials file
+	credentialsPath := filepath.Join(gboxHome, "credentials.json")
+	if err := os.Remove(credentialsPath); err == nil {
+		*cleanedItems = append(*cleanedItems, credentialsPath)
+	} else if !os.IsNotExist(err) {
+		*errors = append(*errors, fmt.Errorf("failed to remove credentials file: %v", err))
+	}
+
+	// Clean profiles file
+	profilesPath := filepath.Join(gboxHome, "profiles.toml")
+	if err := os.Remove(profilesPath); err == nil {
+		*cleanedItems = append(*cleanedItems, profilesPath)
+	} else if !os.IsNotExist(err) {
+		*errors = append(*errors, fmt.Errorf("failed to remove profiles file: %v", err))
 	}
 
 	return nil
