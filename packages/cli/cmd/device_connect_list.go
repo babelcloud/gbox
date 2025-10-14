@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect"
 	"github.com/spf13/cobra"
@@ -51,12 +52,12 @@ func NewDeviceConnectListCommand() *cobra.Command {
 func ExecuteDeviceConnectList(cmd *cobra.Command, opts *DeviceConnectListOptions) error {
 	if !checkAdbInstalled() {
 		printAdbInstallationHint()
-		return fmt.Errorf("ADB is not installed or not in your PATH. Please install ADB and try again.")
+    return fmt.Errorf("ADB is not installed or not in your PATH; please install ADB and try again")
 	}
 
 	if !checkFrpcInstalled() {
 		printFrpcInstallationHint()
-		return fmt.Errorf("frpc is not installed or not in your PATH. Please install frpc and try again.")
+    return fmt.Errorf("frpc is not installed or not in your PATH; please install frpc and try again")
 	}
 
 	// Ensure device proxy service is running
@@ -66,7 +67,7 @@ func ExecuteDeviceConnectList(cmd *cobra.Command, opts *DeviceConnectListOptions
 
 	client := getDeviceClient()
 
-	devices, err := client.GetDevices()
+	devices, err := getDevicesWithValidation(client, 60*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to get available devices: %v", err)
 	}
