@@ -59,11 +59,11 @@ func ExecuteDeviceConnectList(cmd *cobra.Command, opts *DeviceConnectListOptions
 		Success bool                     `json:"success"`
 		Devices []map[string]interface{} `json:"devices"`
 	}
-	
+
 	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
 		return fmt.Errorf("failed to get available devices: %v", err)
 	}
-	
+
 	if !response.Success {
 		return fmt.Errorf("failed to get devices from server")
 	}
@@ -89,10 +89,9 @@ func outputDevicesJSONFromAPI(devices []map[string]interface{}) error {
 		deviceID, _ := device["id"].(string)
 		name, _ := device["ro.product.model"].(string)
 		serialNo, _ := device["ro.serialno"].(string)
-		isRegistrable, _ := device["isRegistrable"].(bool)
-		
+
 		status := statusNotRegistered
-		if isRegistrable {
+		if _, ok := device["gbox.device_id"]; ok {
 			status = statusRegistered
 		}
 
@@ -129,12 +128,14 @@ func outputDevicesTextFromAPI(devices []map[string]interface{}) error {
 	nameWidth := len("NAME")
 	typeWidth := len("TYPE")
 	statusWidth := len("STATUS")
+	gboxDeviceIdWith := len("GBOX DEVICE ID")
 
 	// Find maximum widths for each column
 	for _, device := range devices {
 		deviceID, _ := device["id"].(string)
 		name, _ := device["ro.product.model"].(string)
-		
+		gboxDeviceID, _ := device["gbox.device_id"].(string)
+
 		if len(deviceID) > deviceIDWidth {
 			deviceIDWidth = len(deviceID)
 		}
@@ -147,6 +148,9 @@ func outputDevicesTextFromAPI(devices []map[string]interface{}) error {
 		if len(statusNotRegistered) > statusWidth {
 			statusWidth = len(statusNotRegistered)
 		}
+		if len(gboxDeviceID) > gboxDeviceIdWith {
+			gboxDeviceIdWith = len(gboxDeviceID)
+		}
 	}
 
 	// Add some padding
@@ -156,21 +160,22 @@ func outputDevicesTextFromAPI(devices []map[string]interface{}) error {
 	statusWidth += 2
 
 	// Print header
-	fmt.Printf("%-*s %-*s %-*s %-*s\n",
+	fmt.Printf("%-*s %-*s %-*s %-*s %-*s\n",
 		deviceIDWidth, "DEVICE ID",
 		nameWidth, "NAME",
 		typeWidth, "TYPE",
-		statusWidth, "STATUS")
+		statusWidth, "STATUS",
+		gboxDeviceIdWith, "GBOX DEVICE ID")
 
 	// Print data rows
 	for _, device := range devices {
 		deviceID, _ := device["id"].(string)
 		name, _ := device["ro.product.model"].(string)
 		serialNo, _ := device["ro.serialno"].(string)
-		isRegistrable, _ := device["isRegistrable"].(bool)
-		
+		gboxDeviceID, _ := device["gbox.device_id"].(string)
+
 		status := statusNotRegistered
-		if isRegistrable {
+		if gboxDeviceId, ok := device["gbox.device_id"]; ok && gboxDeviceId != "" {
 			status = statusRegistered
 		}
 
@@ -180,11 +185,12 @@ func outputDevicesTextFromAPI(devices []map[string]interface{}) error {
 			deviceType = deviceTypeEmulator
 		}
 
-		fmt.Printf("%-*s %-*s %-*s %-*s\n",
+		fmt.Printf("%-*s %-*s %-*s %-*s %-*s\n",
 			deviceIDWidth, deviceID,
 			nameWidth, name,
 			typeWidth, deviceType,
-			statusWidth, status)
+			statusWidth, status,
+			gboxDeviceIdWith, gboxDeviceID)
 	}
 
 	return nil
