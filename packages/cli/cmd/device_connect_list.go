@@ -59,11 +59,11 @@ func ExecuteDeviceConnectList(cmd *cobra.Command, opts *DeviceConnectListOptions
 		Success bool                     `json:"success"`
 		Devices []map[string]interface{} `json:"devices"`
 	}
-	
+
 	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
 		return fmt.Errorf("failed to get available devices: %v", err)
 	}
-	
+
 	if !response.Success {
 		return fmt.Errorf("failed to get devices from server")
 	}
@@ -89,10 +89,9 @@ func outputDevicesJSONFromAPI(devices []map[string]interface{}) error {
 		deviceID, _ := device["id"].(string)
 		name, _ := device["ro.product.model"].(string)
 		serialNo, _ := device["ro.serialno"].(string)
-		isRegistrable, _ := device["isRegistrable"].(bool)
-		
+
 		status := statusNotRegistered
-		if isRegistrable {
+		if _, ok := device["gbox.device_id"]; ok {
 			status = statusRegistered
 		}
 
@@ -134,7 +133,7 @@ func outputDevicesTextFromAPI(devices []map[string]interface{}) error {
 	for _, device := range devices {
 		deviceID, _ := device["id"].(string)
 		name, _ := device["ro.product.model"].(string)
-		
+
 		if len(deviceID) > deviceIDWidth {
 			deviceIDWidth = len(deviceID)
 		}
@@ -167,10 +166,9 @@ func outputDevicesTextFromAPI(devices []map[string]interface{}) error {
 		deviceID, _ := device["id"].(string)
 		name, _ := device["ro.product.model"].(string)
 		serialNo, _ := device["ro.serialno"].(string)
-		isRegistrable, _ := device["isRegistrable"].(bool)
-		
+
 		status := statusNotRegistered
-		if isRegistrable {
+		if gboxDeviceId, ok := device["gbox.device_id"]; ok && gboxDeviceId != "" {
 			status = statusRegistered
 		}
 

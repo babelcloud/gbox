@@ -2,18 +2,22 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/babelcloud/gbox/packages/cli/internal/cloud"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/control"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/audio"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/h264"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/stream"
 	"github.com/babelcloud/gbox/packages/cli/internal/util"
 	"github.com/gorilla/websocket"
+	"github.com/pkg/errors"
 )
 
 // setWebMStreamingHeaders sets HTTP headers for WebM audio streaming
@@ -87,6 +91,26 @@ func (h *DeviceHandlers) HandleDeviceList(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	deviceAPI := cloud.NewDeviceAPI()
+	for _, device := range devices {
+		serialno, ok := device["ro.serialno"].(string)
+		if !ok {
+			continue
+		}
+		androindId, ok := device["android_id"].(string)
+		if !ok {
+			continue
+		}
+		deviceList, err := deviceAPI.GetBySerialnoAndAndroidId(serialno, androindId)
+		if err != nil {
+			log.Print(errors.Wrapf(err, "fail to get device with serialno %s and androidId %s", serialno, androindId))
+			continue
+		}
+		if deviceList.Total > 0 {
+			device["gbox.device_id"] = deviceList.Data[0].Id
+		}
+	}
+
 	RespondJSON(w, http.StatusOK, map[string]interface{}{
 		"success":         true,
 		"devices":         devices,
@@ -123,19 +147,90 @@ func (h *DeviceHandlers) HandleDeviceAction(w http.ResponseWriter, r *http.Reque
 
 // HandleDeviceRegister handles device registration requests
 func (h *DeviceHandlers) HandleDeviceRegister(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement device registration
-	RespondJSON(w, http.StatusNotImplemented, map[string]interface{}{
-		"success": false,
-		"error":   "Device registration not yet implemented",
+	decoder := json.NewDecoder(r.Body)
+	var reqBody struct {
+		DeviceId string `json:"deviceId"`
+	}
+	if err := decoder.Decode(&reqBody); err != nil {
+		http.Error(w, errors.Wrap(err, "failed to parse request body").Error(), http.StatusBadRequest)
+		return
+	}
+
+	serialno, androidId, err := GetDeviceSerialnoAndAndroidId(reqBody.DeviceId)
+	if err != nil {
+		http.Error(w, errors.Wrap(err, "failed to resolve device serialno or android_id").Error(), http.StatusInternalServerError)
+		return
+	}
+
+	deviceAPI := cloud.NewDeviceAPI()
+	device, err := deviceAPI.Create(&cloud.Device{
+		Metadata: struct {
+			Serialno  string `json:"serialno,omitempty"`
+			AndroidId string `json:"androidId,omitempty"`
+		}{
+			Serialno:  serialno,
+			AndroidId: androidId,
+		},
+	})
+	if err != nil {
+		http.Error(w, errors.Wrap(err, "failed to register device").Error(), http.StatusInternalServerError)
+		return
+	}
+
+	go func() {
+		if err := h.serverService.ConnectAP(reqBody.DeviceId); err != nil {
+			log.Print(errors.Wrapf(err, "fail to connect device %s to access point", reqBody.DeviceId))
+		}
+	}()
+
+	RespondJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"data":    device,
 	})
 }
 
 // HandleDeviceUnregister handles device unregistration requests
 func (h *DeviceHandlers) HandleDeviceUnregister(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement device unregistration
-	RespondJSON(w, http.StatusNotImplemented, map[string]interface{}{
-		"success": false,
-		"error":   "Device unregistration not yet implemented",
+	decoder := json.NewDecoder(r.Body)
+	var reqBody struct {
+		DeviceId string `json:"deviceId"`
+	}
+	if err := decoder.Decode(&reqBody); err != nil {
+		http.Error(w, errors.Wrap(err, "failed to parse request body").Error(), http.StatusBadRequest)
+		return
+	}
+
+	serialno, androidId, err := GetDeviceSerialnoAndAndroidId(reqBody.DeviceId)
+	if err != nil {
+		http.Error(w, errors.Wrap(err, "failed to resolve device serialno or android_id").Error(), http.StatusInternalServerError)
+		return
+	}
+
+	deviceAPI := cloud.NewDeviceAPI()
+
+	deviceList, err := deviceAPI.GetBySerialnoAndAndroidId(serialno, androidId)
+	if err != nil {
+		http.Error(w, errors.Wrap(err, "failed to get devices").Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if deviceList.Total > 0 {
+		for _, device := range deviceList.Data {
+			if err := deviceAPI.Delete(device.Id); err != nil {
+				http.Error(w, errors.Wrapf(err, "failed to delete device %s", device.Id).Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	go func() {
+		if err := h.serverService.DisconnectAP(reqBody.DeviceId); err != nil {
+			log.Print(errors.Wrapf(err, "fail to disconnect device %s from access point", reqBody.DeviceId))
+		}
+	}()
+
+	RespondJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
 	})
 }
 
@@ -145,6 +240,10 @@ func (h *DeviceHandlers) HandleDeviceVideo(w http.ResponseWriter, req *http.Requ
 	path := strings.TrimPrefix(req.URL.Path, "/api/devices/")
 	parts := strings.Split(path, "/")
 	deviceSerial := parts[0]
+
+	if strings.Contains(req.Header.Get("via"), "gbox-device-ap") {
+		deviceSerial = h.serverService.GetAdbSerialByGboxDeviceId(deviceSerial)
+	}
 
 	if deviceSerial == "" {
 		http.Error(w, "Device serial required", http.StatusBadRequest)
@@ -212,6 +311,10 @@ func (h *DeviceHandlers) HandleDeviceAudio(w http.ResponseWriter, req *http.Requ
 	deviceSerial := parts[0]
 
 	log.Printf("[HandleDeviceAudio] Processing audio request for device: %s, URL: %s", deviceSerial, req.URL.String())
+
+	if strings.Contains(req.Header.Get("via"), "gbox-device-ap") {
+		deviceSerial = h.serverService.GetAdbSerialByGboxDeviceId(deviceSerial)
+	}
 
 	if deviceSerial == "" {
 		http.Error(w, "Device serial required", http.StatusBadRequest)
@@ -288,6 +391,10 @@ func (h *DeviceHandlers) HandleDeviceStream(w http.ResponseWriter, req *http.Req
 	parts := strings.Split(path, "/")
 	deviceSerial := parts[0]
 
+	if strings.Contains(req.Header.Get("via"), "gbox-device-ap") {
+		deviceSerial = h.serverService.GetAdbSerialByGboxDeviceId(deviceSerial)
+	}
+
 	if deviceSerial == "" {
 		http.Error(w, "Device serial required", http.StatusBadRequest)
 		return
@@ -334,6 +441,10 @@ func (h *DeviceHandlers) HandleDeviceControl(w http.ResponseWriter, req *http.Re
 	path := strings.TrimPrefix(req.URL.Path, "/api/devices/")
 	parts := strings.Split(path, "/")
 	deviceSerial := parts[0]
+
+	if strings.Contains(req.Header.Get("via"), "gbox-device-ap") {
+		deviceSerial = h.serverService.GetAdbSerialByGboxDeviceId(deviceSerial)
+	}
 
 	if deviceSerial == "" {
 		http.Error(w, "Device serial required", http.StatusBadRequest)
@@ -414,6 +525,78 @@ func (h *DeviceHandlers) HandleDeviceControl(w http.ResponseWriter, req *http.Re
 
 		default:
 			log.Printf("[HandleDeviceControl] Unknown message type for device: %s: %s", deviceSerial, msgType)
+		}
+	}
+}
+
+func (h *DeviceHandlers) HandleDeviceTestHttp(w http.ResponseWriter, req *http.Request) {
+	path := strings.TrimPrefix(req.URL.Path, "/api/devices/")
+	parts := strings.Split(path, "/")
+	deviceSerial := parts[0]
+
+	if strings.Contains(req.Header.Get("via"), "gbox-device-ap") {
+		deviceSerial = h.serverService.GetAdbSerialByGboxDeviceId(deviceSerial)
+	}
+
+	if deviceSerial == "" {
+		http.Error(w, "Device serial required", http.StatusBadRequest)
+		return
+	}
+
+	if !isValidDeviceSerial(deviceSerial) {
+		http.Error(w, "Invalid device serial", http.StatusBadRequest)
+		return
+	}
+
+	fmt.Fprintf(w, "connect local device %s at %s", deviceSerial, time.Now().Format(time.RFC3339))
+}
+
+func (h *DeviceHandlers) HandleDeviceTestWs(w http.ResponseWriter, req *http.Request) {
+	path := strings.TrimPrefix(req.URL.Path, "/api/devices/")
+	parts := strings.Split(path, "/")
+	deviceSerial := parts[0]
+
+	if strings.Contains(req.Header.Get("via"), "gbox-device-ap") {
+		deviceSerial = h.serverService.GetAdbSerialByGboxDeviceId(deviceSerial)
+	}
+
+	if deviceSerial == "" {
+		http.Error(w, "Device serial required", http.StatusBadRequest)
+		return
+	}
+
+	if !isValidDeviceSerial(deviceSerial) {
+		http.Error(w, "Invalid device serial", http.StatusBadRequest)
+		return
+	}
+
+	upgrader := websocket.Upgrader{}
+	c, err := upgrader.Upgrade(w, req, nil)
+	if err != nil {
+		http.Error(w, fmt.Sprint("unable to upgrade websocket", err), http.StatusInternalServerError)
+		return
+	}
+	defer c.Close()
+
+	go func() {
+		for range time.Tick(5 * time.Second) {
+			if err := c.WriteMessage(websocket.TextMessage, []byte(time.Now().Format(time.RFC3339))); err != nil {
+				log.Println("test websocket write error:", err)
+				break
+			}
+		}
+	}()
+
+	for {
+		mt, message, err := c.ReadMessage()
+		if err != nil {
+			log.Println("test websocket read error:", err)
+			break
+		}
+		err = c.WriteMessage(mt, message)
+		if err != nil {
+			log.Println("test websocket write error:", err)
+			break
 		}
 	}
 }

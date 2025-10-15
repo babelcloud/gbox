@@ -203,9 +203,9 @@ func (m *Manager) getPIDFile() string {
 // CallAPI makes an API call to the server
 func (m *Manager) CallAPI(method, endpoint string, body interface{}, result interface{}) error {
 	// Ensure server is running
-	if err := m.EnsureServerRunning(); err != nil {
-		return fmt.Errorf("failed to start server: %v", err)
-	}
+	// if err := m.EnsureServerRunning(); err != nil {
+	// 	return fmt.Errorf("failed to start server: %v", err)
+	// }
 
 	url := fmt.Sprintf("%s%s", m.url, endpoint)
 	

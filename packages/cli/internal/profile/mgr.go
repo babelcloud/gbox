@@ -3,17 +3,18 @@ package profile
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
 	"github.com/pelletier/go-toml/v2"
+	"github.com/pkg/errors"
 )
 
 // Common error messages
@@ -40,6 +41,7 @@ type Profile struct {
 	OrgSlug string `toml:"org_slug,omitempty"`
 	APIKey  string `toml:"key"`
 	BaseURL string `toml:"base_url,omitempty"`
+	Rack    string `toml:"rack,omtiempty"`
 }
 
 // ProfileDefaults represents global defaults
@@ -51,6 +53,11 @@ type ProfileDefaults struct {
 type OrgInfo struct {
 	Name string
 	Slug string
+}
+
+type RackInfo struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // ProfileManager manages profile files
@@ -309,6 +316,10 @@ func (pm *ProfileManager) Add(id, org, key, baseURL string) error {
 		baseURL = config.GetBaseURL()
 	}
 
+	if strings.HasPrefix(key, "gbox-rack_") {
+		return pm.addRack(key, baseURL)
+	}
+
 	// Store the effective base URL for this profile
 	effectiveBaseURL := baseURL
 
@@ -414,6 +425,26 @@ func (pm *ProfileManager) Add(id, org, key, baseURL string) error {
 		// Always set as current for new profile
 		pm.config.Current = id
 	}
+
+	return pm.Save()
+}
+
+func (pm *ProfileManager) addRack(key, baseURL string) error {
+	rackInfo, err := pm.getRackInfoFromAPI(key, baseURL)
+	if err != nil {
+		return errors.Wrap(err, "failed to validate API key and get rack info")
+	}
+
+	profile := Profile{
+		Rack:   rackInfo.Name,
+		APIKey: base64.StdEncoding.EncodeToString([]byte(key)),
+	}
+
+	profile.BaseURL = baseURL
+
+	profileID := "rack_" + rackInfo.Name
+	pm.config.Profiles[profileID] = profile
+	pm.config.Current = profileID
 
 	return pm.Save()
 }
@@ -725,7 +756,7 @@ func maskAPIKey(key string) string {
 	if len(key) <= 8 {
 		return "***"
 	}
-	return key[:4] + "****" + key[len(key)-4:]
+	return key[:10] + "****" + key[len(key)-4:]
 }
 
 // toJSON converts data to JSON string
@@ -800,6 +831,55 @@ func (pm *ProfileManager) getOrgInfoFromAPI(apiKey, baseURL string) (*OrgInfo, e
 		Name: orgInfo.Name,
 		Slug: orgInfo.Slug,
 	}, nil
+}
+
+func (pm *ProfileManager) getRackInfoFromAPI(apiKey, baseURL string) (*RackInfo, error) {
+	rackUrl, err := url.Parse(baseURL)
+	if err != nil {
+		return nil, errors.Wrapf(err, "invalid base url: %s", baseURL)
+	}
+
+	rackUrl.Path = path.Join("/api/v1/rack")
+
+	req, err := http.NewRequest(http.MethodGet, rackUrl.String(), nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create request")
+	}
+
+	req.Header.Set("x-rack-api-key", apiKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to make request")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("invalid API key")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Read response body for debugging
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	// Debug: print response body
+	if os.Getenv("DEBUG") == "true" {
+		fmt.Fprintf(os.Stderr, "Response body: %s\n", string(body))
+	}
+
+	var rackInfo RackInfo
+	if err := json.Unmarshal(body, &rackInfo); err != nil {
+		return nil, errors.Wrapf(err, "failed to parse response body: %s", string(body))
+	}
+
+	return &rackInfo, nil
 }
 
 // GetDevicesURL returns the devices URL for the current profile
