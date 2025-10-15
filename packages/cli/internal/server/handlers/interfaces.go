@@ -35,6 +35,10 @@ type ServerService interface {
 	StartPortForward(boxID string, localPorts, remotePorts []int) error
 	StopPortForward(boxID string) error
 	ListPortForwards() interface{}
+
+	ConnectAP(serial string) error
+	DisconnectAP(serial string) error
+	GetAdbSerialByGboxDeviceId(deviceId string) string
 }
 
 // Bridge defines the interface for device bridge operations
@@ -44,4 +48,3 @@ type Bridge interface {
 	HandleKeyEvent(msg map[string]interface{})
 	HandleScrollEvent(msg map[string]interface{})
 }
-
