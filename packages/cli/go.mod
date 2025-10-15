@@ -1,22 +1,28 @@
 module github.com/babelcloud/gbox/packages/cli
 
-go 1.24.0
+go 1.25
 
 require (
 	github.com/adrg/xdg v0.5.3
 	github.com/at-wat/ebml-go v0.17.1
 	github.com/babelcloud/gbox-sdk-go v0.1.0-alpha.3
-	github.com/bluenviron/gohlslib v1.4.0
-	github.com/bluenviron/mediacommon v1.11.1-0.20240525122142-20163863aa75
+	github.com/basiooo/goadb v1.1.1
 	github.com/bluenviron/mediacommon/v2 v2.4.3
+	github.com/dchest/uniuri v1.2.0
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/pion/webrtc/v4 v4.1.4
+	github.com/pires/go-proxyproto v0.8.1
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
+	github.com/pkg/errors v0.9.1
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.20.1
 	github.com/stretchr/testify v1.11.1
+	github.com/vishalkuo/bimap v0.0.0-20230830142743-a9fb9b52066c
+	github.com/xtaci/smux v1.5.35
 	golang.org/x/oauth2 v0.27.0
 	golang.org/x/term v0.31.0
+	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
 )
 
 require (
@@ -35,10 +41,7 @@ require (
 
 require (
 	github.com/abema/go-mp4 v1.4.1 // indirect
-	github.com/asticode/go-astikit v0.30.0 // indirect
-	github.com/asticode/go-astits v1.13.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/pion/datachannel v1.5.10 // indirect
@@ -62,8 +65,8 @@ require (
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
-	golang.org/x/crypto v0.33.0 // indirect
-	golang.org/x/net v0.35.0 // indirect
+	golang.org/x/crypto v0.37.0 // indirect
+	golang.org/x/net v0.39.0 // indirect
 	golang.org/x/sys v0.32.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

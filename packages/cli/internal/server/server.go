@@ -20,6 +20,7 @@ import (
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/webrtc"
 	"github.com/babelcloud/gbox/packages/cli/internal/server/handlers"
 	"github.com/babelcloud/gbox/packages/cli/internal/server/router"
+	"github.com/pkg/errors"
 )
 
 //go:embed all:static
@@ -33,6 +34,7 @@ type GBoxServer struct {
 
 	// Services
 	bridgeManager *webrtc.Manager
+	deviceKeeper  *DeviceKeeper
 
 	// State
 	mu        sync.RWMutex
@@ -61,21 +63,16 @@ func NewGBoxServer(port int) *GBoxServer {
 
 // Start starts the unified server
 func (s *GBoxServer) Start() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.running {
-		return fmt.Errorf("server already running")
-	}
-
 	// Set start time and build ID
 	s.startTime = time.Now()
 	s.buildID = GetBuildID()
 
-	// ADB expose functionality is now integrated directly into this server
-
 	// Setup routes
 	s.setupRoutes()
+
+	if err := s.startDeviceKeeper(); err != nil {
+		return err
+	}
 
 	s.httpServer = &http.Server{
 		Addr:         fmt.Sprintf(":%d", s.port),
@@ -85,28 +82,11 @@ func (s *GBoxServer) Start() error {
 		IdleTimeout:  0, // No idle timeout for streaming connections
 	}
 
-	// Start server in background
-	go func() {
-		// Starting GBox server
-		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("HTTP server error: %v", err)
-		}
-	}()
-
-	s.running = true
-	// Server started successfully (no log needed here)
-	return nil
+	return s.httpServer.ListenAndServe()
 }
 
 // Stop stops the server
 func (s *GBoxServer) Stop() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if !s.running {
-		return nil
-	}
-
 	s.cancel()
 
 	// Shutdown HTTP server with longer timeout
@@ -124,9 +104,21 @@ func (s *GBoxServer) Stop() error {
 
 	// Cleanup services
 	s.bridgeManager.Close()
+	s.deviceKeeper.Close()
 
-	s.running = false
 	log.Println("GBox server stopped")
+	return nil
+}
+
+func (s *GBoxServer) startDeviceKeeper() error {
+	var err error
+	s.deviceKeeper, err = NewDeviceKeeper()
+	if err != nil {
+		return errors.Wrap(err, "failed to create device keeper")
+	}
+	if err := s.deviceKeeper.Start(); err != nil {
+		return errors.Wrap(err, "failed to start device keeper")
+	}
 	return nil
 }
 
@@ -476,6 +468,18 @@ func (s *GBoxServer) ListPortForwards() interface{} {
 		"count":    0,
 		"message":  "ADB port forwarding is now handled through API endpoints",
 	}
+}
+
+func (s *GBoxServer) ConnectAP(serial string) error {
+	return s.deviceKeeper.connectAP(serial)
+}
+
+func (s *GBoxServer) DisconnectAP(serial string) error {
+	return s.deviceKeeper.disconnectAPForce(serial)
+}
+
+func (s *GBoxServer) GetAdbSerialByGboxDeviceId(deviceId string) string {
+	return s.deviceKeeper.getAdbSerialByGboxDeviceId(deviceId)
 }
 
 // Helper function to send JSON responses
