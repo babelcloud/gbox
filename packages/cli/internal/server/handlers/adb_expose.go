@@ -13,6 +13,7 @@ import (
 
 	adb_expose "github.com/babelcloud/gbox/packages/cli/internal/adb_expose"
 	"github.com/babelcloud/gbox/packages/cli/internal/profile"
+	"github.com/pkg/errors"
 )
 
 // ADBExposeHandlers contains handlers for ADB expose functionality
@@ -463,9 +464,34 @@ func getADBDevices() ([]map[string]interface{}, error) {
 				}
 			}
 
+			device["ro.serialno"], device["android_id"], err = GetDeviceSerialnoAndAndroidId(parts[0])
+			if err != nil {
+				log.Print(errors.Wrapf(err, "failed to get serialno of deivce %s", parts[0]))
+			}
+
 			devices = append(devices, device)
 		}
 	}
 
 	return devices, nil
+}
+
+func GetDeviceSerialnoAndAndroidId(deviceId string) (serialno string, androidId string, err error) {
+	getSerialnoCmd := exec.Command("adb", "-s", deviceId, "shell", "getprop", "ro.serialno")
+	output, err := getSerialnoCmd.Output()
+	if err != nil {
+		err = errors.Wrapf(err, "failed to get serialno of deivce %s", deviceId)
+		return
+	} else {
+		serialno = strings.TrimSpace(string(output))
+	}
+	getAndroidIdCmd := exec.Command("adb", "-s", deviceId, "shell", "settings", "get", "secure", "android_id")
+	output, err = getAndroidIdCmd.Output()
+	if err != nil {
+		err = errors.Wrapf(err, "failed to get android id of device %s", deviceId)
+		return
+	} else {
+		androidId = strings.TrimSpace(string(output))
+	}
+	return
 }
