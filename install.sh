@@ -20,6 +20,12 @@ BOLD='\033[1m'
 # Non-interactive mode flag
 NON_INTERACTIVE=false
 
+# Install dependencies flag
+WITH_DEPS=false
+
+# Update CLI flag (empty means not specified, true means update, false means no update)
+UPDATE_CLI=""
+
 # Detect OS
 OS="$(uname -s)"
 ARCH="$(uname -m)"
@@ -32,6 +38,25 @@ parse_args() {
             NON_INTERACTIVE=true
             shift
             ;;
+        --with-deps)
+            WITH_DEPS=true
+            shift
+            ;;
+        --update)
+            # Check if next argument is a value (false/true)
+            if [[ $# -gt 1 ]] && [[ "$2" == "false" || "$2" == "true" ]]; then
+                UPDATE_CLI="$2"
+                shift 2
+            else
+                UPDATE_CLI="true"
+                shift
+            fi
+            ;;
+        --update=*)
+            # Handle --update=false or --update=true
+            UPDATE_CLI="${1#*=}"
+            shift
+            ;;
         -h | --help)
             echo "GBOX Installation Script"
             echo ""
@@ -39,13 +64,39 @@ parse_args() {
             echo ""
             echo "Options:"
             echo "  -y, --yes, --non-interactive    Run in non-interactive mode (use all defaults)"
+            echo "  --with-deps                     Install all command dependencies (adb, frpc, appium)"
+            echo "  --update [true|false]           Update GBOX CLI to the latest version (default: true)"
+            echo "  --update=false                  Skip update even if already installed"
             echo "  -h, --help                      Show this help message"
             echo ""
+            echo "Default behavior:"
+            echo "  By default, only GBOX CLI is installed."
+            echo "  Use --with-deps to also install all command dependencies."
+            echo ""
             echo "Examples:"
-            echo "  $0                              # Interactive installation"
-            echo "  $0 -y                           # Non-interactive installation"
+            echo "  # Install GBOX CLI only (default)"
+            echo "  $0"
+            echo ""
+            echo "  # Install GBOX CLI with all dependencies"
+            echo "  $0 --with-deps"
+            echo ""
+            echo "  # Update GBOX CLI to latest version"
+            echo "  $0 --update"
+            echo ""
+            echo "  # Non-interactive installation"
+            echo "  $0 -y"
+            echo ""
+            echo "  # Non-interactive with all dependencies"
+            echo "  $0 -y --with-deps"
+            echo ""
+            echo "  # Using curl (CLI only)"
             echo "  curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash"
-            echo "  curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash -s -- -y"
+            echo ""
+            echo "  # Using curl with dependencies"
+            echo "  curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash -s -- --with-deps"
+            echo ""
+            echo "  # Using curl to update"
+            echo "  curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash -s -- --update"
             exit 0
             ;;
         *)
@@ -294,6 +345,21 @@ prompt_install_nodejs() {
     return 0
 }
 
+# Check if GBOX is installed and get version info (fast, local check only)
+check_gbox_installed() {
+    if command_exists gbox; then
+        # Use gbox version for fast local check (works on all platforms)
+        local installed_version=$(gbox version -o json 2>/dev/null | grep '"Version"' | head -1 | sed 's/.*: "\(.*\)".*/\1/' || echo "unknown")
+        if [ -n "$installed_version" ] && [ "$installed_version" != "unknown" ]; then
+            echo "installed|$installed_version"
+            return 0
+        fi
+    fi
+
+    echo "not_installed"
+    return 1
+}
+
 # Install GBOX CLI
 install_gbox() {
     print_info "Installing GBOX CLI..."
@@ -301,7 +367,7 @@ install_gbox() {
     case "$OS_TYPE" in
     macos)
         if command_exists brew; then
-            brew install gbox 2>/dev/null || brew install babelcloud/tap/gbox
+            brew install gbox
             print_success "GBOX CLI installed via Homebrew"
         else
             print_error "Homebrew is required for GBOX installation on macOS"
@@ -311,8 +377,64 @@ install_gbox() {
         ;;
     linux | windows)
         print_info "Installing GBOX CLI via npm package @gbox.ai/cli..."
-        npm install -g @gbox.ai/cli
+        npm install -g @gbox.ai/cli@latest
         print_success "GBOX CLI installed via npm"
+        ;;
+    *)
+        print_error "Unsupported operating system: $OS_TYPE"
+        return 1
+        ;;
+    esac
+}
+
+# Update GBOX CLI
+update_gbox() {
+    print_info "Updating GBOX CLI..."
+
+    case "$OS_TYPE" in
+    macos)
+        if command_exists brew; then
+            # Update Homebrew first to get latest package info
+            print_info "Updating Homebrew repository..."
+            if brew update >/dev/null 2>&1; then
+                print_success "Homebrew repository updated"
+            else
+                print_warning "Homebrew update failed, continuing anyway..."
+            fi
+
+            # Check which tap is installed
+            print_info "Upgrading GBOX CLI..."
+            if brew list --formula | grep -q "babelcloud/gru/gbox"; then
+                # Using custom tap
+                brew upgrade babelcloud/gru/gbox 2>&1 | tail -5
+            else
+                # Using official formula
+                brew upgrade gbox 2>&1 | tail -5
+            fi
+
+            # Get updated version
+            local new_version=$(gbox version -o json 2>/dev/null | grep '"Version"' | head -1 | sed 's/.*: "\(.*\)".*/\1/' || echo "unknown")
+            if [ "$new_version" != "unknown" ]; then
+                print_success "GBOX CLI updated to v$new_version"
+            else
+                print_success "GBOX CLI updated via Homebrew"
+            fi
+        else
+            print_error "Homebrew is required for GBOX update on macOS"
+            return 1
+        fi
+        ;;
+    linux | windows)
+        print_info "Updating GBOX CLI via npm package @gbox.ai/cli..."
+        npm install -g @gbox.ai/cli@latest
+
+        # Get updated version
+        local new_version=$(gbox version -o json 2>/dev/null | grep '"Version"' | head -1 | sed 's/.*: "\(.*\)".*/\1/' || echo "unknown")
+        if [ "$new_version" != "unknown" ]; then
+            print_success "GBOX CLI updated to v$new_version"
+        else
+            print_success "GBOX CLI updated via npm"
+        fi
         ;;
     *)
         print_error "Unsupported operating system: $OS_TYPE"
@@ -644,7 +766,7 @@ display_appium_status() {
 
     echo ""
     echo -e "${BLUE}${BOLD}🚀 Appium Status${NC}"
-    echo "──────────────────────────────────────────"
+    echo "────────────���────────────────────────────�������������"
     echo ""
 
     if [ -f "$APPIUM_BIN" ]; then
@@ -706,7 +828,7 @@ display_appium_status() {
 configure_appium() {
     echo ""
     echo -e "${BLUE}${BOLD}🚀 Appium Automation Setup${NC}"
-    echo "──────────────────────────────────────────"
+    echo "───────────────────────────────────────────"
 
     # Check if Appium is disabled via environment variable
     if [ "${GBOX_APPIUM_DISABLED}" = "true" ]; then
@@ -805,7 +927,7 @@ print_next_steps() {
     echo ""
     echo -e "${GREEN}${BOLD}╔════════════════════════════════════════╗${NC}"
     echo -e "${GREEN}${BOLD}║                                        ║${NC}"
-    echo -e "${GREEN}${BOLD}║   ✅ Installation Complete!            ║${NC}"
+    echo -e "${GREEN}${BOLD}║       ✅ Installation Complete!        ║${NC}"
     echo -e "${GREEN}${BOLD}║                                        ║${NC}"
     echo -e "${GREEN}${BOLD}╚════════════════════════════════════════╝${NC}"
     echo ""
@@ -838,6 +960,13 @@ main() {
         echo ""
     fi
 
+    if [ "$WITH_DEPS" = true ]; then
+        print_info "Installing GBOX CLI with all dependencies"
+    else
+        print_info "Installing GBOX CLI only (use --with-deps for dependencies)"
+    fi
+    echo ""
+
     print_info "Detected OS: $OS_TYPE ($OS $ARCH)\n"
     print_info "Package Manager: $PKG_MANAGER"
     echo ""
@@ -847,64 +976,91 @@ main() {
     # Detect OS
     detect_os
 
-    # Setup JSON parser for Appium version extraction
-    setup_json_parser
+    # Only check Node.js if --with-deps is specified (required for Appium)
+    if [ "$WITH_DEPS" = true ]; then
+        # Setup JSON parser for Appium version extraction
+        setup_json_parser
 
-    # Check Node.js (required for Appium)
-    if ! check_nodejs; then
-        echo ""
-        print_warning "Node.js is not installed"
-        echo ""
-        if ! prompt_install_nodejs; then
+        if ! check_nodejs; then
             echo ""
-            echo -e "${RED}${BOLD}╔════════════════════════════════════════════════════╗${NC}"
-            echo -e "${RED}${BOLD}║  ❌  Installation Cancelled                       ║${NC}"
-            echo -e "${RED}${BOLD}╚════════════════════════════════════════════════════╝${NC}"
+            print_warning "Node.js is not installed"
             echo ""
-            echo -e "${YELLOW}Node.js is required for Appium automation features.${NC}"
-            echo ""
-            echo "Please install Node.js first:"
-            echo "  🍎 macOS:         brew install node"
-            echo "  🐧 Ubuntu/Debian: sudo apt-get install nodejs npm"
-            echo "  🪟 Windows:       Download from https://nodejs.org/"
-            echo ""
-            echo "Or use our installation script with Node.js pre-installed."
-            echo ""
-            exit 1
+            if ! prompt_install_nodejs; then
+                echo ""
+                echo -e "${RED}${BOLD}╔══════════════════════════════════════��═════════════╗${NC}"
+                echo -e "${RED}${BOLD}║  ❌  Installation Cancelled                       ║${NC}"
+                echo -e "${RED}${BOLD}╚════════════════════════════════════════════════════╝${NC}"
+                echo ""
+                echo -e "${YELLOW}Node.js is required for Appium automation features.${NC}"
+                echo ""
+                echo "Please install Node.js first:"
+                echo "  🍎 macOS:         brew install node"
+                echo "  🐧 Ubuntu/Debian: sudo apt-get install nodejs npm"
+                echo "  🪟 Windows:       Download from https://nodejs.org/"
+                echo ""
+                echo "Or use our installation script with Node.js pre-installed."
+                echo ""
+                exit 1
+            fi
         fi
     fi
 
     # Install GBOX CLI
     echo ""
-    if command_exists gbox; then
-        GBOX_VERSION=$(gbox version -o json 2>/dev/null | grep '"Version"' | head -1 | sed 's/.*: "\(.*\)".*/\1/' || echo "unknown")
-        print_success "GBOX CLI is already installed: $GBOX_VERSION\n"
+    GBOX_STATUS=$(check_gbox_installed)
 
-        if [ "$NON_INTERACTIVE" = true ]; then
-            print_info "Non-interactive mode: Skipping reinstall"
-        else
-            read -p "Reinstall GBOX CLI? [y/N]: " reinstall
-            if [[ "$reinstall" =~ ^[Yy]$ ]]; then
-                install_gbox
+    if [[ "$GBOX_STATUS" == "not_installed" ]]; then
+        # GBOX not installed, install it
+        install_gbox
+    else
+        # GBOX is already installed
+        IFS='|' read -ra STATUS_PARTS <<<"$GBOX_STATUS"
+        INSTALLED_VERSION="${STATUS_PARTS[1]}"
+
+        print_success "GBOX CLI is already installed: v$INSTALLED_VERSION"
+        echo ""
+
+        # Handle update based on UPDATE_CLI flag
+        if [ "$UPDATE_CLI" = "true" ]; then
+            # Explicitly requested update
+            print_info "Updating GBOX CLI to the latest version..."
+            update_gbox
+        elif [ "$UPDATE_CLI" = "false" ]; then
+            # Explicitly disabled update
+            print_info "Update skipped (--update=false)"
+        elif [ "$UPDATE_CLI" = "" ]; then
+            # No --update flag specified
+            if [ "$NON_INTERACTIVE" = true ]; then
+                print_info "Non-interactive mode: Skipping update"
+            else
+                # Interactive mode: ask if user wants to update
+                read -p "Update GBOX CLI to the latest version? [y/N]: " update_choice
+                if [[ "$update_choice" =~ ^[Yy]$ ]]; then
+                    update_gbox
+                fi
             fi
         fi
+    fi
+
+    # Only install dependencies if --with-deps is specified
+    if [ "$WITH_DEPS" = true ]; then
+        # Install additional dependencies (ADB, frpc) before Appium
+        install_dependencies
+
+        # Configure and install Appium automation components
+        if [ "$GBOX_INSTALL_APPIUM" != "false" ] && [ "${GBOX_APPIUM_DISABLED}" != "true" ]; then
+            configure_appium
+        elif [ "${GBOX_APPIUM_DISABLED}" = "true" ]; then
+            echo ""
+            print_info "Appium installation is disabled (GBOX_APPIUM_DISABLED=true)"
+        fi
+
+        # Save configuration
+        save_config
     else
-        install_gbox
-    fi
-
-    # Install additional dependencies (ADB, frpc) before Appium
-    install_dependencies
-
-    # Configure and install Appium automation components
-    if [ "$GBOX_INSTALL_APPIUM" != "false" ] && [ "${GBOX_APPIUM_DISABLED}" != "true" ]; then
-        configure_appium
-    elif [ "${GBOX_APPIUM_DISABLED}" = "true" ]; then
         echo ""
-        print_info "Appium installation is disabled (GBOX_APPIUM_DISABLED=true)"
+        print_info "GBOX CLI installation completed. Use 'gbox setup' to install command dependencies."
     fi
-
-    # Save configuration
-    save_config
 
     # Print next steps
     print_next_steps

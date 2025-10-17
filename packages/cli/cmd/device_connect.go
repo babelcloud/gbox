@@ -153,14 +153,50 @@ to remote cloud services for remote access and debugging.`,
 }
 
 func ExecuteDeviceConnect(cmd *cobra.Command, opts *DeviceConnectOptions, args []string) error {
+	debug := os.Getenv("DEBUG") == "true"
+
+	// Check and auto-install ADB if missing
 	if !checkAdbInstalled() {
-		printAdbInstallationHint()
-		return fmt.Errorf("ADB is not installed or not in your PATH; please install ADB and try again")
+		if !debug {
+			fmt.Println("→ Missing ADB, installing automatically...")
+		}
+
+		sp := device_connect.NewUISpinner(debug, "Installing ADB...")
+		if err := installADB(); err != nil {
+			sp.Fail("Failed to install ADB")
+			printAdbInstallationHint()
+			return fmt.Errorf("failed to install ADB automatically: %v\nPlease install ADB manually and try again", err)
+		}
+
+		// Verify installation
+		if !checkAdbInstalled() {
+			sp.Fail("ADB installation failed")
+			printAdbInstallationHint()
+			return fmt.Errorf("ADB installation completed but adb command not found in PATH")
+		}
+		sp.Success("ADB installed")
 	}
 
+	// Check and auto-install frpc if missing
 	if !checkFrpcInstalled() {
-		printFrpcInstallationHint()
-		return fmt.Errorf("frpc is not installed or not in your PATH; please install frpc and try again")
+		if !debug {
+			fmt.Println("→ Missing frpc, installing automatically...")
+		}
+
+		sp := device_connect.NewUISpinner(debug, "Installing frpc...")
+		if err := installFrpc(); err != nil {
+			sp.Fail("Failed to install frpc")
+			printFrpcInstallationHint()
+			return fmt.Errorf("failed to install frpc automatically: %v\nPlease install frpc manually and try again", err)
+		}
+
+		// Verify installation
+		if !checkFrpcInstalled() {
+			sp.Fail("frpc installation failed")
+			printFrpcInstallationHint()
+			return fmt.Errorf("frpc installation completed but frpc command not found in PATH")
+		}
+		sp.Success("frpc installed")
 	}
 
 	// Check and install prerequisites
@@ -171,6 +207,7 @@ func ExecuteDeviceConnect(cmd *cobra.Command, opts *DeviceConnectOptions, args [
 		fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
 		fmt.Fprintf(os.Stderr, "💡 Quick Fix:\n")
 		fmt.Fprintf(os.Stderr, "   • Fix the errors above and retry\n")
+		fmt.Fprintf(os.Stderr, "   • Or run 'gbox setup' to install all dependencies\n")
 		fmt.Fprintf(os.Stderr, "   • Or disable Appium: export GBOX_INSTALL_APPIUM=false\n\n")
 		return err
 	}
@@ -516,4 +553,48 @@ func filterValidDevices(devices []device_connect.DeviceInfo) []device_connect.De
 		}
 	}
 	return result
+}
+
+// installADB attempts to install ADB using the system package manager
+func installADB() error {
+	if _, err := exec.LookPath("brew"); err == nil {
+		// macOS with Homebrew
+		cmd := exec.Command("brew", "install", "android-platform-tools")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+
+	if _, err := exec.LookPath("apt-get"); err == nil {
+		// Debian/Ubuntu
+		cmd := exec.Command("sudo", "apt-get", "install", "-y", "android-tools-adb")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+
+	if _, err := exec.LookPath("yum"); err == nil {
+		// RHEL/CentOS
+		cmd := exec.Command("sudo", "yum", "install", "-y", "android-tools")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+
+	return fmt.Errorf("unable to detect package manager")
+}
+
+// installFrpc attempts to install frpc using the system package manager
+func installFrpc() error {
+	if _, err := exec.LookPath("brew"); err == nil {
+		// macOS with Homebrew
+		cmd := exec.Command("brew", "install", "frpc")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+
+	// For Linux, frpc is not available in standard repositories
+	// Users need to download from GitHub releases
+	return fmt.Errorf("frpc installation on Linux requires manual download from https://github.com/fatedier/frp/releases")
 }
