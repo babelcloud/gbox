@@ -88,7 +88,11 @@ func GetAppiumConfig() AppiumConfig {
 	// Get drivers list
 	if drivers, exists := os.LookupEnv("GBOX_APPIUM_DRIVERS"); exists {
 		drivers = strings.TrimSpace(drivers)
-		if drivers == "" || strings.ToLower(drivers) == "none" {
+		if drivers == "" {
+			// Empty string means: ignore and use default
+			// Keep the default value (uiautomator2)
+		} else if strings.ToLower(drivers) == "none" {
+			// Only "none" or "NONE" explicitly clears the list
 			cfg.Drivers = []string{}
 		} else {
 			cfg.Drivers = strings.Split(drivers, ",")
@@ -102,7 +106,11 @@ func GetAppiumConfig() AppiumConfig {
 	// Get plugins list
 	if plugins, exists := os.LookupEnv("GBOX_APPIUM_PLUGINS"); exists {
 		plugins = strings.TrimSpace(plugins)
-		if plugins == "" || strings.ToLower(plugins) == "none" {
+		if plugins == "" {
+			// Empty string means: ignore and use default
+			// Keep the default value (inspector)
+		} else if strings.ToLower(plugins) == "none" {
+			// Only "none" or "NONE" explicitly clears the list
 			cfg.Plugins = []string{}
 		} else {
 			cfg.Plugins = strings.Split(plugins, ",")
@@ -169,17 +177,30 @@ func InstallAppium(cfg AppiumConfig) error {
 	debug := os.Getenv("DEBUG") == "true"
 
 	// Check if Appium is already installed
+	fmt.Println()
+	fmt.Println("📦 Checking Appium server...")
 	if IsAppiumInstalled(appiumHome) {
-		if debug {
-			fmt.Println("[DEBUG] Appium server is already installed")
+		// Get Appium version
+		appiumBinary := filepath.Join(appiumHome, "node_modules", ".bin", "appium")
+		version := ""
+		if versionCmd := exec.Command(appiumBinary, "-v"); versionCmd != nil {
+			versionCmd.Env = append(os.Environ(), "APPIUM_HOME="+appiumHome)
+			if versionOutput, err := versionCmd.Output(); err == nil {
+				version = strings.TrimSpace(string(versionOutput))
+			}
 		}
+
+		if version != "" {
+			fmt.Printf("✅ Appium server [%s] is already installed\n", version)
+		} else {
+			fmt.Println("✅ Appium server is already installed")
+		}
+
 		return installAppiumComponents(appiumHome, cfg)
 	}
 
-	// Print missing dependency message
-	if !debug {
-		fmt.Println("→ Missing Appium server, installing automatically...")
-	}
+	// Appium not installed
+	fmt.Println("⚠️  Appium server not found, installing...")
 
 	// Start spinner
 	sp := NewUISpinner(debug, "Installing Appium server...")
@@ -338,6 +359,10 @@ func installAppiumComponents(appiumHome string, cfg AppiumConfig) error {
 
 	var installErrors []string
 
+	// ===== Check and install drivers =====
+	fmt.Println()
+	fmt.Println("📦 Checking Appium drivers...")
+
 	// Get currently installed drivers
 	installedDrivers, err := getInstalledDrivers(appiumBinary, appiumHome)
 	if err != nil {
@@ -347,80 +372,74 @@ func installAppiumComponents(appiumHome string, cfg AppiumConfig) error {
 		installedDrivers = make(map[string]AppiumDriverInfo)
 	}
 
-	// Check for missing drivers
-	var missingDrivers []string
-	if len(cfg.Drivers) > 0 {
+	// Check configured drivers
+	if len(cfg.Drivers) == 0 {
+		fmt.Println("ℹ️  No drivers configured")
+	} else {
+		// Check each configured driver
+		var toInstall []string
 		for _, driver := range cfg.Drivers {
 			if driver == "" {
 				continue
 			}
-			if driverInfo, exists := installedDrivers[driver]; !exists || !driverInfo.Installed {
-				missingDrivers = append(missingDrivers, driver)
-			}
-		}
-
-		// Print missing drivers message
-		if len(missingDrivers) > 0 && !debug {
-			fmt.Printf("→ Missing drivers [%s], installing automatically...\n", strings.Join(missingDrivers, ", "))
-		}
-	}
-
-	// Install drivers
-	if len(cfg.Drivers) > 0 {
-		for _, driver := range cfg.Drivers {
-			if driver == "" {
-				continue
-			}
-
-			// Check if driver is already installed
 			if driverInfo, exists := installedDrivers[driver]; exists && driverInfo.Installed {
+				fmt.Printf("✅ Driver [%s@%s] is already installed\n", driver, driverInfo.Version)
+			} else {
+				toInstall = append(toInstall, driver)
+			}
+		}
+
+		// Install missing drivers
+		if len(toInstall) > 0 {
+			fmt.Printf("⚠️  Missing drivers: %s, installing...\n", strings.Join(toInstall, ", "))
+
+			for _, driver := range toInstall {
+				// Start spinner
+				sp := NewUISpinner(debug, fmt.Sprintf("Installing driver [%s]...", driver))
+
+				// Install driver with APPIUM_HOME set
+				cmd := exec.Command(appiumBinary, "driver", "install", driver)
+				var stderr strings.Builder
 				if debug {
-					fmt.Printf("[DEBUG] Driver %s is already installed (version: %s)\n", driver, driverInfo.Version)
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = os.Stderr
+				} else {
+					cmd.Stderr = &stderr
 				}
-				continue
-			}
+				cmd.Dir = appiumHome
+				cmd.Env = append(os.Environ(), "APPIUM_HOME="+appiumHome)
 
-			// Start spinner
-			sp := NewUISpinner(debug, fmt.Sprintf("Installing driver [%s]...", driver))
-
-			// Install driver with APPIUM_HOME set
-			cmd := exec.Command(appiumBinary, "driver", "install", driver)
-			var stderr strings.Builder
-			if debug {
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-			} else {
-				cmd.Stderr = &stderr
-			}
-			cmd.Dir = appiumHome
-			cmd.Env = append(os.Environ(), "APPIUM_HOME="+appiumHome)
-
-			if err := cmd.Run(); err != nil {
-				sp.Fail(fmt.Sprintf("Failed to install driver [%s]", driver))
-				errMsg := fmt.Sprintf("failed to install driver %s: %v", driver, err)
-				if stderr.String() != "" && debug {
-					fmt.Printf("[DEBUG] Error: %s\n", strings.TrimSpace(stderr.String()))
+				if err := cmd.Run(); err != nil {
+					sp.Fail(fmt.Sprintf("Failed to install driver [%s]", driver))
+					errMsg := fmt.Sprintf("failed to install driver %s: %v", driver, err)
+					if stderr.String() != "" && debug {
+						fmt.Printf("[DEBUG] Error: %s\n", strings.TrimSpace(stderr.String()))
+					}
+					installErrors = append(installErrors, errMsg)
+					continue
 				}
-				installErrors = append(installErrors, errMsg)
-				continue
-			}
 
-			// Get version for success message
-			version := ""
-			if updatedDrivers, err := getInstalledDrivers(appiumBinary, appiumHome); err == nil {
-				if driverInfo, exists := updatedDrivers[driver]; exists {
-					version = driverInfo.Version
+				// Get version for success message
+				version := ""
+				if updatedDrivers, err := getInstalledDrivers(appiumBinary, appiumHome); err == nil {
+					if driverInfo, exists := updatedDrivers[driver]; exists {
+						version = driverInfo.Version
+					}
 				}
-			}
 
-			// Print success with version
-			if version != "" {
-				sp.Success(fmt.Sprintf("Driver [%s@%s] installed", driver, version))
-			} else {
-				sp.Success(fmt.Sprintf("Driver [%s] installed", driver))
+				// Print success with version
+				if version != "" {
+					sp.Success(fmt.Sprintf("Driver [%s@%s] installed", driver, version))
+				} else {
+					sp.Success(fmt.Sprintf("Driver [%s] installed", driver))
+				}
 			}
 		}
 	}
+
+	// ===== Check and install plugins =====
+	fmt.Println()
+	fmt.Println("📦 Checking Appium plugins...")
 
 	// Get currently installed plugins
 	installedPlugins, err := getInstalledPlugins(appiumBinary, appiumHome)
@@ -431,77 +450,67 @@ func installAppiumComponents(appiumHome string, cfg AppiumConfig) error {
 		installedPlugins = make(map[string]AppiumPluginInfo)
 	}
 
-	// Check for missing plugins
-	var missingPlugins []string
-	if len(cfg.Plugins) > 0 {
+	// Check configured plugins
+	if len(cfg.Plugins) == 0 {
+		fmt.Println("ℹ️  No plugins configured")
+	} else {
+		// Check each configured plugin
+		var toInstall []string
 		for _, plugin := range cfg.Plugins {
 			if plugin == "" {
 				continue
 			}
-			if pluginInfo, exists := installedPlugins[plugin]; !exists || !pluginInfo.Installed {
-				missingPlugins = append(missingPlugins, plugin)
-			}
-		}
-
-		// Print missing plugins message
-		if len(missingPlugins) > 0 && !debug {
-			fmt.Printf("→ Missing plugins [%s], installing automatically...\n", strings.Join(missingPlugins, ", "))
-		}
-	}
-
-	// Install plugins
-	if len(cfg.Plugins) > 0 {
-		for _, plugin := range cfg.Plugins {
-			if plugin == "" {
-				continue
-			}
-
-			// Check if plugin is already installed
 			if pluginInfo, exists := installedPlugins[plugin]; exists && pluginInfo.Installed {
+				fmt.Printf("✅ Plugin [%s@%s] is already installed\n", plugin, pluginInfo.Version)
+			} else {
+				toInstall = append(toInstall, plugin)
+			}
+		}
+
+		// Install missing plugins
+		if len(toInstall) > 0 {
+			fmt.Printf("⚠️  Missing plugins: %s, installing...\n", strings.Join(toInstall, ", "))
+
+			for _, plugin := range toInstall {
+				// Start spinner
+				sp := NewUISpinner(debug, fmt.Sprintf("Installing plugin [%s]...", plugin))
+
+				// Install plugin with APPIUM_HOME set
+				cmd := exec.Command(appiumBinary, "plugin", "install", plugin)
+				var stderr strings.Builder
 				if debug {
-					fmt.Printf("[DEBUG] Plugin %s is already installed (version: %s)\n", plugin, pluginInfo.Version)
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = os.Stderr
+				} else {
+					cmd.Stderr = &stderr
 				}
-				continue
-			}
+				cmd.Dir = appiumHome
+				cmd.Env = append(os.Environ(), "APPIUM_HOME="+appiumHome)
 
-			// Start spinner
-			sp := NewUISpinner(debug, fmt.Sprintf("Installing plugin [%s]...", plugin))
-
-			// Install plugin with APPIUM_HOME set
-			cmd := exec.Command(appiumBinary, "plugin", "install", plugin)
-			var stderr strings.Builder
-			if debug {
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-			} else {
-				cmd.Stderr = &stderr
-			}
-			cmd.Dir = appiumHome
-			cmd.Env = append(os.Environ(), "APPIUM_HOME="+appiumHome)
-
-			if err := cmd.Run(); err != nil {
-				sp.Fail(fmt.Sprintf("Failed to install plugin [%s]", plugin))
-				errMsg := fmt.Sprintf("failed to install plugin %s: %v", plugin, err)
-				if stderr.String() != "" && debug {
-					fmt.Printf("[DEBUG] Error: %s\n", strings.TrimSpace(stderr.String()))
+				if err := cmd.Run(); err != nil {
+					sp.Fail(fmt.Sprintf("Failed to install plugin [%s]", plugin))
+					errMsg := fmt.Sprintf("failed to install plugin %s: %v", plugin, err)
+					if stderr.String() != "" && debug {
+						fmt.Printf("[DEBUG] Error: %s\n", strings.TrimSpace(stderr.String()))
+					}
+					installErrors = append(installErrors, errMsg)
+					continue
 				}
-				installErrors = append(installErrors, errMsg)
-				continue
-			}
 
-			// Get version for success message
-			version := ""
-			if updatedPlugins, err := getInstalledPlugins(appiumBinary, appiumHome); err == nil {
-				if pluginInfo, exists := updatedPlugins[plugin]; exists {
-					version = pluginInfo.Version
+				// Get version for success message
+				version := ""
+				if updatedPlugins, err := getInstalledPlugins(appiumBinary, appiumHome); err == nil {
+					if pluginInfo, exists := updatedPlugins[plugin]; exists {
+						version = pluginInfo.Version
+					}
 				}
-			}
 
-			// Print success with version
-			if version != "" {
-				sp.Success(fmt.Sprintf("Plugin [%s@%s] installed", plugin, version))
-			} else {
-				sp.Success(fmt.Sprintf("Plugin [%s] installed", plugin))
+				// Print success with version
+				if version != "" {
+					sp.Success(fmt.Sprintf("Plugin [%s@%s] installed", plugin, version))
+				} else {
+					sp.Success(fmt.Sprintf("Plugin [%s] installed", plugin))
+				}
 			}
 		}
 	}

@@ -50,6 +50,13 @@ func init() {
 	v.BindEnv("appium.drivers", "GBOX_APPIUM_DRIVERS")
 	v.BindEnv("appium.plugins", "GBOX_APPIUM_PLUGINS")
 
+	// Pre-process APPIUM_HOME: set default if not already set
+	if os.Getenv("APPIUM_HOME") == "" {
+		defaultAppiumHome := filepath.Join(GetDeviceProxyHome(), "appium")
+		os.Setenv("APPIUM_HOME", defaultAppiumHome)
+	}
+	v.BindEnv("appium.home", "APPIUM_HOME")
+
 	// Config file
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
@@ -139,4 +146,9 @@ func GetAppiumDrivers() string {
 // GetAppiumPlugins returns the list of Appium plugins to install
 func GetAppiumPlugins() string {
 	return v.GetString("appium.plugins")
+}
+
+// GetAppiumHome returns the Appium home directory
+func GetAppiumHome() string {
+	return v.GetString("appium.home")
 }

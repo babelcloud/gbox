@@ -75,21 +75,21 @@ func TestGetAppiumConfig(t *testing.T) {
 			wantPlugins: []string{},
 		},
 		{
-			name: "no plugins with empty string",
+			name: "empty string for plugins keeps default",
 			envVars: map[string]string{
 				"GBOX_APPIUM_PLUGINS": "",
 			},
 			wantInstall: true,
 			wantDrivers: []string{"uiautomator2"},
-			wantPlugins: []string{},
+			wantPlugins: []string{"inspector"}, // Empty string = use default
 		},
 		{
-			name: "no drivers with empty string",
+			name: "empty string for drivers keeps default",
 			envVars: map[string]string{
 				"GBOX_APPIUM_DRIVERS": "",
 			},
 			wantInstall: true,
-			wantDrivers: []string{},
+			wantDrivers: []string{"uiautomator2"}, // Empty string = use default
 			wantPlugins: []string{"inspector"},
 		},
 		{
