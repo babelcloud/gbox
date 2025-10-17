@@ -1,19 +1,27 @@
 package cmd
 
 import (
+	"archive/tar"
+	"compress/gzip"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"syscall"
 	"time"
+
+	"github.com/fatih/color"
+	"github.com/spf13/cobra"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect"
 	"github.com/babelcloud/gbox/packages/cli/internal/profile"
-	"github.com/fatih/color"
-	"github.com/spf13/cobra"
 )
 
 // printDeveloperModeHint prints the developer mode hint with dim formatting
@@ -153,14 +161,63 @@ to remote cloud services for remote access and debugging.`,
 }
 
 func ExecuteDeviceConnect(cmd *cobra.Command, opts *DeviceConnectOptions, args []string) error {
+	debug := os.Getenv("DEBUG") == "true"
+
+	// Check and auto-install ADB if missing
 	if !checkAdbInstalled() {
-		printAdbInstallationHint()
-		return fmt.Errorf("ADB is not installed or not in your PATH; please install ADB and try again")
+		if !debug {
+			fmt.Println("→ Missing ADB, installing automatically...")
+		}
+
+		sp := device_connect.NewUISpinner(debug, "Installing ADB...")
+		if err := installADB(); err != nil {
+			sp.Fail("Failed to install ADB")
+			printAdbInstallationHint()
+			return fmt.Errorf("failed to install ADB automatically: %v\nPlease install ADB manually and try again", err)
+		}
+
+		// Verify installation
+		if !checkAdbInstalled() {
+			sp.Fail("ADB installation failed")
+			printAdbInstallationHint()
+			return fmt.Errorf("ADB installation completed but adb command not found in PATH")
+		}
+		sp.Success("ADB installed")
 	}
 
+	// Check and auto-install frpc if missing
 	if !checkFrpcInstalled() {
-		printFrpcInstallationHint()
-		return fmt.Errorf("frpc is not installed or not in your PATH; please install frpc and try again")
+		if !debug {
+			fmt.Println("→ Missing frpc, installing automatically...")
+		}
+
+		sp := device_connect.NewUISpinner(debug, "Installing frpc...")
+		if err := installFrpc(); err != nil {
+			sp.Fail("Failed to install frpc")
+			printFrpcInstallationHint()
+			return fmt.Errorf("failed to install frpc automatically: %v\nPlease install frpc manually and try again", err)
+		}
+
+		// Verify installation
+		if !checkFrpcInstalled() {
+			sp.Fail("frpc installation failed")
+			printFrpcInstallationHint()
+			return fmt.Errorf("frpc installation completed but frpc command not found in PATH")
+		}
+		sp.Success("frpc installed")
+	}
+
+	// Check and install prerequisites
+	if err := checkAndInstallPrerequisites(); err != nil {
+		fmt.Fprintf(os.Stderr, "\n╔═══════════════════════════════════════╗\n")
+		fmt.Fprintf(os.Stderr, "║  ❌  Prerequisites Installation Failed ║\n")
+		fmt.Fprintf(os.Stderr, "╚═══════════════════════════════════════╝\n\n")
+		fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
+		fmt.Fprintf(os.Stderr, "💡 Quick Fix:\n")
+		fmt.Fprintf(os.Stderr, "   • Fix the errors above and retry\n")
+		fmt.Fprintf(os.Stderr, "   • Or run 'gbox setup' to install all dependencies\n")
+		fmt.Fprintf(os.Stderr, "   • Or disable Appium: export GBOX_INSTALL_APPIUM=false\n\n")
+		return err
 	}
 
 	// Ensure device proxy service is running
@@ -172,6 +229,80 @@ func ExecuteDeviceConnect(cmd *cobra.Command, opts *DeviceConnectOptions, args [
 		return runInteractiveDeviceSelection(opts)
 	}
 	return connectToDevice(opts.DeviceID, opts)
+}
+
+// checkAndInstallPrerequisites checks and installs Node.js, npm, Appium and related components
+func checkAndInstallPrerequisites() error {
+	debug := os.Getenv("DEBUG") == "true"
+
+	// Get Appium configuration from environment
+	appiumCfg := device_connect.GetAppiumConfig()
+
+	if !appiumCfg.InstallAppium {
+		if debug {
+			fmt.Println("[DEBUG] Appium installation is disabled (GBOX_INSTALL_APPIUM=false)")
+		}
+		return nil
+	}
+
+	// Check Node.js and npm
+	if err := device_connect.CheckNodeInstalled(); err != nil {
+		return fmt.Errorf("node.js and npm are not installed: %v\n\n"+
+			"╔═══════════════════════════════════════╗\n"+
+			"║         📦  Install Node.js           ║\n"+
+			"╚═══════════════════════════════════════╝\n\n"+
+			"Platform-specific installation:\n"+
+			"  🍎 macOS:         brew install node\n"+
+			"  🐧 Ubuntu/Debian: sudo apt-get install nodejs npm\n"+
+			"  🪟 Windows:       Download from https://nodejs.org/\n\n"+
+			"Or use our quick install script:\n"+
+			"  curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash", err)
+	}
+
+	if debug {
+		fmt.Println("[DEBUG] ✅ Node.js and npm are installed")
+	}
+
+	// Check if Appium is already installed
+	deviceProxyHome := config.GetDeviceProxyHome()
+	appiumHome := filepath.Join(deviceProxyHome, "appium")
+
+	if device_connect.IsAppiumInstalled(appiumHome) {
+		if debug {
+			appiumPath := device_connect.GetAppiumPath()
+			fmt.Printf("[DEBUG] ✅ Appium is already installed at: %s\n", appiumPath)
+
+			// Print configured components
+			if len(appiumCfg.Drivers) > 0 {
+				fmt.Printf("[DEBUG] 🔧 Configured drivers: %v\n", appiumCfg.Drivers)
+			}
+
+			if len(appiumCfg.Plugins) > 0 {
+				fmt.Printf("[DEBUG] 🔌 Configured plugins: %v\n", appiumCfg.Plugins)
+			}
+		}
+
+		// Try to install/update components
+		if err := device_connect.InstallAppium(appiumCfg); err != nil {
+			return fmt.Errorf("failed to install Appium components: %v", err)
+		}
+		return nil
+	}
+
+	// Install Appium and components
+	if debug {
+		fmt.Println("[DEBUG] Installing Appium Automation ...")
+	}
+
+	if err := device_connect.InstallAppium(appiumCfg); err != nil {
+		return fmt.Errorf("failed to install Appium: %v", err)
+	}
+
+	if debug {
+		fmt.Println("[DEBUG]  ✅  Appium Installation Completed!")
+	}
+
+	return nil
 }
 
 func isServiceRunning() (bool, error) {
@@ -257,29 +388,29 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 			statusColor.Sprint(status))
 	}
 	fmt.Println()
-    fmt.Print("Enter a number: ")
-    var choice int
+	fmt.Print("Enter a number: ")
+	var choice int
 
-    // Trap Ctrl+C while waiting for input so we can cleanup proxy first
-    intCh := make(chan os.Signal, 1)
-    signal.Notify(intCh, syscall.SIGINT, syscall.SIGTERM)
-    defer signal.Stop(intCh)
+	// Trap Ctrl+C while waiting for input so we can cleanup proxy first
+	intCh := make(chan os.Signal, 1)
+	signal.Notify(intCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(intCh)
 
-    inputDone := make(chan struct{})
-    go func() {
-        // Read user input
-        fmt.Scanf("%d", &choice)
-        close(inputDone)
-    }()
+	inputDone := make(chan struct{})
+	go func() {
+		// Read user input
+		fmt.Scanf("%d", &choice)
+		close(inputDone)
+	}()
 
-    select {
-    case <-intCh:
-        // User pressed Ctrl+C during selection; stop proxy first then exit gracefully
-        _ = executeKillServer()
-        return nil
-    case <-inputDone:
-        // proceed
-    }
+	select {
+	case <-intCh:
+		// User pressed Ctrl+C during selection; stop proxy first then exit gracefully
+		_ = executeKillServer()
+		return nil
+	case <-inputDone:
+		// proceed
+	}
 	if choice < 1 || choice > len(devices) {
 		return fmt.Errorf("invalid selection: %d", choice)
 	}
@@ -328,24 +459,24 @@ func connectToDevice(deviceID string, opts *DeviceConnectOptions) error {
 	<-sigChan
 	fmt.Printf("Disconnecting %s (%s, %s)...\n",
 		device.ProductModel, device.ConnectionType, device.ProductManufacturer)
-	
+
 	// First unregister the device
 	if err := client.UnregisterDevice(deviceID); err != nil {
 		fmt.Printf("Warning: failed to unregister device: %v\n", err)
 	}
-	
+
 	// Then stop the device proxy service using existing kill-server logic
 	if err := executeKillServer(); err != nil {
 		fmt.Printf("Warning: failed to stop device proxy service: %v\n", err)
 	}
-	
+
 	return nil
 }
 
 // executeKillServer calls the existing kill-server functionality
 func executeKillServer() error {
 	opts := &DeviceConnectKillServerOptions{
-        Force: true,
+		Force: true,
 		All:   false,
 	}
 	// Create a dummy command for ExecuteDeviceConnectKillServer
@@ -430,4 +561,243 @@ func filterValidDevices(devices []device_connect.DeviceInfo) []device_connect.De
 		}
 	}
 	return result
+}
+
+// runAsRoot executes a command with root privileges if needed
+func runAsRoot(name string, args ...string) error {
+	// Check if already running as root (Unix-like systems)
+	if runtime.GOOS != "windows" {
+		cmd := exec.Command("id", "-u")
+		output, err := cmd.Output()
+		if err == nil && strings.TrimSpace(string(output)) == "0" {
+			// Already root, run directly
+			cmd := exec.Command(name, args...)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			return cmd.Run()
+		}
+	}
+
+	// Check if sudo is available
+	if _, err := exec.LookPath("sudo"); err == nil {
+		// Use sudo
+		fullArgs := append([]string{name}, args...)
+		cmd := exec.Command("sudo", fullArgs...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+
+	// No sudo available, try running directly
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+// installADB attempts to install ADB using the system package manager
+func installADB() error {
+	if _, err := exec.LookPath("brew"); err == nil {
+		// macOS with Homebrew
+		cmd := exec.Command("brew", "install", "android-platform-tools")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+
+	if _, err := exec.LookPath("apt-get"); err == nil {
+		// Debian/Ubuntu
+		return runAsRoot("apt-get", "install", "-y", "android-tools-adb")
+	}
+
+	if _, err := exec.LookPath("yum"); err == nil {
+		// RHEL/CentOS
+		return runAsRoot("yum", "install", "-y", "android-tools")
+	}
+
+	return fmt.Errorf("unable to detect package manager")
+}
+
+// installFrpc attempts to install frpc using the system package manager or GitHub releases
+func installFrpc() error {
+	// Try Homebrew first on macOS
+	if runtime.GOOS == "darwin" {
+		if _, err := exec.LookPath("brew"); err == nil {
+			cmd := exec.Command("brew", "install", "frpc")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err == nil {
+				return nil
+			}
+			// If brew fails, fall through to GitHub installation
+		}
+	}
+
+	// Download from GitHub releases for all platforms
+	return installFrpcFromGitHub()
+}
+
+// installFrpcFromGitHub downloads and installs frpc from GitHub releases
+func installFrpcFromGitHub() error {
+	// Get latest frpc version from GitHub API
+	resp, err := http.Get("https://api.github.com/repos/fatedier/frp/releases/latest")
+	if err != nil {
+		return fmt.Errorf("failed to fetch frpc version: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to fetch frpc version: HTTP %d", resp.StatusCode)
+	}
+
+	var release struct {
+		TagName string `json:"tag_name"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return fmt.Errorf("failed to parse release info: %v", err)
+	}
+
+	// Remove 'v' prefix from version
+	frpcVersion := strings.TrimPrefix(release.TagName, "v")
+	if frpcVersion == "" {
+		return fmt.Errorf("invalid version tag: %s", release.TagName)
+	}
+
+	// Detect OS and architecture
+	osType := runtime.GOOS
+	archType := runtime.GOARCH
+
+	// Map architecture names to frp naming convention
+	switch archType {
+	case "amd64":
+		// Keep as is
+	case "arm64":
+		// Keep as is
+	case "arm":
+		// Keep as is
+	default:
+		return fmt.Errorf("unsupported architecture: %s", archType)
+	}
+
+	// Construct download URL
+	downloadURL := fmt.Sprintf(
+		"https://github.com/fatedier/frp/releases/download/v%s/frp_%s_%s_%s.tar.gz",
+		frpcVersion, frpcVersion, osType, archType,
+	)
+
+	// Create temporary directory for frpc binary only
+	tempDir, err := os.MkdirTemp("", "frpc-install-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Download and stream-extract in one pass
+	resp, err = http.Get(downloadURL)
+	if err != nil {
+		return fmt.Errorf("failed to download frpc: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download frpc: HTTP %d", resp.StatusCode)
+	}
+
+	// Create gzip reader directly from HTTP response body (no intermediate file)
+	gzr, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to create gzip reader: %v", err)
+	}
+	defer gzr.Close()
+
+	// Create tar reader from gzip stream
+	tr := tar.NewReader(gzr)
+
+	// Extract frpc binary directly from stream
+	var frpcBinaryPath string
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read tar entry: %v", err)
+		}
+
+		// Look for frpc binary
+		if filepath.Base(header.Name) == "frpc" && header.Typeflag == tar.TypeReg {
+			frpcBinaryPath = filepath.Join(tempDir, "frpc")
+
+			// Create file with proper permissions
+			outFile, err := os.OpenFile(frpcBinaryPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+			if err != nil {
+				return fmt.Errorf("failed to create frpc binary: %v", err)
+			}
+
+			// Stream-copy from tar to file
+			if _, err := io.Copy(outFile, tr); err != nil {
+				outFile.Close()
+				return fmt.Errorf("failed to extract frpc binary: %v", err)
+			}
+
+			if err := outFile.Close(); err != nil {
+				return fmt.Errorf("failed to close frpc binary: %v", err)
+			}
+
+			// Found and extracted, stop processing archive
+			break
+		}
+	}
+
+	if frpcBinaryPath == "" {
+		return fmt.Errorf("frpc binary not found in archive")
+	}
+
+	// Install to system location
+	installPath := "/usr/local/bin/frpc"
+	if err := installBinaryWithSudo(frpcBinaryPath, installPath); err != nil {
+		return fmt.Errorf("failed to install frpc to %s: %v", installPath, err)
+	}
+
+	return nil
+}
+
+// installBinaryWithSudo installs a binary to the system location, using sudo if necessary
+func installBinaryWithSudo(src, dst string) error {
+	// Try direct copy first (works if we have write permission)
+	if err := copyBinaryFile(src, dst); err == nil {
+		return nil
+	}
+
+	// If direct copy fails, use install command with runAsRoot (Unix-like systems)
+	if runtime.GOOS != "windows" {
+		if err := runAsRoot("install", "-m", "755", src, dst); err != nil {
+			return fmt.Errorf("install with elevated privileges failed: %v", err)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("permission denied and elevated privileges not available")
+}
+
+// copyBinaryFile copies a binary file with executable permissions
+func copyBinaryFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open source: %v", err)
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create destination: %v", err)
+	}
+	defer dstFile.Close()
+
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		return fmt.Errorf("failed to copy: %v", err)
+	}
+
+	return nil
 }

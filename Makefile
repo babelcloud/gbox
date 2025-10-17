@@ -67,13 +67,21 @@ check-pnpm: ## Check and enable pnpm via corepack
 help: ## Show this help message
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' Makefile | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
-# Build all components
+# Build binary for current platform
 .PHONY: build
-build: check-pnpm ## Build all components
+build: check-pnpm ## Build binary for current platform
+	@echo "Building Go binary for current platform..."
+	@$(MAKE) -C packages/cli binary
+	@echo "Build completed"
+	@echo "Binary: packages/cli/gbox"
+
+# Build all components for all platforms
+.PHONY: build-all
+build-all: check-pnpm ## Build binaries for all platforms
 	@echo "Building Go binary for all platforms..."
 	@$(MAKE) -C packages/cli binary-all
-	# Binaries are kept in packages/cli/build/
-	@echo "Build completed"
+	# Binaries are kept in packages/cli/
+	@echo "All platform builds completed"
 
 # Build docker images
 .PHONY: build-images
@@ -139,7 +147,7 @@ brew-dist: ## Create a distribution for Homebrew
 
 # Create all distribution packages
 .PHONY: dist
-dist: build ## Create all distribution packages
+dist: build-all ## Create all distribution packages
 	@echo "Creating all distribution packages..."
 	@rm -rf $(DIST_DIR)
 	@mkdir -p $(DIST_DIR)

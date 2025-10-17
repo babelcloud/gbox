@@ -54,7 +54,21 @@ func runVersion(opts *VersionOptions) error {
 		return nil
 	}
 
-	// Display GBOX ASCII art banner with gradient colors
+	// Handle JSON output (without banner)
+	if opts.OutputFormat == "json" {
+		result := map[string]interface{}{
+			"Client": clientInfo,
+		}
+
+		jsonData, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to format version as JSON: %v", err)
+		}
+		fmt.Println(string(jsonData))
+		return nil
+	}
+
+	// Display GBOX ASCII art banner with gradient colors (for text output only)
 	// Primary color #704FED (purple)
 	purple := "\033[38;2;112;79;237m"       // classic purple
 	lightPurple := "\033[38;2;142;109;255m" // light purple
@@ -73,19 +87,6 @@ func runVersion(opts *VersionOptions) error {
 ` + glowPurple + `   ╚═════╝ ` + lightPurple + `       ` + purple + `         ` + lightPurple + `        ` + reset
 
 	fmt.Println(gboxBanner)
-
-	if opts.OutputFormat == "json" {
-		result := map[string]interface{}{
-			"Client": clientInfo,
-		}
-
-		jsonData, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to format version as JSON: %v", err)
-		}
-		fmt.Println(string(jsonData))
-		return nil
-	}
 
 	// Text template for client version output
 	const clientTemplate = `Client:

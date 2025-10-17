@@ -27,11 +27,97 @@ You can also plug GBOX MCP to any Agent you like, such as Cursor, Claude Code. T
 
 ### Installation Steps
 
+#### Quick Install (Recommended)
+
+**Option 1: Install GBOX CLI only**
 ```bash
-# Install via Homebrew (on MacOS)
+curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash
+```
+
+This installs just the GBOX CLI. Additional dependencies (like ADB, frpc, Appium) will be automatically installed when needed, or you can install them later using:
+```bash
+gbox setup
+```
+
+**Option 2: Install with all dependencies (one-step setup)**
+```bash
+curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash -s -- --with-deps
+```
+
+This installs everything at once:
+- GBOX CLI
+- Node.js and npm (if not present)
+- Android Debug Bridge (ADB)
+- FRP client (frpc)
+- Appium server, drivers and plugins
+
+**Non-Interactive Mode:**
+```bash
+# CLI only
+curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash -s -- -y
+
+# With all dependencies
+curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash -s -- -y --with-deps
+```
+
+#### Alternative Installation Methods
+
+**Via Homebrew (macOS):**
+```bash
 brew install gbox
+```
+
+**Via npm (Linux/Windows):**
+```bash
+npm install -g @gbox.ai/cli
+```
+
+#### Setup Dependencies
+
+If you installed GBOX CLI only, you can install all command dependencies anytime:
+```bash
+gbox setup
+```
+
+Or install them interactively:
+```bash
+gbox setup -y
+```
+
+#### Update GBOX CLI
+
+Keep your GBOX CLI up to date:
+
+**Using the install script:**
+```bash
+# Interactive update (will prompt if already installed)
+curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash
+
+# Force update without prompt
+curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash -s -- --update
+
+# Skip update even if newer version available
+curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash -s -- --update=false
+```
+
+**Using Homebrew (macOS):**
+```bash
+brew upgrade gbox
+```
+
+**Using npm (Linux/Windows):**
+```bash
+npm update -g @gbox.ai/cli
+```
+
+#### Get Started
+
+```bash
 # Login to gbox.ai
 gbox login
+
+# Connect your Android device (dependencies will be installed automatically if missing)
+gbox device-connect
 
 # Export MCP config and merge into Claude Code/Cursor
 gbox mcp export --merge-to claude-code
@@ -120,8 +206,11 @@ Login to [GBOX.AI](https://gbox.ai) to get a Linux desktop/browser environment. 
 ### Build
 
 ```bash
-# Build all components
+# Build for current platform
 make build
+
+# Build for all platforms
+make build-all
 
 # Create distribution package
 make dist
