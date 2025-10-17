@@ -4,7 +4,7 @@
 # This script installs GBOX CLI and its dependencies
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash -s -- -y
+#   curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash -s -- -y --with-deps --update
 
 set -e
 

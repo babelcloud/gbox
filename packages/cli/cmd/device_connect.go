@@ -247,9 +247,9 @@ func checkAndInstallPrerequisites() error {
 
 	// Check Node.js and npm
 	if err := device_connect.CheckNodeInstalled(); err != nil {
-		return fmt.Errorf("Node.js and npm are not installed: %v\n\n"+
+		return fmt.Errorf("node.js and npm are not installed: %v\n\n"+
 			"╔═══════════════════════════════════════╗\n"+
-			"║  📦  Install Node.js                  ║\n"+
+			"║         📦  Install Node.js           ║\n"+
 			"╚═══════════════════════════════════════╝\n\n"+
 			"Platform-specific installation:\n"+
 			"  🍎 macOS:         brew install node\n"+
@@ -563,6 +563,38 @@ func filterValidDevices(devices []device_connect.DeviceInfo) []device_connect.De
 	return result
 }
 
+// runAsRoot executes a command with root privileges if needed
+func runAsRoot(name string, args ...string) error {
+	// Check if already running as root (Unix-like systems)
+	if runtime.GOOS != "windows" {
+		cmd := exec.Command("id", "-u")
+		output, err := cmd.Output()
+		if err == nil && strings.TrimSpace(string(output)) == "0" {
+			// Already root, run directly
+			cmd := exec.Command(name, args...)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			return cmd.Run()
+		}
+	}
+
+	// Check if sudo is available
+	if _, err := exec.LookPath("sudo"); err == nil {
+		// Use sudo
+		fullArgs := append([]string{name}, args...)
+		cmd := exec.Command("sudo", fullArgs...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+
+	// No sudo available, try running directly
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 // installADB attempts to install ADB using the system package manager
 func installADB() error {
 	if _, err := exec.LookPath("brew"); err == nil {
@@ -575,18 +607,12 @@ func installADB() error {
 
 	if _, err := exec.LookPath("apt-get"); err == nil {
 		// Debian/Ubuntu
-		cmd := exec.Command("sudo", "apt-get", "install", "-y", "android-tools-adb")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
+		return runAsRoot("apt-get", "install", "-y", "android-tools-adb")
 	}
 
 	if _, err := exec.LookPath("yum"); err == nil {
 		// RHEL/CentOS
-		cmd := exec.Command("sudo", "yum", "install", "-y", "android-tools")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
+		return runAsRoot("yum", "install", "-y", "android-tools")
 	}
 
 	return fmt.Errorf("unable to detect package manager")
@@ -744,18 +770,15 @@ func installBinaryWithSudo(src, dst string) error {
 		return nil
 	}
 
-	// If direct copy fails, use sudo install command (Unix-like systems)
+	// If direct copy fails, use install command with runAsRoot (Unix-like systems)
 	if runtime.GOOS != "windows" {
-		cmd := exec.Command("sudo", "install", "-m", "755", src, dst)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("sudo install failed: %v", err)
+		if err := runAsRoot("install", "-m", "755", src, dst); err != nil {
+			return fmt.Errorf("install with elevated privileges failed: %v", err)
 		}
 		return nil
 	}
 
-	return fmt.Errorf("permission denied and sudo not available")
+	return fmt.Errorf("permission denied and elevated privileges not available")
 }
 
 // copyBinaryFile copies a binary file with executable permissions

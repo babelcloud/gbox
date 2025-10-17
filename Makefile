@@ -67,7 +67,7 @@ check-pnpm: ## Check and enable pnpm via corepack
 help: ## Show this help message
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' Makefile | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
-# Build binary for current platform (most common, for development and testing)
+# Build binary for current platform
 .PHONY: build
 build: check-pnpm ## Build binary for current platform
 	@echo "Building Go binary for current platform..."
@@ -77,7 +77,7 @@ build: check-pnpm ## Build binary for current platform
 
 # Build all components for all platforms
 .PHONY: build-all
-build-all: check-pnpm ## Build binaries for all platforms (for release)
+build-all: check-pnpm ## Build binaries for all platforms
 	@echo "Building Go binary for all platforms..."
 	@$(MAKE) -C packages/cli binary-all
 	# Binaries are kept in packages/cli/
