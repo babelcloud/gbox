@@ -139,6 +139,20 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Execute command with sudo if available and needed
+run_as_root() {
+    # If already root, no need for sudo
+    if [ "$(id -u)" = "0" ]; then
+        "$@"
+    # If sudo is available, use it
+    elif command_exists sudo; then
+        sudo "$@"
+    # Otherwise, try to run directly
+    else
+        "$@"
+    fi
+}
+
 # Detect OS and set installation method
 detect_os() {
     case "$OS" in
@@ -187,7 +201,7 @@ install_nodejs_nvm() {
 
     # Install nvm
     if ! command_exists nvm; then
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+        curl -so- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 
         # Load nvm
         export NVM_DIR="$HOME/.nvm"
@@ -217,8 +231,8 @@ install_nodejs_apt() {
     print_info "Installing Node.js using apt..."
 
     # Install Node.js 20.x LTS
-    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-    sudo apt-get install -y nodejs
+    curl -fsSL https://deb.nodesource.com/setup_20.x | run_as_root bash -
+    run_as_root apt-get install -y nodejs
 
     print_success "Node.js installed via apt"
 }
@@ -227,8 +241,8 @@ install_nodejs_yum() {
     print_info "Installing Node.js using yum..."
 
     # Install Node.js 20.x LTS
-    curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
-    sudo yum install -y nodejs
+    curl -fsSL https://rpm.nodesource.com/setup_20.x | run_as_root bash -
+    run_as_root yum install -y nodejs
 
     print_success "Node.js installed via yum"
 }
@@ -357,7 +371,7 @@ check_gbox_installed() {
     fi
 
     echo "not_installed"
-    return 1
+    return 0
 }
 
 # Install GBOX CLI
@@ -376,8 +390,7 @@ install_gbox() {
         fi
         ;;
     linux | windows)
-        print_info "Installing GBOX CLI via npm package @gbox.ai/cli..."
-        npm install -g @gbox.ai/cli@latest
+        npm install -g @gbox.ai/cli
         print_success "GBOX CLI installed via npm"
         ;;
     *)
@@ -443,6 +456,161 @@ update_gbox() {
     esac
 }
 
+# Install frpc from GitHub releases
+install_frpc_from_github() {
+    local os_type=""
+    local arch_type=""
+
+    # Ensure jq is installed for JSON parsing
+    if ! command_exists jq; then
+        print_info "Installing jq for JSON parsing..."
+        case "$OS_TYPE" in
+        macos)
+            if command_exists brew; then
+                brew install jq >/dev/null 2>&1 || {
+                    print_error "Failed to install jq"
+                    return 1
+                }
+            else
+                print_error "Homebrew not found, cannot install jq"
+                return 1
+            fi
+            ;;
+        linux)
+            if command -v apt-get >/dev/null 2>&1; then
+                run_as_root apt-get update >/dev/null 2>&1
+                run_as_root apt-get install -y jq >/dev/null 2>&1 || {
+                    print_error "Failed to install jq via apt-get"
+                    return 1
+                }
+            elif command -v yum >/dev/null 2>&1; then
+                run_as_root yum install -y jq >/dev/null 2>&1 || {
+                    print_error "Failed to install jq via yum"
+                    return 1
+                }
+            else
+                print_error "No package manager found, cannot install jq"
+                return 1
+            fi
+            ;;
+        *)
+            print_error "Unsupported OS for jq installation"
+            return 1
+            ;;
+        esac
+
+        if ! command_exists jq; then
+            print_error "jq installation failed, cannot proceed"
+            return 1
+        fi
+        print_success "jq installed successfully"
+    fi
+
+    # Get latest frpc version from GitHub API
+    print_info "Fetching latest frpc version from GitHub..."
+    local frpc_version
+    if command_exists curl; then
+        frpc_version=$(curl -fsS https://api.github.com/repos/fatedier/frp/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+    elif command_exists wget; then
+        frpc_version=$(wget -qO- https://api.github.com/repos/fatedier/frp/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+    else
+        print_error "Neither curl nor wget found"
+        return 1
+    fi
+
+    if [ -z "$frpc_version" ] || [ "$frpc_version" = "null" ]; then
+        print_error "Failed to fetch frpc version from GitHub"
+        return 1
+    fi
+
+    # Detect OS
+    case "$OS" in
+    Linux*)
+        os_type="linux"
+        ;;
+    Darwin*)
+        os_type="darwin"
+        ;;
+    *)
+        print_error "Unsupported OS for frpc installation: $OS"
+        return 1
+        ;;
+    esac
+
+    # Detect architecture
+    case "$ARCH" in
+    x86_64 | amd64)
+        arch_type="amd64"
+        ;;
+    aarch64 | arm64)
+        arch_type="arm64"
+        ;;
+    armv7l | armhf)
+        arch_type="arm"
+        ;;
+    *)
+        print_error "Unsupported architecture for frpc installation: $ARCH"
+        return 1
+        ;;
+    esac
+
+    local download_url="https://github.com/fatedier/frp/releases/download/v${frpc_version}/frp_${frpc_version}_${os_type}_${arch_type}.tar.gz"
+    local temp_dir=$(mktemp -d)
+    local tar_file="${temp_dir}/frp.tar.gz"
+
+    print_info "Downloading frpc v${frpc_version} for ${os_type}_${arch_type}..."
+
+    # Download
+    if command_exists curl; then
+        if ! curl -fsSL -o "$tar_file" "$download_url" 2>&1; then
+            print_error "Failed to download frpc"
+            rm -rf "$temp_dir"
+            return 1
+        fi
+    elif command_exists wget; then
+        if ! wget -O "$tar_file" "$download_url" 2>&1; then
+            print_error "Failed to download frpc"
+            rm -rf "$temp_dir"
+            return 1
+        fi
+    else
+        print_error "Neither curl nor wget found. Please install one of them first."
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # Extract
+    print_info "Extracting frpc..."
+    if ! tar -xzf "$tar_file" -C "$temp_dir" 2>&1; then
+        print_error "Failed to extract frpc"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # Find and install frpc binary
+    local frpc_binary=$(find "$temp_dir" -name "frpc" -type f | head -1)
+    if [ -z "$frpc_binary" ]; then
+        print_error "frpc binary not found in extracted files"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # Install to /usr/local/bin
+    print_info "Installing frpc to /usr/local/bin..."
+    if run_as_root install -m 755 "$frpc_binary" /usr/local/bin/frpc 2>&1; then
+        print_success "frpc installed successfully"
+    else
+        print_error "Failed to install frpc to /usr/local/bin"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # Cleanup
+    rm -rf "$temp_dir"
+
+    return 0
+}
+
 # Install additional dependencies
 install_dependencies() {
     echo ""
@@ -458,7 +626,7 @@ install_dependencies() {
         print_info "Installing Android Debug Bridge (ADB)..."
         case "$OS_TYPE" in
         macos)
-            if brew install android-platform-tools 2>/dev/null; then
+            if brew install android-platform-tools; then
                 print_success "ADB installed successfully"
             else
                 echo ""
@@ -472,14 +640,14 @@ install_dependencies() {
             ;;
         linux)
             if [ "$PKG_MANAGER" = "apt" ]; then
-                if sudo apt-get install -y android-tools-adb 2>/dev/null; then
+                if run_as_root apt-get install -y android-tools-adb; then
                     print_success "ADB installed successfully"
                 else
                     echo ""
                     print_error "Failed to install ADB"
                     echo ""
                     echo "Please install ADB manually:"
-                    echo "  sudo apt-get install android-tools-adb"
+                    echo "  apt-get install android-tools-adb"
                     echo ""
                     exit 1
                 fi
@@ -510,31 +678,35 @@ install_dependencies() {
         print_success "frpc: $FRPC_VERSION"
     else
         print_info "Installing FRP Client (frpc)..."
-        case "$OS_TYPE" in
-        macos)
-            if brew install frpc 2>/dev/null; then
-                print_success "frpc installed successfully"
+
+        # Try Homebrew first on macOS
+        if [ "$OS_TYPE" = "macos" ] && command_exists brew; then
+            if brew install frpc 2>&1; then
+                print_success "frpc installed successfully via Homebrew"
             else
+                print_warning "Homebrew installation failed, trying GitHub releases..."
+                if ! install_frpc_from_github; then
+                    echo ""
+                    print_error "Failed to install frpc"
+                    echo ""
+                    echo "Please install frpc manually from:"
+                    echo "  https://github.com/fatedier/frp/releases"
+                    echo ""
+                    exit 1
+                fi
+            fi
+        else
+            # For Linux and other systems, download from GitHub
+            if ! install_frpc_from_github; then
                 echo ""
                 print_error "Failed to install frpc"
                 echo ""
-                echo "Please install frpc manually:"
-                echo "  brew install frpc"
-                echo "  or download from: https://github.com/fatedier/frp/releases"
+                echo "Please install frpc manually from:"
+                echo "  https://github.com/fatedier/frp/releases"
                 echo ""
                 exit 1
             fi
-            ;;
-        *)
-            echo ""
-            print_error "frpc is not available via package manager on this system"
-            echo ""
-            echo "Please install frpc manually from:"
-            echo "  https://github.com/fatedier/frp/releases"
-            echo ""
-            exit 1
-            ;;
-        esac
+        fi
     fi
 
     echo ""
@@ -552,7 +724,7 @@ setup_json_parser() {
     print_info "jq not found, installing..."
     case "$OS_TYPE" in
     macos)
-        if brew install jq >/dev/null 2>&1; then
+        if brew install jq 2>&1; then
             JSON_PARSER="jq"
             print_success "jq installed successfully"
             return 0
@@ -560,13 +732,13 @@ setup_json_parser() {
         ;;
     linux)
         if command -v apt-get >/dev/null 2>&1; then
-            if sudo apt-get install -y jq >/dev/null 2>&1; then
+            if run_as_root apt-get install -y jq; then
                 JSON_PARSER="jq"
                 print_success "jq installed successfully"
                 return 0
             fi
         elif command -v yum >/dev/null 2>&1; then
-            if sudo yum install -y jq >/dev/null 2>&1; then
+            if run_as_root yum install -y jq; then
                 JSON_PARSER="jq"
                 print_success "jq installed successfully"
                 return 0
@@ -766,7 +938,7 @@ display_appium_status() {
 
     echo ""
     echo -e "${BLUE}${BOLD}🚀 Appium Status${NC}"
-    echo "────────────���────────────────────────────�������������"
+    echo "──────────────────────────────────────────"
     echo ""
 
     if [ -f "$APPIUM_BIN" ]; then
@@ -865,7 +1037,7 @@ configure_appium() {
     echo ""
     echo -e "${YELLOW}Missing components detected:${NC}"
     for component in "${MISSING_COMPONENTS[@]}"; do
-        echo "  ❌ $component"
+        echo "  ⚠️  $component"
     done
 
     # Automatically install missing components
@@ -967,14 +1139,14 @@ main() {
     fi
     echo ""
 
+    # Detect OS first
+    detect_os
+
     print_info "Detected OS: $OS_TYPE ($OS $ARCH)\n"
     print_info "Package Manager: $PKG_MANAGER"
     echo ""
     echo "───────────────────────────────────────"
     echo ""
-
-    # Detect OS
-    detect_os
 
     # Only check Node.js if --with-deps is specified (required for Appium)
     if [ "$WITH_DEPS" = true ]; then
@@ -987,7 +1159,7 @@ main() {
             echo ""
             if ! prompt_install_nodejs; then
                 echo ""
-                echo -e "${RED}${BOLD}╔══════════════════════════════════════��═════════════╗${NC}"
+                echo -e "${RED}${BOLD}╔═════════════════════════════════════════════════════╗${NC}"
                 echo -e "${RED}${BOLD}║  ❌  Installation Cancelled                       ║${NC}"
                 echo -e "${RED}${BOLD}╚════════════════════════════════════════════════════╝${NC}"
                 echo ""

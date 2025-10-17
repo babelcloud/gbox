@@ -1,19 +1,27 @@
 package cmd
 
 import (
+	"archive/tar"
+	"compress/gzip"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"syscall"
 	"time"
+
+	"github.com/fatih/color"
+	"github.com/spf13/cobra"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect"
 	"github.com/babelcloud/gbox/packages/cli/internal/profile"
-	"github.com/fatih/color"
-	"github.com/spf13/cobra"
 )
 
 // printDeveloperModeHint prints the developer mode hint with dim formatting
@@ -584,17 +592,189 @@ func installADB() error {
 	return fmt.Errorf("unable to detect package manager")
 }
 
-// installFrpc attempts to install frpc using the system package manager
+// installFrpc attempts to install frpc using the system package manager or GitHub releases
 func installFrpc() error {
-	if _, err := exec.LookPath("brew"); err == nil {
-		// macOS with Homebrew
-		cmd := exec.Command("brew", "install", "frpc")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
+	// Try Homebrew first on macOS
+	if runtime.GOOS == "darwin" {
+		if _, err := exec.LookPath("brew"); err == nil {
+			cmd := exec.Command("brew", "install", "frpc")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err == nil {
+				return nil
+			}
+			// If brew fails, fall through to GitHub installation
+		}
 	}
 
-	// For Linux, frpc is not available in standard repositories
-	// Users need to download from GitHub releases
-	return fmt.Errorf("frpc installation on Linux requires manual download from https://github.com/fatedier/frp/releases")
+	// Download from GitHub releases for all platforms
+	return installFrpcFromGitHub()
+}
+
+// installFrpcFromGitHub downloads and installs frpc from GitHub releases
+func installFrpcFromGitHub() error {
+	// Get latest frpc version from GitHub API
+	resp, err := http.Get("https://api.github.com/repos/fatedier/frp/releases/latest")
+	if err != nil {
+		return fmt.Errorf("failed to fetch frpc version: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to fetch frpc version: HTTP %d", resp.StatusCode)
+	}
+
+	var release struct {
+		TagName string `json:"tag_name"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return fmt.Errorf("failed to parse release info: %v", err)
+	}
+
+	// Remove 'v' prefix from version
+	frpcVersion := strings.TrimPrefix(release.TagName, "v")
+	if frpcVersion == "" {
+		return fmt.Errorf("invalid version tag: %s", release.TagName)
+	}
+
+	// Detect OS and architecture
+	osType := runtime.GOOS
+	archType := runtime.GOARCH
+
+	// Map architecture names to frp naming convention
+	switch archType {
+	case "amd64":
+		// Keep as is
+	case "arm64":
+		// Keep as is
+	case "arm":
+		// Keep as is
+	default:
+		return fmt.Errorf("unsupported architecture: %s", archType)
+	}
+
+	// Construct download URL
+	downloadURL := fmt.Sprintf(
+		"https://github.com/fatedier/frp/releases/download/v%s/frp_%s_%s_%s.tar.gz",
+		frpcVersion, frpcVersion, osType, archType,
+	)
+
+	// Create temporary directory for frpc binary only
+	tempDir, err := os.MkdirTemp("", "frpc-install-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Download and stream-extract in one pass
+	resp, err = http.Get(downloadURL)
+	if err != nil {
+		return fmt.Errorf("failed to download frpc: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download frpc: HTTP %d", resp.StatusCode)
+	}
+
+	// Create gzip reader directly from HTTP response body (no intermediate file)
+	gzr, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to create gzip reader: %v", err)
+	}
+	defer gzr.Close()
+
+	// Create tar reader from gzip stream
+	tr := tar.NewReader(gzr)
+
+	// Extract frpc binary directly from stream
+	var frpcBinaryPath string
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read tar entry: %v", err)
+		}
+
+		// Look for frpc binary
+		if filepath.Base(header.Name) == "frpc" && header.Typeflag == tar.TypeReg {
+			frpcBinaryPath = filepath.Join(tempDir, "frpc")
+
+			// Create file with proper permissions
+			outFile, err := os.OpenFile(frpcBinaryPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+			if err != nil {
+				return fmt.Errorf("failed to create frpc binary: %v", err)
+			}
+
+			// Stream-copy from tar to file
+			if _, err := io.Copy(outFile, tr); err != nil {
+				outFile.Close()
+				return fmt.Errorf("failed to extract frpc binary: %v", err)
+			}
+
+			if err := outFile.Close(); err != nil {
+				return fmt.Errorf("failed to close frpc binary: %v", err)
+			}
+
+			// Found and extracted, stop processing archive
+			break
+		}
+	}
+
+	if frpcBinaryPath == "" {
+		return fmt.Errorf("frpc binary not found in archive")
+	}
+
+	// Install to system location
+	installPath := "/usr/local/bin/frpc"
+	if err := installBinaryWithSudo(frpcBinaryPath, installPath); err != nil {
+		return fmt.Errorf("failed to install frpc to %s: %v", installPath, err)
+	}
+
+	return nil
+}
+
+// installBinaryWithSudo installs a binary to the system location, using sudo if necessary
+func installBinaryWithSudo(src, dst string) error {
+	// Try direct copy first (works if we have write permission)
+	if err := copyBinaryFile(src, dst); err == nil {
+		return nil
+	}
+
+	// If direct copy fails, use sudo install command (Unix-like systems)
+	if runtime.GOOS != "windows" {
+		cmd := exec.Command("sudo", "install", "-m", "755", src, dst)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("sudo install failed: %v", err)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("permission denied and sudo not available")
+}
+
+// copyBinaryFile copies a binary file with executable permissions
+func copyBinaryFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open source: %v", err)
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create destination: %v", err)
+	}
+	defer dstFile.Close()
+
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		return fmt.Errorf("failed to copy: %v", err)
+	}
+
+	return nil
 }
