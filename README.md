@@ -27,9 +27,42 @@ You can also plug GBOX MCP to any Agent you like, such as Cursor, Claude Code. T
 
 ### Installation Steps
 
+#### Quick Install (Recommended)
+
+Install GBOX with all dependencies using our interactive installation script:
+
+**Interactive Mode (with prompts):**
 ```bash
-# Install via Homebrew (on MacOS)
+curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash
+```
+
+**Non-Interactive Mode (use all defaults):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash -s -- -y
+```
+
+This script will:
+- Detect your operating system
+- Install Node.js and npm (if not present)
+- Install additional tools (ADB, frpc)
+- Install GBOX CLI
+- Install Appium server, drivers and plugins
+
+#### Manual Installation
+
+**macOS:**
+```bash
 brew install gbox
+```
+
+**Linux/Windows:**
+```bash
+npm install -g @gbox.ai/cli
+```
+
+#### Post-Installation
+
+```bash
 # Login to gbox.ai
 gbox login
 
@@ -120,8 +153,11 @@ Login to [GBOX.AI](https://gbox.ai) to get a Linux desktop/browser environment. 
 ### Build
 
 ```bash
-# Build all components
+# Build for current platform
 make build
+
+# Build for all platforms
+make build-all
 
 # Create distribution package
 make dist

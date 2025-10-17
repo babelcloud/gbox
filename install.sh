@@ -1,0 +1,915 @@
+#!/bin/bash
+
+# GBOX Installation Script
+# This script installs GBOX CLI and its dependencies
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash -s -- -y
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+DIM='\033[2m' # Dim/faint text
+NC='\033[0m'  # No Color
+BOLD='\033[1m'
+
+# Non-interactive mode flag
+NON_INTERACTIVE=false
+
+# Detect OS
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+
+# Parse command line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+        -y | --yes | --non-interactive)
+            NON_INTERACTIVE=true
+            shift
+            ;;
+        -h | --help)
+            echo "GBOX Installation Script"
+            echo ""
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  -y, --yes, --non-interactive    Run in non-interactive mode (use all defaults)"
+            echo "  -h, --help                      Show this help message"
+            echo ""
+            echo "Examples:"
+            echo "  $0                              # Interactive installation"
+            echo "  $0 -y                           # Non-interactive installation"
+            echo "  curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash"
+            echo "  curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash -s -- -y"
+            exit 0
+            ;;
+        *)
+            print_error "Unknown option: $1"
+            echo "Use -h or --help for usage information"
+            exit 1
+            ;;
+        esac
+    done
+}
+
+print_header() {
+    echo -e "${BLUE}${BOLD}"
+    echo "╔════════════════════════════════════════╗"
+    echo "║                                        ║"
+    echo "║        GBOX Installation Script        ║"
+    echo "║                                        ║"
+    echo "╚════════════════════════════════════════╝"
+    echo -e "${NC}"
+}
+
+print_success() {
+    echo -e "${GREEN}✅  ${NC}$1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠️  ${NC}$1"
+}
+
+print_error() {
+    echo -e "${RED}❌  ${NC}$1"
+}
+
+print_info() {
+    echo -e "${BLUE}ℹ️  ${NC}$1"
+}
+
+# Check if command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Detect OS and set installation method
+detect_os() {
+    case "$OS" in
+    Linux*)
+        OS_TYPE="linux"
+        if command_exists apt-get; then
+            PKG_MANAGER="apt"
+        elif command_exists yum; then
+            PKG_MANAGER="yum"
+        elif command_exists dnf; then
+            PKG_MANAGER="dnf"
+        else
+            PKG_MANAGER="unknown"
+        fi
+        ;;
+    Darwin*)
+        OS_TYPE="macos"
+        PKG_MANAGER="brew"
+        ;;
+    MINGW* | MSYS* | CYGWIN*)
+        OS_TYPE="windows"
+        PKG_MANAGER="choco"
+        ;;
+    *)
+        OS_TYPE="unknown"
+        PKG_MANAGER="unknown"
+        ;;
+    esac
+}
+
+# Check Node.js installation
+check_nodejs() {
+    if command_exists node && command_exists npm; then
+        NODE_VERSION=$(node --version)
+        NPM_VERSION=$(npm --version)
+        print_success "Node.js $NODE_VERSION and npm $NPM_VERSION are installed"
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Install Node.js using different methods
+install_nodejs_nvm() {
+    print_info "Installing Node.js using nvm (Node Version Manager)..."
+
+    # Install nvm
+    if ! command_exists nvm; then
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+
+        # Load nvm
+        export NVM_DIR="$HOME/.nvm"
+        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    fi
+
+    # Install LTS version
+    nvm install --lts
+    nvm use --lts
+
+    print_success "Node.js installed via nvm"
+}
+
+install_nodejs_brew() {
+    print_info "Installing Node.js using Homebrew..."
+
+    if ! command_exists brew; then
+        print_error "Homebrew is not installed. Installing Homebrew first..."
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    fi
+
+    brew install node
+    print_success "Node.js installed via Homebrew"
+}
+
+install_nodejs_apt() {
+    print_info "Installing Node.js using apt..."
+
+    # Install Node.js 20.x LTS
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+
+    print_success "Node.js installed via apt"
+}
+
+install_nodejs_yum() {
+    print_info "Installing Node.js using yum..."
+
+    # Install Node.js 20.x LTS
+    curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+    sudo yum install -y nodejs
+
+    print_success "Node.js installed via yum"
+}
+
+install_nodejs_windows() {
+    print_info "Installing Node.js on Windows..."
+    print_warning "Please download and install Node.js manually from https://nodejs.org/"
+    print_warning "After installation, restart your terminal and re-run this script."
+    exit 1
+}
+
+# Interactive Node.js installation
+prompt_install_nodejs() {
+    echo ""
+    echo -e "${YELLOW}${BOLD}Node.js is required for Appium automation${NC}"
+    echo ""
+
+    # Non-interactive mode: use default option (Homebrew on macOS, package manager on Linux)
+    if [ "$NON_INTERACTIVE" = true ]; then
+        print_info "Non-interactive mode: Using default installation method"
+        case "$OS_TYPE" in
+        macos)
+            install_nodejs_brew
+            ;;
+        linux)
+            if [ "$PKG_MANAGER" = "apt" ]; then
+                install_nodejs_apt
+            elif [ "$PKG_MANAGER" = "yum" ] || [ "$PKG_MANAGER" = "dnf" ]; then
+                install_nodejs_yum
+            else
+                print_error "Unsupported package manager: $PKG_MANAGER"
+                return 1
+            fi
+            ;;
+        windows)
+            install_nodejs_windows
+            ;;
+        *)
+            print_error "Unsupported operating system: $OS_TYPE"
+            return 1
+            ;;
+        esac
+        return 0
+    fi
+
+    # Interactive mode
+    case "$OS_TYPE" in
+    macos)
+        echo "Choose installation method:"
+        echo "  1) Homebrew (recommended)"
+        echo "  2) nvm (Node Version Manager)"
+        echo "  3) Skip Node.js installation"
+        echo ""
+        read -p "Enter choice [1-3]: " choice
+
+        case $choice in
+        1)
+            install_nodejs_brew
+            ;;
+        2)
+            install_nodejs_nvm
+            ;;
+        3)
+            print_warning "Skipping Node.js installation"
+            return 1
+            ;;
+        *)
+            print_error "Invalid choice"
+            return 1
+            ;;
+        esac
+        ;;
+    linux)
+        echo "Choose installation method:"
+        echo "  1) Package Manager ($PKG_MANAGER)"
+        echo "  2) nvm (Node Version Manager)"
+        echo "  3) Skip Node.js installation"
+        echo ""
+        read -p "Enter choice [1-3]: " choice
+
+        case $choice in
+        1)
+            if [ "$PKG_MANAGER" = "apt" ]; then
+                install_nodejs_apt
+            elif [ "$PKG_MANAGER" = "yum" ] || [ "$PKG_MANAGER" = "dnf" ]; then
+                install_nodejs_yum
+            else
+                print_error "Unsupported package manager: $PKG_MANAGER"
+                return 1
+            fi
+            ;;
+        2)
+            install_nodejs_nvm
+            ;;
+        3)
+            print_warning "Skipping Node.js installation"
+            return 1
+            ;;
+        *)
+            print_error "Invalid choice"
+            return 1
+            ;;
+        esac
+        ;;
+    windows)
+        install_nodejs_windows
+        ;;
+    *)
+        print_error "Unsupported operating system: $OS_TYPE"
+        return 1
+        ;;
+    esac
+
+    return 0
+}
+
+# Install GBOX CLI
+install_gbox() {
+    print_info "Installing GBOX CLI..."
+
+    case "$OS_TYPE" in
+    macos)
+        if command_exists brew; then
+            brew install gbox 2>/dev/null || brew install babelcloud/tap/gbox
+            print_success "GBOX CLI installed via Homebrew"
+        else
+            print_error "Homebrew is required for GBOX installation on macOS"
+            print_info "Install Homebrew: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+            return 1
+        fi
+        ;;
+    linux | windows)
+        print_info "Installing GBOX CLI via npm package @gbox.ai/cli..."
+        npm install -g @gbox.ai/cli
+        print_success "GBOX CLI installed via npm"
+        ;;
+    *)
+        print_error "Unsupported operating system: $OS_TYPE"
+        return 1
+        ;;
+    esac
+}
+
+# Install additional dependencies
+install_dependencies() {
+    echo ""
+    echo -e "${BLUE}${BOLD}🔧 Required Dependencies${NC}"
+    echo "──────────────────────────────────────────"
+    echo ""
+
+    # Check and install ADB (required, no prompt)
+    if command_exists adb; then
+        ADB_VERSION=$(adb version 2>/dev/null | head -1 || echo "unknown")
+        print_success "ADB: $ADB_VERSION"
+    else
+        print_info "Installing Android Debug Bridge (ADB)..."
+        case "$OS_TYPE" in
+        macos)
+            if brew install android-platform-tools 2>/dev/null; then
+                print_success "ADB installed successfully"
+            else
+                echo ""
+                print_error "Failed to install ADB"
+                echo ""
+                echo "Please install ADB manually:"
+                echo "  brew install android-platform-tools"
+                echo ""
+                exit 1
+            fi
+            ;;
+        linux)
+            if [ "$PKG_MANAGER" = "apt" ]; then
+                if sudo apt-get install -y android-tools-adb 2>/dev/null; then
+                    print_success "ADB installed successfully"
+                else
+                    echo ""
+                    print_error "Failed to install ADB"
+                    echo ""
+                    echo "Please install ADB manually:"
+                    echo "  sudo apt-get install android-tools-adb"
+                    echo ""
+                    exit 1
+                fi
+            else
+                echo ""
+                print_error "Unsupported package manager for ADB installation"
+                echo ""
+                echo "Please install ADB manually for your system"
+                echo ""
+                exit 1
+            fi
+            ;;
+        *)
+            echo ""
+            print_error "Unsupported OS for automatic ADB installation"
+            echo ""
+            echo "Please install ADB manually from:"
+            echo "  https://developer.android.com/tools/releases/platform-tools"
+            echo ""
+            exit 1
+            ;;
+        esac
+    fi
+
+    # Check and install frpc
+    if command_exists frpc; then
+        FRPC_VERSION=$(frpc -v 2>/dev/null | head -1 || echo "installed")
+        print_success "frpc: $FRPC_VERSION"
+    else
+        print_info "Installing FRP Client (frpc)..."
+        case "$OS_TYPE" in
+        macos)
+            if brew install frpc 2>/dev/null; then
+                print_success "frpc installed successfully"
+            else
+                echo ""
+                print_error "Failed to install frpc"
+                echo ""
+                echo "Please install frpc manually:"
+                echo "  brew install frpc"
+                echo "  or download from: https://github.com/fatedier/frp/releases"
+                echo ""
+                exit 1
+            fi
+            ;;
+        *)
+            echo ""
+            print_error "frpc is not available via package manager on this system"
+            echo ""
+            echo "Please install frpc manually from:"
+            echo "  https://github.com/fatedier/frp/releases"
+            echo ""
+            exit 1
+            ;;
+        esac
+    fi
+
+    echo ""
+}
+
+# Detect and setup JSON parser (jq)
+setup_json_parser() {
+    # Check if jq is already installed
+    if command -v jq >/dev/null 2>&1; then
+        JSON_PARSER="jq"
+        return 0
+    fi
+
+    # Try to install jq
+    print_info "jq not found, installing..."
+    case "$OS_TYPE" in
+    macos)
+        if brew install jq >/dev/null 2>&1; then
+            JSON_PARSER="jq"
+            print_success "jq installed successfully"
+            return 0
+        fi
+        ;;
+    linux)
+        if command -v apt-get >/dev/null 2>&1; then
+            if sudo apt-get install -y jq >/dev/null 2>&1; then
+                JSON_PARSER="jq"
+                print_success "jq installed successfully"
+                return 0
+            fi
+        elif command -v yum >/dev/null 2>&1; then
+            if sudo yum install -y jq >/dev/null 2>&1; then
+                JSON_PARSER="jq"
+                print_success "jq installed successfully"
+                return 0
+            fi
+        fi
+        ;;
+    esac
+
+    # If jq installation failed, use grep fallback
+    print_warning "jq installation failed, will use grep fallback"
+    JSON_PARSER="grep"
+    return 0
+}
+
+# Extract version from JSON using jq or grep fallback
+extract_json_version() {
+    local json_data="$1"
+    local key="$2"
+
+    if [ "$JSON_PARSER" = "jq" ]; then
+        # Use jq for accurate JSON parsing
+        echo "$json_data" | jq -r ".${key}.version // empty" 2>/dev/null
+    else
+        # Fallback to grep method
+        echo "$json_data" | grep -A 20 "\"$key\"" | grep '"version"' | head -1 | sed 's/.*: "\(.*\)".*/\1/'
+    fi
+}
+
+# Spinner animation for background processes
+spinner() {
+    local pid=$1
+    local message=$2
+    local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local i=0
+
+    while kill -0 $pid 2>/dev/null; do
+        local temp=${spinstr:i++%${#spinstr}:1}
+        printf "\r  ${BLUE}%s${NC} %s..." "$temp" "$message"
+        sleep 0.1
+    done
+    printf "\r%80s\r" ""
+}
+
+# Install Appium and components with beautiful formatting
+install_appium_components() {
+    echo ""
+    echo -e "${BLUE}${BOLD}🚀 Installing Appium Automation${NC}"
+    echo "──────────────────────────────────────────"
+    echo ""
+
+    APPIUM_PATH="$HOME/.gbox/device-proxy/appium"
+    APPIUM_BIN="$APPIUM_PATH/node_modules/.bin/appium"
+
+    # Use default configuration
+    DRIVERS="${GBOX_APPIUM_DRIVERS:-uiautomator2}"
+    PLUGINS="${GBOX_APPIUM_PLUGINS:-inspector}"
+
+    # Create directory
+    mkdir -p "$APPIUM_PATH"
+
+    # Install Appium Server
+    if [ -f "$APPIUM_BIN" ]; then
+        APPIUM_VERSION=$("$APPIUM_BIN" --version 2>/dev/null || echo "unknown")
+        echo -e "  ${GREEN}✓${NC} Appium Server ${DIM}v${APPIUM_VERSION}${NC}"
+    else
+        npm install appium --prefix "$APPIUM_PATH" --silent &
+        spinner $! "Installing Appium Server"
+        wait $!
+        if [ $? -eq 0 ]; then
+            APPIUM_VERSION=$("$APPIUM_BIN" --version 2>/dev/null || echo "unknown")
+            echo -e "  ${GREEN}✓${NC} Appium Server ${DIM}v${APPIUM_VERSION}${NC}"
+        else
+            echo -e "  ${RED}✗${NC} Appium Server ${DIM}(failed)${NC}"
+            return 1
+        fi
+    fi
+
+    # Install Drivers
+    if [ -n "$DRIVERS" ]; then
+        echo ""
+        echo -e "${DIM}  Drivers:${NC}"
+        IFS=',' read -ra DRIVER_ARRAY <<<"$DRIVERS"
+        for driver in "${DRIVER_ARRAY[@]}"; do
+            driver=$(echo "$driver" | xargs)
+            if [ -z "$driver" ]; then continue; fi
+
+            # Check if already installed
+            DRIVER_INFO=$(APPIUM_HOME="$APPIUM_PATH" "$APPIUM_BIN" driver list --installed --json 2>/dev/null || echo "{}")
+            if echo "$DRIVER_INFO" | grep -q "\"$driver\""; then
+                DRIVER_VERSION=$(extract_json_version "$DRIVER_INFO" "$driver")
+                echo -e "    ${GREEN}✓${NC} ${driver} ${DIM}v${DRIVER_VERSION}${NC}"
+            else
+                APPIUM_HOME="$APPIUM_PATH" "$APPIUM_BIN" driver install "$driver" >/dev/null 2>&1 &
+                spinner $! "Installing ${driver}"
+                wait $!
+                if [ $? -eq 0 ]; then
+                    DRIVER_INFO=$(APPIUM_HOME="$APPIUM_PATH" "$APPIUM_BIN" driver list --installed --json 2>/dev/null || echo "{}")
+                    DRIVER_VERSION=$(extract_json_version "$DRIVER_INFO" "$driver")
+                    echo -e "    ${GREEN}✓${NC} ${driver} ${DIM}v${DRIVER_VERSION}${NC}"
+                else
+                    echo -e "    ${RED}✗${NC} ${driver} ${DIM}(failed)${NC}"
+                fi
+            fi
+        done
+    fi
+
+    # Install Plugins
+    if [ -n "$PLUGINS" ]; then
+        echo ""
+        echo -e "${DIM}  Plugins:${NC}"
+        IFS=',' read -ra PLUGIN_ARRAY <<<"$PLUGINS"
+        for plugin in "${PLUGIN_ARRAY[@]}"; do
+            plugin=$(echo "$plugin" | xargs)
+            if [ -z "$plugin" ]; then continue; fi
+
+            # Check if already installed
+            PLUGIN_INFO=$(APPIUM_HOME="$APPIUM_PATH" "$APPIUM_BIN" plugin list --installed --json 2>/dev/null || echo "{}")
+            if echo "$PLUGIN_INFO" | grep -q "\"$plugin\""; then
+                PLUGIN_VERSION=$(extract_json_version "$PLUGIN_INFO" "$plugin")
+                echo -e "    ${GREEN}✓${NC} ${plugin} ${DIM}v${PLUGIN_VERSION}${NC}"
+            else
+                APPIUM_HOME="$APPIUM_PATH" "$APPIUM_BIN" plugin install "$plugin" >/dev/null 2>&1 &
+                spinner $! "Installing ${plugin}"
+                wait $!
+                if [ $? -eq 0 ]; then
+                    PLUGIN_INFO=$(APPIUM_HOME="$APPIUM_PATH" "$APPIUM_BIN" plugin list --installed --json 2>/dev/null || echo "{}")
+                    PLUGIN_VERSION=$(extract_json_version "$PLUGIN_INFO" "$plugin")
+                    echo -e "    ${GREEN}✓${NC} ${plugin} ${DIM}v${PLUGIN_VERSION}${NC}"
+                else
+                    echo -e "    ${RED}✗${NC} ${plugin} ${DIM}(failed)${NC}"
+                fi
+            fi
+        done
+    fi
+
+    echo ""
+    echo "──────────────────────────────────────────"
+    echo -e "  ${GREEN}✓${NC} Installation completed"
+    echo -e "  ${DIM}Location: ${APPIUM_PATH}${NC}"
+    echo ""
+}
+
+# Check Appium installation status (populates global MISSING_COMPONENTS array)
+check_appium_status() {
+    APPIUM_PATH="$HOME/.gbox/device-proxy/appium"
+    APPIUM_BIN="$APPIUM_PATH/node_modules/.bin/appium"
+
+    REQUIRED_DRIVERS="${GBOX_APPIUM_DRIVERS:-uiautomator2}"
+    REQUIRED_PLUGINS="${GBOX_APPIUM_PLUGINS:-inspector}"
+
+    # Use global variable so it's accessible outside the function
+    MISSING_COMPONENTS=()
+
+    # Check Appium Server
+    if [ ! -f "$APPIUM_BIN" ]; then
+        MISSING_COMPONENTS+=("Appium Server")
+    fi
+
+    # Check Drivers (only if Appium is installed)
+    if [ -f "$APPIUM_BIN" ]; then
+        IFS=',' read -ra DRIVER_ARRAY <<<"$REQUIRED_DRIVERS"
+        for driver in "${DRIVER_ARRAY[@]}"; do
+            driver=$(echo "$driver" | xargs)
+            if [ -z "$driver" ]; then continue; fi
+
+            DRIVER_INFO=$(APPIUM_HOME="$APPIUM_PATH" "$APPIUM_BIN" driver list --installed --json 2>/dev/null || echo "{}")
+            if ! echo "$DRIVER_INFO" | grep -q "\"$driver\""; then
+                MISSING_COMPONENTS+=("Driver: $driver")
+            fi
+        done
+
+        # Check Plugins
+        IFS=',' read -ra PLUGIN_ARRAY <<<"$REQUIRED_PLUGINS"
+        for plugin in "${PLUGIN_ARRAY[@]}"; do
+            plugin=$(echo "$plugin" | xargs)
+            if [ -z "$plugin" ]; then continue; fi
+
+            PLUGIN_INFO=$(APPIUM_HOME="$APPIUM_PATH" "$APPIUM_BIN" plugin list --installed --json 2>/dev/null || echo "{}")
+            if ! echo "$PLUGIN_INFO" | grep -q "\"$plugin\""; then
+                MISSING_COMPONENTS+=("Plugin: $plugin")
+            fi
+        done
+    fi
+
+    # Return status
+    if [ ${#MISSING_COMPONENTS[@]} -eq 0 ]; then
+        return 0 # All components installed
+    else
+        return 1 # Missing components
+    fi
+}
+
+# Display Appium installation status
+display_appium_status() {
+    APPIUM_PATH="$HOME/.gbox/device-proxy/appium"
+    APPIUM_BIN="$APPIUM_PATH/node_modules/.bin/appium"
+
+    echo ""
+    echo -e "${BLUE}${BOLD}🚀 Appium Status${NC}"
+    echo "──────────────────────────────────────────"
+    echo ""
+
+    if [ -f "$APPIUM_BIN" ]; then
+        APPIUM_VERSION=$("$APPIUM_BIN" --version 2>/dev/null || echo "unknown")
+        echo -e "  ${GREEN}✓${NC} Appium Server ${DIM}v${APPIUM_VERSION}${NC}"
+
+        # Show drivers
+        DRIVERS="${GBOX_APPIUM_DRIVERS:-uiautomator2}"
+        IFS=',' read -ra DRIVER_ARRAY <<<"$DRIVERS"
+        if [ ${#DRIVER_ARRAY[@]} -gt 0 ]; then
+            echo ""
+            echo -e "${DIM}  Drivers:${NC}"
+            for driver in "${DRIVER_ARRAY[@]}"; do
+                driver=$(echo "$driver" | xargs)
+                if [ -z "$driver" ]; then continue; fi
+
+                DRIVER_INFO=$(APPIUM_HOME="$APPIUM_PATH" "$APPIUM_BIN" driver list --installed --json 2>/dev/null || echo "{}")
+                if echo "$DRIVER_INFO" | grep -q "\"$driver\""; then
+                    DRIVER_VERSION=$(extract_json_version "$DRIVER_INFO" "$driver")
+                    if [ -n "$DRIVER_VERSION" ]; then
+                        echo -e "    ${GREEN}✓${NC} ${driver} ${DIM}v${DRIVER_VERSION}${NC}"
+                    else
+                        echo -e "    ${RED}✗${NC} ${driver} ${DIM}(failed)${NC}"
+                    fi
+                fi
+            done
+        fi
+
+        # Show plugins
+        PLUGINS="${GBOX_APPIUM_PLUGINS:-inspector}"
+        IFS=',' read -ra PLUGIN_ARRAY <<<"$PLUGINS"
+        if [ ${#PLUGIN_ARRAY[@]} -gt 0 ]; then
+            echo ""
+            echo -e "${DIM}  Plugins:${NC}"
+            for plugin in "${PLUGIN_ARRAY[@]}"; do
+                plugin=$(echo "$plugin" | xargs)
+                if [ -z "$plugin" ]; then continue; fi
+
+                PLUGIN_INFO=$(APPIUM_HOME="$APPIUM_PATH" "$APPIUM_BIN" plugin list --installed --json 2>/dev/null || echo "{}")
+                if echo "$PLUGIN_INFO" | grep -q "\"$plugin\""; then
+                    PLUGIN_VERSION=$(extract_json_version "$PLUGIN_INFO" "$plugin")
+                    if [ -n "$PLUGIN_VERSION" ]; then
+                        echo -e "    ${GREEN}✓${NC} ${plugin} ${DIM}v${PLUGIN_VERSION}${NC}"
+                    else
+                        echo -e "    ${RED}✗${NC} ${plugin} ${DIM}(failed)${NC}"
+                    fi
+                fi
+            done
+        fi
+
+        echo ""
+        echo "──────────────────────────────────────────"
+        echo -e "  ${DIM}Location: ${APPIUM_PATH}${NC}"
+    fi
+    echo ""
+}
+
+# Configure Appium installation
+configure_appium() {
+    echo ""
+    echo -e "${BLUE}${BOLD}🚀 Appium Automation Setup${NC}"
+    echo "──────────────────────────────────────────"
+
+    # Check if Appium is disabled via environment variable
+    if [ "${GBOX_APPIUM_DISABLED}" = "true" ]; then
+        echo ""
+        print_info "Appium installation is disabled (GBOX_APPIUM_DISABLED=true)"
+        print_warning "Device automation features will not be available"
+        echo ""
+        return 0
+    fi
+
+    # Set default configuration
+    export GBOX_APPIUM_DRIVERS="${GBOX_APPIUM_DRIVERS:-uiautomator2}"
+    export GBOX_APPIUM_PLUGINS="${GBOX_APPIUM_PLUGINS:-inspector}"
+
+    # Export APPIUM_HOME for user convenience
+    export APPIUM_HOME="$HOME/.gbox/device-proxy/appium"
+
+    echo ""
+    print_info "Required components:"
+    echo "  📦 Appium Server"
+    echo "  🔧 Driver:  ${GBOX_APPIUM_DRIVERS}"
+    echo "  🔌 Plugin:  ${GBOX_APPIUM_PLUGINS}"
+
+    # Check current installation status
+    echo ""
+    if check_appium_status; then
+        print_success "All Appium components are already installed!"
+        display_appium_status
+        export GBOX_INSTALL_APPIUM=true
+        return 0
+    fi
+
+    # List missing components
+    echo ""
+    echo -e "${YELLOW}Missing components detected:${NC}"
+    for component in "${MISSING_COMPONENTS[@]}"; do
+        echo "  ❌ $component"
+    done
+
+    # Automatically install missing components
+    echo ""
+    print_info "Installing missing components automatically..."
+    export GBOX_INSTALL_APPIUM=true
+
+    if install_appium_components; then
+        echo ""
+        print_success "Appium installation completed successfully!"
+    else
+        echo ""
+        echo -e "${RED}${BOLD}╔════════════════════════════════════════════════════╗${NC}"
+        echo -e "${RED}${BOLD}║  ⚠️  WARNING: Installation Failed                 ║${NC}"
+        echo -e "${RED}${BOLD}╚════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "${YELLOW}Some components failed to install. You may experience:${NC}"
+        echo -e "  ${RED}❌${NC} Device connection issues"
+        echo -e "  ${RED}❌${NC} Automation test failures"
+        echo ""
+        echo -e "${YELLOW}To skip Appium installation, set:${NC}"
+        echo -e "  ${BLUE}export GBOX_APPIUM_DISABLED=true${NC}"
+        echo ""
+        echo -e "${YELLOW}To retry installation, run:${NC}"
+        echo -e "  ${BLUE}curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash${NC}"
+        echo ""
+        return 1
+    fi
+}
+
+# Save configuration to profile
+save_config() {
+    SHELL_RC=""
+    if [ -n "$BASH_VERSION" ]; then
+        SHELL_RC="$HOME/.bashrc"
+    elif [ -n "$ZSH_VERSION" ]; then
+        SHELL_RC="$HOME/.zshrc"
+    fi
+
+    if [ -n "$SHELL_RC" ] && [ -f "$SHELL_RC" ]; then
+        # Check if config already exists
+        if ! grep -q "GBOX Appium Configuration" "$SHELL_RC"; then
+            echo "" >>"$SHELL_RC"
+            echo "# GBOX Appium Configuration" >>"$SHELL_RC"
+            echo "export GBOX_INSTALL_APPIUM=${GBOX_INSTALL_APPIUM:-true}" >>"$SHELL_RC"
+            echo "export GBOX_APPIUM_DRIVERS=${GBOX_APPIUM_DRIVERS:-uiautomator2}" >>"$SHELL_RC"
+            echo "export GBOX_APPIUM_PLUGINS=${GBOX_APPIUM_PLUGINS:-inspector}" >>"$SHELL_RC"
+            echo "export APPIUM_HOME=\"\$HOME/.gbox/device-proxy/appium\"" >>"$SHELL_RC"
+
+            print_success "Configuration saved to $SHELL_RC"
+        else
+            print_info "Configuration already exists in $SHELL_RC"
+        fi
+    fi
+}
+
+# Print next steps
+print_next_steps() {
+    echo ""
+    echo -e "${GREEN}${BOLD}╔════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}${BOLD}║                                        ║${NC}"
+    echo -e "${GREEN}${BOLD}║   ✅ Installation Complete!            ║${NC}"
+    echo -e "${GREEN}${BOLD}║                                        ║${NC}"
+    echo -e "${GREEN}${BOLD}╚════════════════════════════════════════╝${NC}"
+    echo ""
+    echo "──────────────────────────────────────────"
+    echo ""
+    echo -e "${BOLD}📋 Next Steps:${NC}"
+    echo ""
+    echo "1️⃣  Reload your shell configuration:"
+    echo -e "   ${YELLOW}source ~/.bashrc${NC} (or ~/.zshrc)"
+    echo ""
+    echo "2️⃣  Login to GBOX:"
+    echo -e "   ${YELLOW}gbox login${NC}"
+    echo ""
+    echo "3️⃣  Connect your device:"
+    echo -e "   ${YELLOW}gbox device-connect${NC}"
+    echo ""
+    echo "4️⃣  Export MCP config (optional):"
+    echo -e "   ${YELLOW}gbox mcp export --merge-to cursor${NC}"
+    echo ""
+    echo -e "${BLUE}ℹ️  For more information, visit: https://docs.gbox.ai${NC}"
+    echo ""
+}
+
+# Main installation flow
+main() {
+    print_header
+
+    if [ "$NON_INTERACTIVE" = true ]; then
+        print_info "Running in non-interactive mode (all defaults will be used)"
+        echo ""
+    fi
+
+    print_info "Detected OS: $OS_TYPE ($OS $ARCH)\n"
+    print_info "Package Manager: $PKG_MANAGER"
+    echo ""
+    echo "───────────────────────────────────────"
+    echo ""
+
+    # Detect OS
+    detect_os
+
+    # Setup JSON parser for Appium version extraction
+    setup_json_parser
+
+    # Check Node.js (required for Appium)
+    if ! check_nodejs; then
+        echo ""
+        print_warning "Node.js is not installed"
+        echo ""
+        if ! prompt_install_nodejs; then
+            echo ""
+            echo -e "${RED}${BOLD}╔════════════════════════════════════════════════════╗${NC}"
+            echo -e "${RED}${BOLD}║  ❌  Installation Cancelled                       ║${NC}"
+            echo -e "${RED}${BOLD}╚════════════════════════════════════════════════════╝${NC}"
+            echo ""
+            echo -e "${YELLOW}Node.js is required for Appium automation features.${NC}"
+            echo ""
+            echo "Please install Node.js first:"
+            echo "  🍎 macOS:         brew install node"
+            echo "  🐧 Ubuntu/Debian: sudo apt-get install nodejs npm"
+            echo "  🪟 Windows:       Download from https://nodejs.org/"
+            echo ""
+            echo "Or use our installation script with Node.js pre-installed."
+            echo ""
+            exit 1
+        fi
+    fi
+
+    # Install GBOX CLI
+    echo ""
+    if command_exists gbox; then
+        GBOX_VERSION=$(gbox version -o json 2>/dev/null | grep '"Version"' | head -1 | sed 's/.*: "\(.*\)".*/\1/' || echo "unknown")
+        print_success "GBOX CLI is already installed: $GBOX_VERSION\n"
+
+        if [ "$NON_INTERACTIVE" = true ]; then
+            print_info "Non-interactive mode: Skipping reinstall"
+        else
+            read -p "Reinstall GBOX CLI? [y/N]: " reinstall
+            if [[ "$reinstall" =~ ^[Yy]$ ]]; then
+                install_gbox
+            fi
+        fi
+    else
+        install_gbox
+    fi
+
+    # Install additional dependencies (ADB, frpc) before Appium
+    install_dependencies
+
+    # Configure and install Appium automation components
+    if [ "$GBOX_INSTALL_APPIUM" != "false" ] && [ "${GBOX_APPIUM_DISABLED}" != "true" ]; then
+        configure_appium
+    elif [ "${GBOX_APPIUM_DISABLED}" = "true" ]; then
+        echo ""
+        print_info "Appium installation is disabled (GBOX_APPIUM_DISABLED=true)"
+    fi
+
+    # Save configuration
+    save_config
+
+    # Print next steps
+    print_next_steps
+}
+
+# Parse arguments and run main
+parse_args "$@"
+main

@@ -215,9 +215,14 @@ func setupDeviceProxyEnvironment(apiKey, baseURL string) []string {
 	// Also add GBOX_BASE_URL for consistency
 	env = append(env, fmt.Sprintf("GBOX_BASE_URL=%s", baseEndpoint))
 
+	// Add APPIUM_HOME environment variable for Appium integration
+	deviceProxyHome := config.GetDeviceProxyHome()
+	appiumHome := filepath.Join(deviceProxyHome, "appium")
+	env = append(env, fmt.Sprintf("APPIUM_HOME=%s", appiumHome))
+
 	// Work around for frp not supporting no_proxy
 	env = handleNoProxyWorkaround(env, baseURL)
-	
+
 	return env
 }
 

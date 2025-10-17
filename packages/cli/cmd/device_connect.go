@@ -163,6 +163,18 @@ func ExecuteDeviceConnect(cmd *cobra.Command, opts *DeviceConnectOptions, args [
 		return fmt.Errorf("frpc is not installed or not in your PATH; please install frpc and try again")
 	}
 
+	// Check and install prerequisites
+	if err := checkAndInstallPrerequisites(); err != nil {
+		fmt.Fprintf(os.Stderr, "\n╔═══════════════════════════════════════╗\n")
+		fmt.Fprintf(os.Stderr, "║  ❌  Prerequisites Installation Failed ║\n")
+		fmt.Fprintf(os.Stderr, "╚═══════════════════════════════════════╝\n\n")
+		fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
+		fmt.Fprintf(os.Stderr, "💡 Quick Fix:\n")
+		fmt.Fprintf(os.Stderr, "   • Fix the errors above and retry\n")
+		fmt.Fprintf(os.Stderr, "   • Or disable Appium: export GBOX_INSTALL_APPIUM=false\n\n")
+		return err
+	}
+
 	// Ensure device proxy service is running
 	if err := device_connect.EnsureDeviceProxyRunning(isServiceRunning); err != nil {
 		return fmt.Errorf("failed to start device proxy service: %v", err)
@@ -172,6 +184,80 @@ func ExecuteDeviceConnect(cmd *cobra.Command, opts *DeviceConnectOptions, args [
 		return runInteractiveDeviceSelection(opts)
 	}
 	return connectToDevice(opts.DeviceID, opts)
+}
+
+// checkAndInstallPrerequisites checks and installs Node.js, npm, Appium and related components
+func checkAndInstallPrerequisites() error {
+	debug := os.Getenv("DEBUG") == "true"
+
+	// Get Appium configuration from environment
+	appiumCfg := device_connect.GetAppiumConfig()
+
+	if !appiumCfg.InstallAppium {
+		if debug {
+			fmt.Println("[DEBUG] Appium installation is disabled (GBOX_INSTALL_APPIUM=false)")
+		}
+		return nil
+	}
+
+	// Check Node.js and npm
+	if err := device_connect.CheckNodeInstalled(); err != nil {
+		return fmt.Errorf("Node.js and npm are not installed: %v\n\n"+
+			"╔═══════════════════════════════════════╗\n"+
+			"║  📦  Install Node.js                  ║\n"+
+			"╚═══════════════════════════════════════╝\n\n"+
+			"Platform-specific installation:\n"+
+			"  🍎 macOS:         brew install node\n"+
+			"  🐧 Ubuntu/Debian: sudo apt-get install nodejs npm\n"+
+			"  🪟 Windows:       Download from https://nodejs.org/\n\n"+
+			"Or use our quick install script:\n"+
+			"  curl -fsSL https://raw.githubusercontent.com/babelcloud/gbox/main/install.sh | bash", err)
+	}
+
+	if debug {
+		fmt.Println("[DEBUG] ✅ Node.js and npm are installed")
+	}
+
+	// Check if Appium is already installed
+	deviceProxyHome := config.GetDeviceProxyHome()
+	appiumHome := filepath.Join(deviceProxyHome, "appium")
+
+	if device_connect.IsAppiumInstalled(appiumHome) {
+		if debug {
+			appiumPath := device_connect.GetAppiumPath()
+			fmt.Printf("[DEBUG] ✅ Appium is already installed at: %s\n", appiumPath)
+
+			// Print configured components
+			if len(appiumCfg.Drivers) > 0 {
+				fmt.Printf("[DEBUG] 🔧 Configured drivers: %v\n", appiumCfg.Drivers)
+			}
+
+			if len(appiumCfg.Plugins) > 0 {
+				fmt.Printf("[DEBUG] 🔌 Configured plugins: %v\n", appiumCfg.Plugins)
+			}
+		}
+
+		// Try to install/update components
+		if err := device_connect.InstallAppium(appiumCfg); err != nil {
+			return fmt.Errorf("failed to install Appium components: %v", err)
+		}
+		return nil
+	}
+
+	// Install Appium and components
+	if debug {
+		fmt.Println("[DEBUG] Installing Appium Automation ...")
+	}
+
+	if err := device_connect.InstallAppium(appiumCfg); err != nil {
+		return fmt.Errorf("failed to install Appium: %v", err)
+	}
+
+	if debug {
+		fmt.Println("[DEBUG]  ✅  Appium Installation Completed!")
+	}
+
+	return nil
 }
 
 func isServiceRunning() (bool, error) {
@@ -257,29 +343,29 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 			statusColor.Sprint(status))
 	}
 	fmt.Println()
-    fmt.Print("Enter a number: ")
-    var choice int
+	fmt.Print("Enter a number: ")
+	var choice int
 
-    // Trap Ctrl+C while waiting for input so we can cleanup proxy first
-    intCh := make(chan os.Signal, 1)
-    signal.Notify(intCh, syscall.SIGINT, syscall.SIGTERM)
-    defer signal.Stop(intCh)
+	// Trap Ctrl+C while waiting for input so we can cleanup proxy first
+	intCh := make(chan os.Signal, 1)
+	signal.Notify(intCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(intCh)
 
-    inputDone := make(chan struct{})
-    go func() {
-        // Read user input
-        fmt.Scanf("%d", &choice)
-        close(inputDone)
-    }()
+	inputDone := make(chan struct{})
+	go func() {
+		// Read user input
+		fmt.Scanf("%d", &choice)
+		close(inputDone)
+	}()
 
-    select {
-    case <-intCh:
-        // User pressed Ctrl+C during selection; stop proxy first then exit gracefully
-        _ = executeKillServer()
-        return nil
-    case <-inputDone:
-        // proceed
-    }
+	select {
+	case <-intCh:
+		// User pressed Ctrl+C during selection; stop proxy first then exit gracefully
+		_ = executeKillServer()
+		return nil
+	case <-inputDone:
+		// proceed
+	}
 	if choice < 1 || choice > len(devices) {
 		return fmt.Errorf("invalid selection: %d", choice)
 	}
@@ -328,24 +414,24 @@ func connectToDevice(deviceID string, opts *DeviceConnectOptions) error {
 	<-sigChan
 	fmt.Printf("Disconnecting %s (%s, %s)...\n",
 		device.ProductModel, device.ConnectionType, device.ProductManufacturer)
-	
+
 	// First unregister the device
 	if err := client.UnregisterDevice(deviceID); err != nil {
 		fmt.Printf("Warning: failed to unregister device: %v\n", err)
 	}
-	
+
 	// Then stop the device proxy service using existing kill-server logic
 	if err := executeKillServer(); err != nil {
 		fmt.Printf("Warning: failed to stop device proxy service: %v\n", err)
 	}
-	
+
 	return nil
 }
 
 // executeKillServer calls the existing kill-server functionality
 func executeKillServer() error {
 	opts := &DeviceConnectKillServerOptions{
-        Force: true,
+		Force: true,
 		All:   false,
 	}
 	// Create a dummy command for ExecuteDeviceConnectKillServer
