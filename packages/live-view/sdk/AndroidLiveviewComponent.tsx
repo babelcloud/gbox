@@ -31,10 +31,10 @@ export interface AndroidLiveviewComponentProps {
 
 export function AndroidLiveviewComponent(props: AndroidLiveviewComponentProps) {
   const {
-    onConnectionStateChange,
+    onConnectionStateChange: _onConnectionStateChange,
     onError,
-    onStatsUpdate,
-    onConnect,
+    onStatsUpdate: _onStatsUpdate,
+    onConnect: _onConnect,
     onDisconnect,
     connectaParams,
   } = props;
@@ -53,6 +53,7 @@ export function AndroidLiveviewComponent(props: AndroidLiveviewComponentProps) {
     latency: 0,
   });
   const [keyboardCaptureEnabled] = useState(true);
+  const [showAndroidControls, setShowAndroidControls] = useState(true);
   const [touchIndicator, setTouchIndicator] = useState<{
     visible: boolean;
     x: number;
@@ -93,15 +94,15 @@ export function AndroidLiveviewComponent(props: AndroidLiveviewComponentProps) {
     isConnected,
   });
 
-  // const controlHandler = useControlHandler({
-  //   client: clientRef.current,
-  //   enabled: isConnected,
-  //   isConnected,
-  // });
+  const controlHandler = useControlHandler({
+    client: clientRef.current,
+    enabled: isConnected,
+    isConnected,
+  });
 
-  // const handleControlAction = React.useCallback((action: string) => {
-  //   controlHandler.handleControlAction(action);
-  // }, [controlHandler]);
+  const handleControlAction = React.useCallback((action: string) => {
+    controlHandler.handleControlAction(action);
+  }, [controlHandler]);
 
   const { deviceSerial, apiUrl, wsUrl } = connectaParams;
 
@@ -162,9 +163,20 @@ export function AndroidLiveviewComponent(props: AndroidLiveviewComponentProps) {
     isConnected,
   });
 
-  // const handleIMESwitch = React.useCallback(() => {
-  //   controlHandler.handleIMESwitch();
-  // }, [controlHandler])
+  const handleIMESwitch = React.useCallback(() => {
+    controlHandler.handleIMESwitch();
+  }, [controlHandler]);
+
+  const handleDisconnect = React.useCallback(() => {
+    if (clientRef.current) {
+      clientRef.current.disconnect();
+    }
+    onDisconnect?.();
+  }, [onDisconnect]);
+
+  const toggleAndroidControls = React.useCallback(() => {
+    setShowAndroidControls(prev => !prev);
+  }, []);
 
   return (
     <div className={styles.mainContent}>
@@ -228,12 +240,15 @@ export function AndroidLiveviewComponent(props: AndroidLiveviewComponentProps) {
           </div>
 
           {/* Android Control Buttons */}
-           {/* {showAndroidControls && ( */}
-          {/* <ControlButtons
-            onAction={handleControlAction}
-            onIMESwitch={handleIMESwitch}
-          /> */}
-        {/* )}  */}
+          {showAndroidControls && (
+            <ControlButtons
+              onAction={handleControlAction}
+              onIMESwitch={handleIMESwitch}
+              onDisconnect={handleDisconnect}
+              onToggleVisibility={toggleAndroidControls}
+              showDisconnect={true}
+            />
+          )}
         </div>
 
         {/* Stats */}

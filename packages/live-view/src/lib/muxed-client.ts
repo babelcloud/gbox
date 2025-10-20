@@ -221,7 +221,11 @@ export class MP4Client implements ControlClient {
     this.videoElement = document.createElement("video");
     this.videoElement.src = URL.createObjectURL(this.mediaSource);
     this.videoElement.autoplay = true;
-    this.videoElement.muted = false; // Enable audio for MP4 streams
+    this.videoElement.muted = true; // Start muted to bypass autoplay restrictions
+    this.videoElement.playsInline = true; // Enable inline playback on mobile
+    this.videoElement.controls = false; // Hide controls for clean UI
+    this.videoElement.loop = false; // Don't loop the stream
+    this.videoElement.preload = "auto"; // Preload video data
     this.videoElement.style.width = "100%";
     this.videoElement.style.height = "100%";
     this.videoElement.style.objectFit = "contain";
@@ -230,7 +234,19 @@ export class MP4Client implements ControlClient {
 
     this.videoElement.addEventListener("loadedmetadata", () => {
       if (this.videoElement) {
-        this.videoElement.muted = false;
+        // Keep muted initially to ensure autoplay works
+        console.log("[MP4Client] Video metadata loaded, attempting to play");
+        this.videoElement.play().catch((error) => {
+          console.warn("[MP4Client] Initial play failed:", error);
+          // Try again after a short delay
+          setTimeout(() => {
+            if (this.videoElement) {
+              this.videoElement.play().catch((retryError) => {
+                console.warn("[MP4Client] Retry play failed:", retryError);
+              });
+            }
+          }, 100);
+        });
         // Update stats when metadata is loaded
         this.updateStats();
       }
@@ -239,9 +255,21 @@ export class MP4Client implements ControlClient {
 
     this.videoElement.addEventListener("canplay", () => {
       if (this.videoElement) {
-        this.videoElement.play().catch(() => {});
+        console.log("[MP4Client] Video can play, ensuring playback");
+        this.videoElement.play().catch((error) => {
+          console.warn("[MP4Client] Canplay play failed:", error);
+        });
       }
       this.hasStartedPlayback = true;
+    });
+
+    this.videoElement.addEventListener("canplaythrough", () => {
+      if (this.videoElement) {
+        console.log("[MP4Client] Video can play through, ensuring playback");
+        this.videoElement.play().catch((error) => {
+          console.warn("[MP4Client] Canplaythrough play failed:", error);
+        });
+      }
     });
 
     this.videoElement.addEventListener("waiting", () => {
@@ -252,11 +280,39 @@ export class MP4Client implements ControlClient {
       window.dispatchEvent(new Event("resize"));
     });
 
+    // Add user interaction handler to enable audio
+    this.addUserInteractionHandler();
+
     // Add video element to the page
     await this.addVideoElementToPage();
 
     // Wait for MediaSource to be ready (defer SourceBuffer creation until init parsed)
     await this.waitForMediaSourceReady();
+  }
+
+  /**
+   * Add user interaction handler to enable audio
+   */
+  private addUserInteractionHandler(): void {
+    let hasUserInteracted = false;
+    
+    const enableAudio = () => {
+      if (hasUserInteracted || !this.videoElement) return;
+      hasUserInteracted = true;
+      
+      console.log("[MP4Client] User interaction detected, enabling audio");
+      this.videoElement.muted = false;
+      
+      // Remove event listeners after first interaction
+      document.removeEventListener("click", enableAudio);
+      document.removeEventListener("touchstart", enableAudio);
+      document.removeEventListener("keydown", enableAudio);
+    };
+    
+    // Listen for user interactions
+    document.addEventListener("click", enableAudio, { once: true });
+    document.addEventListener("touchstart", enableAudio, { once: true });
+    document.addEventListener("keydown", enableAudio, { once: true });
   }
 
   /**
@@ -605,12 +661,18 @@ export class MP4Client implements ControlClient {
           try {
             this.sourceBuffer.appendBuffer(merged as unknown as BufferSource);
             if (this.videoElement && this.videoElement.paused) {
-              this.videoElement.play().catch(() => {});
+              console.log("[MP4Client] Video paused, attempting to play after buffer append");
+              this.videoElement.play().catch((error) => {
+                console.warn("[MP4Client] Play after buffer append failed:", error);
+              });
             }
           } catch (e) {
             console.error("[MP4Client] appendBuffer (coalesced) failed", e);
             if (this.videoElement) {
-              this.videoElement.play().catch(() => {});
+              console.log("[MP4Client] Attempting to play after append error");
+              this.videoElement.play().catch((error) => {
+                console.warn("[MP4Client] Play after append error failed:", error);
+              });
             }
           }
         };
@@ -641,6 +703,13 @@ export class MP4Client implements ControlClient {
     ) {
       try {
         this.sourceBuffer.appendBuffer(chunk as unknown as BufferSource);
+        // Try to play after appending data
+        if (this.videoElement && this.videoElement.paused) {
+          console.log("[MP4Client] Video paused, attempting to play after immediate append");
+          this.videoElement.play().catch((error) => {
+            console.warn("[MP4Client] Play after immediate append failed:", error);
+          });
+        }
         return;
       } catch (e) {
         console.warn("[MP4Client] append immediate failed, queueing", e);
