@@ -8,6 +8,7 @@ require (
 	github.com/babelcloud/gbox-sdk-go v0.1.0-alpha.3
 	github.com/basiooo/goadb v1.1.1
 	github.com/bluenviron/mediacommon/v2 v2.4.3
+	github.com/dchest/uniuri v1.2.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/pion/webrtc/v4 v4.1.4

@@ -475,7 +475,7 @@ func (s *GBoxServer) ConnectAP(serial string) error {
 }
 
 func (s *GBoxServer) DisconnectAP(serial string) error {
-	return s.deviceKeeper.disconnectAP(serial)
+	return s.deviceKeeper.disconnectAPForce(serial)
 }
 
 func (s *GBoxServer) GetAdbSerialByGboxDeviceId(deviceId string) string {

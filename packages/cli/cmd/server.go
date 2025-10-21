@@ -263,6 +263,7 @@ func runServerInBackground(port int, startLogFilename string) error {
 	defer logFd.Close()
 
 	log.SetOutput(logFd)
+	log.SetFlags(log.LstdFlags)
 
 	server := server.NewGBoxServer(port)
 	if err := server.Start(); err != nil && err != http.ErrServerClosed {
