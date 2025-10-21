@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"io"
 	"log"
 	"net"
@@ -14,10 +16,10 @@ import (
 	"github.com/babelcloud/gbox/packages/cli/internal/server/handlers"
 	adb "github.com/basiooo/goadb"
 	"github.com/dchest/uniuri"
-	"github.com/pires/go-proxyproto"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/vishalkuo/bimap"
-	"github.com/xtaci/smux"
+	"golang.org/x/crypto/ssh"
 )
 
 type DeviceKeeper struct {
@@ -132,13 +134,14 @@ func (dm *DeviceKeeper) connectAP(serial string) error {
 		return errors.Wrapf(err, "failed to generate access point token")
 	}
 
-	mux, err := connectAP(connectEndpoint.String(), token.Token, apList.Data[0].Metadata.Protocol, serial)
+	sshConn, sshChan, err := connectAP(connectEndpoint.String(), token.Token, apList.Data[0].Metadata.Protocol, serial)
 	if err != nil {
 		return errors.Wrapf(err, "failed to connect device %s to GBOX access point", serial)
 	}
 
 	session := dm.deviceSessions.Set(serial, &DeviceSession{
-		Mux:    mux,
+		Conn: sshConn, 
+		NewChannel: sshChan,
 		Serial: serial,
 	})
 
@@ -149,7 +152,7 @@ func (dm *DeviceKeeper) connectAP(serial string) error {
 }
 
 func (dm *DeviceKeeper) disconnectAP(session *DeviceSession) error {
-	session.Mux.Close()
+	session.Conn.Close()
 
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
@@ -166,7 +169,7 @@ func (dm *DeviceKeeper) disconnectAPForce(serial string) error {
 
 	session, ok := dm.deviceSessions.Get(serial)
 	if ok {
-		session.Mux.Close()
+		session.Conn.Close()
 	}
 
 	dm.adbDeviceBiMap.Delete(serial)
@@ -189,28 +192,27 @@ func (dm *DeviceKeeper) deviceConnectLiveCheck(serial string, session *DeviceSes
 		}
 	}()
 
-	for range time.Tick(3 * time.Second) {
+	if err := session.Conn.Wait(); err != nil {
+		log.Printf("device %s session is dead: %v", serial, err)
+
 		if !dm.existAdbDevice(serial) {
 			return
 		}
 
-		if session.Mux.IsClosed() {
-			go func() {
-				if err := dm.connectAP(serial); err != nil {
-					dm.disconnectAP(session)
-					log.Print(errors.Wrapf(err, "failed to reconnect device %s to GBOX access point", serial))
-				}
+		go func() {
+			if err := dm.connectAP(serial); err != nil {
+				dm.disconnectAP(session)
+				log.Print(errors.Wrapf(err, "failed to reconnect device %s to GBOX access point", serial))
+			}
 
-			}()
-			return
-		}
+		}()
 	}
 }
 
-func connectAP(url, token, protocol, serial string) (*smux.Session, error) {
+func connectAP(url, token, protocol, serial string) (*ssh.ServerConn, <-chan ssh.NewChannel, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to create request to connect to access point %s via %s protocol", url, protocol)
+		return nil, nil, errors.Wrapf(err, "failed to create request to connect to access point %s via %s protocol", url, protocol)
 	}
 	req.Header.Set("Connection", "upgrade")
 	req.Header.Set("Upgrade", protocol)
@@ -218,28 +220,44 @@ func connectAP(url, token, protocol, serial string) (*smux.Session, error) {
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to connect to access point %s via %s protocol", url, protocol)
+		return nil, nil, errors.Wrapf(err, "failed to connect to access point %s via %s protocol", url, protocol)
 	}
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		defer resp.Body.Close()
 		body, _ := io.ReadAll(resp.Body)
-		return nil, errors.Wrapf(err, "access point does not switch protocol, respond %d: %v", resp.StatusCode, string(body))
+		return nil, nil, errors.Wrapf(err, "access point does not switch protocol, respond %d: %v", resp.StatusCode, string(body))
 	}
 
 	log.Printf("device %s connected access point %s via %s protocol", serial, url, protocol)
 	rwCloser, ok := resp.Body.(io.ReadWriteCloser)
 	if !ok {
 		defer resp.Body.Close()
-		return nil, errors.Errorf("failed to convert access point connection into read write closer")
+		return nil, nil, errors.Errorf("failed to convert access point connection into read write closer")
 	}
 
-	session, err := smux.Server(rwCloser, nil)
+	sshConfig := &ssh.ServerConfig{
+		NoClientAuth: true,
+	}
+	sshConfig.AddHostKey(sshSigner)
+	sshConn, sshChan, sshReq, err := ssh.NewServerConn(&proxyServerConn{
+		ReadWriteCloser: rwCloser,
+		laddr: &net.TCPAddr{
+			IP:   net.IPv4zero,
+			Port: 0,
+		},
+		raddr: &net.TCPAddr{
+			IP:   net.IPv4zero,
+			Port: 0,
+		},
+	}, sshConfig)
 	if err != nil {
 		defer resp.Body.Close()
-		return nil, errors.Wrapf(err, "failed to create smux session from access point connection")
+		return nil, nil, errors.Wrapf(err, "failed to create ssh connection from access point connection")
 	}
 
-	return session, nil
+	go ssh.DiscardRequests(sshReq)
+
+	return sshConn, sshChan, nil
 }
 
 func processDeviceSession(session *DeviceSession, serial string) {
@@ -249,57 +267,61 @@ func processDeviceSession(session *DeviceSession, serial string) {
 		}
 	}()
 
-	for {
-		stream, err := session.Mux.AcceptStream()
-		if err != nil {
-			log.Print(errors.Wrapf(err, "device %s session failed to accept stream", serial))
-			return
+	for newChannel := range session.NewChannel {
+
+		if newChannel.ChannelType() == "gbox-device-proxy" {
+			target := &ProxyTarget{}
+			if err := ssh.Unmarshal(newChannel.ExtraData(), target); err != nil {
+				log.Print(errors.Wrapf(err, "failed to umarshal channel data, device %s", serial))
+				newChannel.Reject(ssh.ConnectionFailed, "unable to unmarshal data")
+				continue
+			}
+
+			channel, reqChan, err := newChannel.Accept()
+			if err != nil {
+				log.Print(errors.Wrapf(err, "failed to accept channel on device %s", serial))
+				continue
+			}
+			go ssh.DiscardRequests(reqChan)
+			
+			channelId := uuid.New()
+			log.Printf("device %s channel %s accepted", serial, channelId.String())
+			go processChannel(channel, channelId.String(), serial, target)
+		} else {
+			log.Printf("device %s receive unknown channel type %s", serial, newChannel.ChannelType())
+			newChannel.Reject(ssh.UnknownChannelType, "unknonw channel type")
 		}
-		log.Printf("device %s stream %d accepted", serial, stream.ID())
-		go processSessionStream(stream, serial)
 	}
 }
 
-func processSessionStream(stream *smux.Stream, serial string) {
+func processChannel(channel ssh.Channel, channelId, serial string, target *ProxyTarget) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("recovered from device %s stream %d processStream goroutine: %v", serial, stream.ID(), r)
+			log.Printf("recovered from device %s channel %s processStream goroutine: %v", serial, channelId, r)
 		}
 	}()
 
-	local := proxyproto.NewConn(stream)
-	defer log.Printf("device %s stream %d closed", serial, stream.ID())
-	defer local.Close()
+	defer log.Printf("device %s channel %s closed", serial, channelId)
+	defer channel.Close()
 
-	proxyHeader := local.ProxyHeader()
-	log.Print(proxyHeader.DestinationAddr.String())
+	log.Printf("device %s channel %s proxy target: %#v", serial, channelId, target)
 
-	host, port, err := net.SplitHostPort(proxyHeader.DestinationAddr.String())
+	host, port, err := net.SplitHostPort(target.Host)
 	if err != nil {
-		log.Print(err)
+		log.Print(errors.Wrapf(err, "device %s channel %d invalid target host %s", serial, channelId, target.Host))
 		return
 	}
-	if host == "0.0.0.0" {
-		tlvs, err := proxyHeader.TLVs()
-		if err != nil {
-			log.Print(err)
-			return
-		}
-		for _, tlv := range tlvs {
-			if tlv.Type == proxyproto.PP2_TYPE_AUTHORITY {
-				host = string(tlv.Value)
-				break
-			}
-		}
+	ip := net.ParseIP(host)
+	if ip == nil {
 		ips, err := net.LookupIP(host)
 		if err != nil {
-			log.Print(err)
+			log.Print(errors.Wrapf(err, "failed to look up host %s", host))
 			return
 		}
-		host = ips[0].String()
+		ip = ips[0]
 	}
 
-	remote, err := net.Dial("tcp", net.JoinHostPort(host, port))
+	remote, err := net.Dial("tcp", net.JoinHostPort(ip.String(), port))
 	if err != nil {
 		log.Print(err)
 		return
@@ -310,21 +332,22 @@ func processSessionStream(stream *smux.Stream, serial string) {
 	defer wg.Wait()
 
 	wg.Go(func() {
-		defer local.Close()
-		if _, err := io.Copy(local, remote); err != nil {
-			log.Printf("device %s stream %d local <- remote: %v", serial, stream.ID(), err)
+		defer channel.Close()
+		if _, err := io.Copy(channel, remote); err != nil {
+			log.Printf("device %s channel %s local <- remote: %v", serial, channelId, err)
 		}
 	})
 	wg.Go(func() {
 		defer remote.Close()
-		if _, err := io.Copy(remote, local); err != nil {
-			log.Printf("device %s stream %d remote <- local: %v", serial, stream.ID(), err)
+		if _, err := io.Copy(remote, channel); err != nil {
+			log.Printf("device %s channel %s remote <- local: %v", serial, channelId, err)
 		}
 	})
 }
 
 type DeviceSession struct {
-	Mux    *smux.Session
+	Conn *ssh.ServerConn
+	NewChannel <-chan ssh.NewChannel
 	Token  string
 	Serial string
 }
@@ -380,4 +403,50 @@ func (dm *DeviceMap) DeleteForce(serial string) {
 	defer dm.mu.Unlock()
 
 	delete(dm.sessions, serial)
+}
+
+var sshSigner ssh.Signer
+
+func init() {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		log.Fatal(errors.Wrapf(err, "failed to generate ed25519 key for ssh server"))
+	}
+	signer, err := ssh.NewSignerFromKey(privateKey)
+	if err != nil {
+		log.Fatal(errors.Wrapf(err, "failed to create signer for ssh server"))
+	}
+	sshSigner = signer
+}
+
+type proxyServerConn struct {
+	io.ReadWriteCloser
+	laddr, raddr net.Addr
+}
+
+func (t *proxyServerConn) LocalAddr() net.Addr {
+	return t.laddr
+}
+
+func (t *proxyServerConn) RemoteAddr() net.Addr {
+	return t.raddr
+}
+
+func (t *proxyServerConn) SetDeadline(deadline time.Time) error {
+	if err := t.SetReadDeadline(deadline); err != nil {
+		return err
+	}
+	return t.SetWriteDeadline(deadline)
+}
+
+func (t *proxyServerConn) SetReadDeadline(deadline time.Time) error {
+	return errors.New("ssh: tcpChan: deadline not supported")
+}
+
+func (t *proxyServerConn) SetWriteDeadline(deadline time.Time) error {
+	return errors.New("ssh: tcpChan: deadline not supported")
+}
+
+type ProxyTarget struct {
+	Host string
 }
