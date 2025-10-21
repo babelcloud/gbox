@@ -13,6 +13,7 @@ import (
 	"github.com/babelcloud/gbox/packages/cli/internal/cloud"
 	"github.com/babelcloud/gbox/packages/cli/internal/server/handlers"
 	adb "github.com/basiooo/goadb"
+	"github.com/dchest/uniuri"
 	"github.com/pires/go-proxyproto"
 	"github.com/pkg/errors"
 	"github.com/vishalkuo/bimap"
@@ -24,7 +25,7 @@ type DeviceKeeper struct {
 	deviceWatcher *adb.DeviceWatcher
 
 	adbDeviceBiMap *bimap.BiMap[string, string]
-	deviceSessions *sync.Map
+	deviceSessions *DeviceMap
 
 	deviceAPI *cloud.DeviceAPI
 	apAPI     *cloud.AccessPointAPI
@@ -42,7 +43,7 @@ func NewDeviceKeeper() (*DeviceKeeper, error) {
 	return &DeviceKeeper{
 		adbClient:      adbClient,
 		adbDeviceBiMap: bimap.NewBiMap[string, string](),
-		deviceSessions: &sync.Map{},
+		deviceSessions: NewDeviceMap(),
 		deviceAPI:      cloud.NewDeviceAPI(),
 		apAPI:          cloud.NewAccessPointAPI(),
 	}, nil
@@ -63,7 +64,7 @@ func (dm *DeviceKeeper) Start() error {
 					log.Print(errors.Wrapf(err, "failed to connect device %s to access point", event.Serial))
 				}
 			case adb.StateOffline:
-				if err := dm.disconnectAP(event.Serial); err != nil {
+				if err := dm.disconnectAPForce(event.Serial); err != nil {
 					log.Print(errors.Wrapf(err, "failed to disconnect device %s from access point", event.Serial))
 				}
 			}
@@ -131,30 +132,45 @@ func (dm *DeviceKeeper) connectAP(serial string) error {
 		return errors.Wrapf(err, "failed to generate access point token")
 	}
 
-	session, err := connectAP(connectEndpoint.String(), token.Token, apList.Data[0].Metadata.Protocol, serial)
+	mux, err := connectAP(connectEndpoint.String(), token.Token, apList.Data[0].Metadata.Protocol, serial)
 	if err != nil {
 		return errors.Wrapf(err, "failed to connect device %s to GBOX access point", serial)
 	}
 
+	session := dm.deviceSessions.Set(serial, &DeviceSession{
+		Mux:    mux,
+		Serial: serial,
+	})
+
 	dm.adbDeviceBiMap.Insert(serial, device.Id)
-	dm.deviceSessions.Store(serial, session)
 	go processDeviceSession(session, serial)
 	go dm.deviceConnectLiveCheck(serial, session)
 	return nil
 }
 
-func (dm *DeviceKeeper) disconnectAP(serial string) error {
+func (dm *DeviceKeeper) disconnectAP(session *DeviceSession) error {
+	session.Mux.Close()
+
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
-	rawSession, ok := dm.deviceSessions.Load(serial)
+	if dm.deviceSessions.Delete(session.Serial, session.Token) {
+		dm.adbDeviceBiMap.Delete(session.Serial)
+	}
+	return nil
+}
+
+func (dm *DeviceKeeper) disconnectAPForce(serial string) error {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+
+	session, ok := dm.deviceSessions.Get(serial)
 	if ok {
-		session := rawSession.(*smux.Session)
-		session.Close()
+		session.Mux.Close()
 	}
 
 	dm.adbDeviceBiMap.Delete(serial)
-	dm.deviceSessions.Delete(serial)
+	dm.deviceSessions.DeleteForce(serial)
 	return nil
 }
 
@@ -166,7 +182,7 @@ func (dm *DeviceKeeper) existAdbDevice(serial string) bool {
 	return ok
 }
 
-func (dm *DeviceKeeper) deviceConnectLiveCheck(serial string, session *smux.Session) {
+func (dm *DeviceKeeper) deviceConnectLiveCheck(serial string, session *DeviceSession) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("recovered from device %s DeviceKeeper.deviceConnectLiveCheck goroutine: %v", serial, r)
@@ -178,10 +194,10 @@ func (dm *DeviceKeeper) deviceConnectLiveCheck(serial string, session *smux.Sess
 			return
 		}
 
-		if session.IsClosed() {
+		if session.Mux.IsClosed() {
 			go func() {
 				if err := dm.connectAP(serial); err != nil {
-					dm.disconnectAP(serial)
+					dm.disconnectAP(session)
 					log.Print(errors.Wrapf(err, "failed to reconnect device %s to GBOX access point", serial))
 				}
 
@@ -226,7 +242,7 @@ func connectAP(url, token, protocol, serial string) (*smux.Session, error) {
 	return session, nil
 }
 
-func processDeviceSession(session *smux.Session, serial string) {
+func processDeviceSession(session *DeviceSession, serial string) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("recovered from device %s processDeviceSession goroutine: %v", serial, r)
@@ -234,7 +250,7 @@ func processDeviceSession(session *smux.Session, serial string) {
 	}()
 
 	for {
-		stream, err := session.AcceptStream()
+		stream, err := session.Mux.AcceptStream()
 		if err != nil {
 			log.Print(errors.Wrapf(err, "device %s session failed to accept stream", serial))
 			return
@@ -305,4 +321,63 @@ func processSessionStream(stream *smux.Stream, serial string) {
 			log.Printf("device %s stream %d remote <- local: %v", serial, stream.ID(), err)
 		}
 	})
+}
+
+type DeviceSession struct {
+	Mux    *smux.Session
+	Token  string
+	Serial string
+}
+
+type DeviceMap struct {
+	sessions map[string]*DeviceSession
+	mu       sync.RWMutex
+}
+
+func NewDeviceMap() *DeviceMap {
+	return &DeviceMap{
+		sessions: map[string]*DeviceSession{},
+	}
+}
+
+func (dm *DeviceMap) Len() int {
+	dm.mu.RLock()
+	defer dm.mu.RUnlock()
+
+	return len(dm.sessions)
+}
+
+func (dm *DeviceMap) Get(serial string) (*DeviceSession, bool) {
+	dm.mu.RLock()
+	defer dm.mu.RUnlock()
+
+	session, ok := dm.sessions[serial]
+	return session, ok
+}
+
+func (dm *DeviceMap) Set(serial string, session *DeviceSession) *DeviceSession {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+
+	session.Token = uniuri.NewLen(32)
+	dm.sessions[serial] = session
+	return session
+}
+
+func (dm *DeviceMap) Delete(serial, token string) bool {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+
+	if session, ok := dm.sessions[serial]; ok && session.Token == token {
+		delete(dm.sessions, serial)
+		return true
+	}
+	return false
+}
+
+func (dm *DeviceMap) DeleteForce(serial string) {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+
+	delete(dm.sessions, serial)
 }
