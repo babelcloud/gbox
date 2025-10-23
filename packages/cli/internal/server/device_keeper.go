@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/tls"
 	"io"
 	"log"
 	"net"
@@ -20,6 +21,12 @@ import (
 	"github.com/xtaci/smux"
 	"k8s.io/utils/keymutex"
 )
+
+var deviceConnectClient = &http.Client{
+	Transport: &http.Transport{
+		TLSNextProto: make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
+	},
+}
 
 type DeviceKeeper struct {
 	adbClient     *adb.Adb
@@ -233,7 +240,7 @@ func connectAP(url, token, protocol, serial string) (*smux.Session, error) {
 	req.Header.Set("Upgrade", protocol)
 	req.Header.Set("User-Agent", "GBOX-cli")
 	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := deviceConnectClient.Do(req)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to connect to access point %s via %s protocol", url, protocol)
 	}
@@ -262,7 +269,7 @@ func connectAP(url, token, protocol, serial string) (*smux.Session, error) {
 func (dm *DeviceKeeper) processDeviceSession(session *DeviceSession, serial string) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("recovered from device %s processDeviceSession goroutine: %v", serial, r)
+			log.Printf("recovered from device %s processDeviceSession goroutine: %v: %s", serial, r, string(debug.Stack()))
 		}
 	}()
 
