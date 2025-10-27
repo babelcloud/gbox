@@ -306,46 +306,6 @@ func checkAndInstallPrerequisites() error {
 	return nil
 }
 
-func isServiceRunning() (bool, error) {
-	// First check if PID file exists
-	deviceProxyHome := config.GetDeviceProxyHome()
-	pidFile := filepath.Join(deviceProxyHome, "device-proxy.pid")
-
-	if _, err := os.Stat(pidFile); os.IsNotExist(err) {
-		return false, nil
-	}
-
-	// Read PID from file
-	pidBytes, err := os.ReadFile(pidFile)
-	if err != nil {
-		return false, nil
-	}
-
-	var pid int
-	if _, err := fmt.Sscanf(string(pidBytes), "%d", &pid); err != nil {
-		return false, nil
-	}
-
-	// Check if process is still running
-	if err := exec.Command("kill", "-0", fmt.Sprintf("%d", pid)).Run(); err != nil {
-		// Process is not running, remove PID file
-		os.Remove(pidFile)
-		return false, nil
-	}
-
-	// Try to check service status via daemon API
-	var response struct {
-		Success bool `json:"success"`
-	}
-
-	if err := daemon.DefaultManager.CallAPI("GET", "/api/status", nil, &response); err != nil {
-		// If API check fails, assume service is running (we have a valid PID)
-		return true, nil
-	}
-
-	return response.Success, nil
-}
-
 func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 	// Use daemon manager to call API
 	var response struct {
@@ -425,8 +385,7 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 
 	select {
 	case <-intCh:
-		// User pressed Ctrl+C during selection; stop proxy first then exit gracefully
-		_ = executeKillServer()
+		// User pressed Ctrl+C during selection; exit gracefully
 		return nil
 	case <-inputDone:
 		// proceed
@@ -490,17 +449,6 @@ func connectToDevice(deviceID string, opts *DeviceConnectOptions) error {
 	}
 
 	return nil
-}
-
-// executeKillServer calls the existing kill-server functionality
-func executeKillServer() error {
-	opts := &DeviceConnectKillServerOptions{
-		Force: true,
-		All:   false,
-	}
-	// Create a dummy command for ExecuteDeviceConnectKillServer
-	// We only need this for the function signature, the actual cmd parameter is not used in the implementation
-	return ExecuteDeviceConnectKillServer(nil, opts)
 }
 
 // runAsRoot executes a command with root privileges if needed

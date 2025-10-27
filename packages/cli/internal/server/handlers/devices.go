@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/babelcloud/gbox/packages/cli/internal/cloud"
+	"github.com/babelcloud/gbox/packages/cli/internal/device"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/control"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/audio"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/h264"
@@ -79,7 +80,9 @@ func (h *DeviceHandlers) HandleDeviceList(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	devices, err := getADBDevices()
+	// Use unified device manager
+	deviceManager := device.NewManager()
+	devices, err := deviceManager.GetDevicesAsMap()
 	if err != nil {
 		log.Printf("Failed to get devices: %v", err)
 		RespondJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -91,13 +94,13 @@ func (h *DeviceHandlers) HandleDeviceList(w http.ResponseWriter, r *http.Request
 	}
 
 	deviceAPI := cloud.NewDeviceAPI()
-	for _, device := range devices {
-		serialno, ok := device["ro.serialno"].(string)
-		if !ok {
+	for _, deviceMap := range devices {
+		serialno, ok := deviceMap["ro.serialno"].(string)
+		if !ok || serialno == "" {
 			continue
 		}
-		androindId, ok := device["android_id"].(string)
-		if !ok {
+		androindId, ok := deviceMap["android_id"].(string)
+		if !ok || androindId == "" {
 			continue
 		}
 		deviceList, err := deviceAPI.GetBySerialnoAndAndroidId(serialno, androindId)
@@ -106,7 +109,7 @@ func (h *DeviceHandlers) HandleDeviceList(w http.ResponseWriter, r *http.Request
 			continue
 		}
 		if len(deviceList.Data) > 0 {
-			device["gbox.device_id"] = deviceList.Data[0].Id
+			deviceMap["gbox.device_id"] = deviceList.Data[0].Id
 		}
 	}
 
@@ -155,7 +158,7 @@ func (h *DeviceHandlers) HandleDeviceRegister(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	serialno, androidId, err := GetDeviceSerialnoAndAndroidId(reqBody.DeviceId)
+	serialno, androidId, err := device.GetDeviceSerialnoAndAndroidId(reqBody.DeviceId)
 	if err != nil {
 		http.Error(w, errors.Wrap(err, "failed to resolve device serialno or android_id").Error(), http.StatusInternalServerError)
 		return
@@ -199,7 +202,7 @@ func (h *DeviceHandlers) HandleDeviceUnregister(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	serialno, androidId, err := GetDeviceSerialnoAndAndroidId(reqBody.DeviceId)
+	serialno, androidId, err := device.GetDeviceSerialnoAndAndroidId(reqBody.DeviceId)
 	if err != nil {
 		http.Error(w, errors.Wrap(err, "failed to resolve device serialno or android_id").Error(), http.StatusInternalServerError)
 		return

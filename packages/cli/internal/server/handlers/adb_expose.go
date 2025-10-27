@@ -6,14 +6,11 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os/exec"
-	"strings"
 	"sync"
 	"time"
 
 	adb_expose "github.com/babelcloud/gbox/packages/cli/internal/adb_expose"
 	"github.com/babelcloud/gbox/packages/cli/internal/profile"
-	"github.com/pkg/errors"
 )
 
 // ADBExposeHandlers contains handlers for ADB expose functionality
@@ -426,72 +423,4 @@ func (h *ADBExposeHandlers) startLocalListener(forward *PortForward, localPort, 
 		// Handle connection in goroutine
 		go adb_expose.HandleLocalConnWithClient(conn, forward.client, remotePort)
 	}
-}
-
-// getADBDevices retrieves the list of connected ADB devices
-func getADBDevices() ([]map[string]interface{}, error) {
-	cmd := exec.Command("adb", "devices", "-l")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute adb devices: %v", err)
-	}
-
-	lines := strings.Split(string(output), "\n")
-	var devices []map[string]interface{}
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "List of devices") {
-			continue
-		}
-
-		parts := strings.Fields(line)
-		if len(parts) >= 2 {
-			device := map[string]interface{}{
-				"id":     parts[0],
-				"status": parts[1],
-			}
-
-			// Parse additional device info if available
-			if len(parts) > 2 {
-				for _, part := range parts[2:] {
-					if strings.Contains(part, ":") {
-						kv := strings.SplitN(part, ":", 2)
-						if len(kv) == 2 {
-							device[kv[0]] = kv[1]
-						}
-					}
-				}
-			}
-
-			device["ro.serialno"], device["android_id"], err = GetDeviceSerialnoAndAndroidId(parts[0])
-			if err != nil {
-				log.Print(errors.Wrapf(err, "failed to get serialno of deivce %s", parts[0]))
-			}
-
-			devices = append(devices, device)
-		}
-	}
-
-	return devices, nil
-}
-
-func GetDeviceSerialnoAndAndroidId(deviceId string) (serialno string, androidId string, err error) {
-	getSerialnoCmd := exec.Command("adb", "-s", deviceId, "shell", "getprop", "ro.serialno")
-	output, err := getSerialnoCmd.Output()
-	if err != nil {
-		err = errors.Wrapf(err, "failed to get serialno of deivce %s", deviceId)
-		return
-	} else {
-		serialno = strings.TrimSpace(string(output))
-	}
-	getAndroidIdCmd := exec.Command("adb", "-s", deviceId, "shell", "settings", "get", "secure", "android_id")
-	output, err = getAndroidIdCmd.Output()
-	if err != nil {
-		err = errors.Wrapf(err, "failed to get android id of device %s", deviceId)
-		return
-	} else {
-		androidId = strings.TrimSpace(string(output))
-	}
-	return
 }

@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	DefaultPort = 29888  // New port for unified gbox server
+	DefaultPort = 29888 // New port for unified gbox server
 	ServerURL   = "http://localhost:29888"
 )
 
@@ -73,7 +73,7 @@ func (m *Manager) IsServerRunning() bool {
 // checkHTTPHealth checks if server is responding to HTTP requests
 func (m *Manager) checkHTTPHealth() bool {
 	client := &http.Client{Timeout: 500 * time.Millisecond}
-	resp, err := client.Get(fmt.Sprintf("%s/health", m.url))
+	resp, err := client.Get(fmt.Sprintf("%s/api/server/info", m.url))
 	if err != nil {
 		return false
 	}
@@ -85,7 +85,7 @@ func (m *Manager) checkHTTPHealth() bool {
 func (m *Manager) StartServer() error {
 	// Clean up any old servers first
 	m.CleanupOldServers()
-	
+
 	// Create daemon home directory
 	daemonHome := filepath.Join(getHomeDir(), ".gbox", "cli")
 	if err := os.MkdirAll(daemonHome, 0755); err != nil {
@@ -106,7 +106,7 @@ func (m *Manager) StartServer() error {
 		return fmt.Errorf("failed to get executable path: %v", err)
 	}
 
-	cmd := exec.Command(exePath, "server", "--internal-daemon")
+	cmd := exec.Command(exePath, "server", "start", "--internal-daemon")
 	cmd.Stdout = logFd
 	cmd.Stderr = logFd
 	cmd.Env = append(os.Environ(), "GBOX_SERVER_DAEMON=1")
@@ -179,7 +179,7 @@ func (m *Manager) CleanupOldServers() {
 		filepath.Join(getHomeDir(), ".gbox", "device-proxy", "gbox-server.pid"),
 		filepath.Join(getHomeDir(), ".gbox", "device-proxy", "device-proxy.pid"),
 	}
-	
+
 	for _, pidFile := range oldPidFiles {
 		if pidBytes, err := os.ReadFile(pidFile); err == nil {
 			var pid int
@@ -189,7 +189,7 @@ func (m *Manager) CleanupOldServers() {
 			os.Remove(pidFile)
 		}
 	}
-	
+
 	// Kill any stray server processes
 	exec.Command("pkill", "-f", "gbox.*server.*--internal-daemon").Run()
 	exec.Command("pkill", "-f", "device-connect start-server").Run()
@@ -203,12 +203,12 @@ func (m *Manager) getPIDFile() string {
 // CallAPI makes an API call to the server
 func (m *Manager) CallAPI(method, endpoint string, body interface{}, result interface{}) error {
 	// Ensure server is running
-	// if err := m.EnsureServerRunning(); err != nil {
-	// 	return fmt.Errorf("failed to start server: %v", err)
-	// }
+	if err := m.EnsureServerRunning(); err != nil {
+		return fmt.Errorf("failed to start server: %v", err)
+	}
 
 	url := fmt.Sprintf("%s%s", m.url, endpoint)
-	
+
 	var bodyReader io.Reader
 	if body != nil {
 		jsonData, err := json.Marshal(body)

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/babelcloud/gbox/packages/cli/internal/daemon"
+	"github.com/babelcloud/gbox/packages/cli/internal/util"
 	"github.com/spf13/cobra"
 )
 
@@ -87,15 +88,13 @@ func outputDevicesJSONFromAPI(devices []map[string]interface{}) error {
 		Name             string `json:"name"`
 		Type             string `json:"type"`
 		ConnectionStatus string `json:"connection_status"`
-		IsRegistrable    bool   `json:"is_registrable"`
 	}
 
 	var simpleDevices []SimpleDeviceInfo
 	for _, device := range devices {
 		deviceID, _ := device["id"].(string)
-		name, _ := device["ro.product.model"].(string)
+		name, _ := device["model"].(string)
 		serialNo, _ := device["ro.serialno"].(string)
-		isRegistrable, _ := device["isRegistrable"].(bool)
 
 		status := statusNotRegistered
 		if _, ok := device["gbox.device_id"]; ok {
@@ -113,7 +112,6 @@ func outputDevicesJSONFromAPI(devices []map[string]interface{}) error {
 			Name:             name,
 			Type:             deviceType,
 			ConnectionStatus: status,
-			IsRegistrable:    isRegistrable,
 		})
 	}
 
@@ -131,67 +129,12 @@ func outputDevicesTextFromAPI(devices []map[string]interface{}) error {
 		return nil
 	}
 
-	// Calculate column widths based on content
-	deviceIDWidth := len("DEVICE ID")
-	nameWidth := len("NAME")
-	typeWidth := len("TYPE")
-	statusWidth := len("STATUS")
-	gboxDeviceIdWith := len("GBOX DEVICE ID")
-	registrableWidth := len("REGISTRABLE")
-
-	// Find maximum widths for each column
-	for _, device := range devices {
+	// Prepare data for RenderTable
+	tableData := make([]map[string]interface{}, len(devices))
+	for i, device := range devices {
 		deviceID, _ := device["id"].(string)
-		name, _ := device["ro.product.model"].(string)
-		gboxDeviceID, _ := device["gbox.device_id"].(string)
-		isRegistrable, _ := device["isRegistrable"].(bool)
-
-		if len(deviceID) > deviceIDWidth {
-			deviceIDWidth = len(deviceID)
-		}
-		if len(name) > nameWidth {
-			nameWidth = len(name)
-		}
-		if len(deviceTypeEmulator) > typeWidth {
-			typeWidth = len(deviceTypeEmulator)
-		}
-		if len(statusNotRegistered) > statusWidth {
-			statusWidth = len(statusNotRegistered)
-		}
-		if len(gboxDeviceID) > gboxDeviceIdWith {
-			gboxDeviceIdWith = len(gboxDeviceID)
-		}
-		if isRegistrable && len("Yes") > registrableWidth {
-			registrableWidth = len("Yes")
-		}
-		if !isRegistrable && len("No") > registrableWidth {
-			registrableWidth = len("No")
-		}
-	}
-
-	// Add some padding
-	deviceIDWidth += 2
-	nameWidth += 2
-	typeWidth += 2
-	statusWidth += 2
-	registrableWidth += 2
-
-	// Print header
-	fmt.Printf("%-*s %-*s %-*s %-*s %-*s %-*s\n",
-		deviceIDWidth, "DEVICE ID",
-		nameWidth, "NAME",
-		typeWidth, "TYPE",
-		statusWidth, "STATUS",
-		registrableWidth, "REGISTRABLE",
-		gboxDeviceIdWith, "GBOX DEVICE ID")
-
-	// Print data rows
-	for _, device := range devices {
-		deviceID, _ := device["id"].(string)
-		name, _ := device["ro.product.model"].(string)
+		name, _ := device["model"].(string)
 		serialNo, _ := device["ro.serialno"].(string)
-		gboxDeviceID, _ := device["gbox.device_id"].(string)
-		isRegistrable, _ := device["isRegistrable"].(bool)
 
 		status := statusNotRegistered
 		if gboxDeviceId, ok := device["gbox.device_id"]; ok && gboxDeviceId != "" {
@@ -204,19 +147,22 @@ func outputDevicesTextFromAPI(devices []map[string]interface{}) error {
 			deviceType = deviceTypeEmulator
 		}
 
-		registrableText := "No"
-		if isRegistrable {
-			registrableText = "Yes"
+		tableData[i] = map[string]interface{}{
+			"device_id": deviceID,
+			"name":      name,
+			"type":      deviceType,
+			"status":    status,
 		}
-
-		fmt.Printf("%-*s %-*s %-*s %-*s %-*s %-*s\n",
-			deviceIDWidth, deviceID,
-			nameWidth, name,
-			typeWidth, deviceType,
-			statusWidth, status,
-			registrableWidth, registrableText,
-			gboxDeviceIdWith, gboxDeviceID)
 	}
 
+	// Define table columns
+	columns := []util.TableColumn{
+		{Header: "DEVICE ID", Key: "device_id"},
+		{Header: "NAME", Key: "name"},
+		{Header: "TYPE", Key: "type"},
+		{Header: "STATUS", Key: "status"},
+	}
+
+	util.RenderTable(columns, tableData)
 	return nil
 }

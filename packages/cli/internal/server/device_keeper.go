@@ -11,7 +11,7 @@ import (
 	"sync"
 
 	"github.com/babelcloud/gbox/packages/cli/internal/cloud"
-	"github.com/babelcloud/gbox/packages/cli/internal/server/handlers"
+	"github.com/babelcloud/gbox/packages/cli/internal/device"
 	adb "github.com/basiooo/goadb"
 	"github.com/dchest/uniuri"
 	"github.com/pires/go-proxyproto"
@@ -117,7 +117,7 @@ func (dm *DeviceKeeper) connectAP(serial string) error {
 	dm.deviceLock.LockKey(serial)
 	defer dm.deviceLock.UnlockKey(serial)
 
-	serialno, androidId, err := handlers.GetDeviceSerialnoAndAndroidId(serial)
+	serialno, androidId, err := device.GetDeviceSerialnoAndAndroidId(serial)
 	if err != nil {
 		return errors.Wrapf(err, "failed to get device %s serialno and android_id", serial)
 	}
