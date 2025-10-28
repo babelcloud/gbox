@@ -84,6 +84,7 @@ func ExecuteDeviceConnectList(cmd *cobra.Command, opts *DeviceConnectListOptions
 func outputDevicesJSONFromAPI(devices []map[string]interface{}) error {
 	// Create a simplified JSON output for compatibility
 	type SimpleDeviceInfo struct {
+		GboxDeviceID     string `json:"gbox_device_id"`
 		DeviceID         string `json:"device_id"`
 		Name             string `json:"name"`
 		Type             string `json:"type"`
@@ -95,9 +96,10 @@ func outputDevicesJSONFromAPI(devices []map[string]interface{}) error {
 		deviceID, _ := device["id"].(string)
 		name, _ := device["model"].(string)
 		serialNo, _ := device["ro.serialno"].(string)
+		gboxDeviceID, _ := device["gbox.device_id"].(string)
 
 		status := statusNotRegistered
-		if _, ok := device["gbox.device_id"]; ok {
+		if gboxDeviceID != "" {
 			status = statusRegistered
 		}
 
@@ -108,6 +110,7 @@ func outputDevicesJSONFromAPI(devices []map[string]interface{}) error {
 		}
 
 		simpleDevices = append(simpleDevices, SimpleDeviceInfo{
+			GboxDeviceID:     gboxDeviceID,
 			DeviceID:         deviceID,
 			Name:             name,
 			Type:             deviceType,
@@ -135,10 +138,14 @@ func outputDevicesTextFromAPI(devices []map[string]interface{}) error {
 		deviceID, _ := device["id"].(string)
 		name, _ := device["model"].(string)
 		serialNo, _ := device["ro.serialno"].(string)
+		gboxDeviceID, _ := device["gbox.device_id"].(string)
 
 		status := statusNotRegistered
-		if gboxDeviceId, ok := device["gbox.device_id"]; ok && gboxDeviceId != "" {
+		if gboxDeviceID != "" {
 			status = statusRegistered
+		} else {
+			// Display "-" when GBOX Device ID is not assigned
+			gboxDeviceID = "-"
 		}
 
 		deviceType := deviceTypeDevice
@@ -147,18 +154,25 @@ func outputDevicesTextFromAPI(devices []map[string]interface{}) error {
 			deviceType = deviceTypeEmulator
 		}
 
+		// Display "-" for empty fields
+		if name == "" {
+			name = "-"
+		}
+
 		tableData[i] = map[string]interface{}{
-			"device_id": deviceID,
-			"name":      name,
-			"type":      deviceType,
-			"status":    status,
+			"gbox_device_id": gboxDeviceID,
+			"device_id":      deviceID,
+			"name":           name,
+			"type":           deviceType,
+			"status":         status,
 		}
 	}
 
 	// Define table columns
 	columns := []util.TableColumn{
-		{Header: "DEVICE ID", Key: "device_id"},
-		{Header: "NAME", Key: "name"},
+		{Header: "GLOBAL DEVICE ID", Key: "gbox_device_id"},
+		{Header: "DEVICE/TRANSPORT ID", Key: "device_id"},
+		{Header: "MODEL", Key: "name"},
 		{Header: "TYPE", Key: "type"},
 		{Header: "STATUS", Key: "status"},
 	}

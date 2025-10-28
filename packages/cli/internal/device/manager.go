@@ -75,8 +75,13 @@ func (m *Manager) GetDevices() ([]DeviceInfo, error) {
 			IsRegistrable:  false, // Default to false, will be updated by caller if needed
 		}
 
-		// Check if device is connected via IP (contains ":")
-		if strings.Contains(deviceID, ":") {
+		// Check if device is connected via network
+		if strings.Contains(deviceID, "._adb._tcp") {
+			// mDNS service name (e.g., "adb-A4RYVB3A20008848._adb._tcp")
+			device.ConnectionType = "mdns"
+			// Keep the full mDNS name as device ID
+		} else if strings.Contains(deviceID, ":") {
+			// IP address with port (e.g., "192.168.1.100:5555")
 			device.ConnectionType = "ip"
 		}
 
@@ -132,7 +137,9 @@ func (m *Manager) GetDevicesAsMap() ([]map[string]interface{}, error) {
 			"state":                   device.Status, // Add state field for compatibility
 			"ro.serialno":             device.SerialNo,
 			"android_id":              device.AndroidID,
+			"model":                   device.Model, // Add model field for easy access
 			"ro.product.model":        device.Model,
+			"device":                  device.Manufacturer, // Add device field for easy access
 			"ro.product.manufacturer": device.Manufacturer,
 			"connectionType":          device.ConnectionType,
 			"isRegistrable":           device.IsRegistrable,

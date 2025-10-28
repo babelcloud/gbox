@@ -42,15 +42,18 @@ type AccessPointToken struct {
 }
 
 type DeviceAPI struct {
-	client  *http.Client
-	profile *profile.Profile
+	client *http.Client
 }
 
 func NewDeviceAPI() *DeviceAPI {
 	return &DeviceAPI{
-		client:  &http.Client{},
-		profile: profile.Default.GetCurrent(),
+		client: &http.Client{},
 	}
+}
+
+// getCurrentProfile gets the current profile dynamically to support profile switching
+func (d *DeviceAPI) getCurrentProfile() *profile.Profile {
+	return profile.Default.GetCurrent()
 }
 
 func (d *DeviceAPI) GetBySerialnoAndAndroidId(serialno string, androidId string) (*DeviceList, error) {
@@ -199,9 +202,14 @@ func (d *DeviceAPI) GenerateAccessPointToken(deviceId, requestEndpoint string) (
 }
 
 func (d *DeviceAPI) buildUrlFromEndpoint(endpoint string) (*url.URL, error) {
-	url, err := url.Parse(d.profile.BaseURL)
+	currentProfile := d.getCurrentProfile()
+	if currentProfile == nil {
+		return nil, errors.New("no current profile set")
+	}
+
+	url, err := url.Parse(currentProfile.BaseURL)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse base url: %s", d.profile.BaseURL)
+		return nil, errors.Wrapf(err, "failed to parse base url: %s", currentProfile.BaseURL)
 	}
 
 	url.Path = endpoint
@@ -210,9 +218,14 @@ func (d *DeviceAPI) buildUrlFromEndpoint(endpoint string) (*url.URL, error) {
 }
 
 func (d *DeviceAPI) setCommonRequestHeaders(req *http.Request) {
+	currentProfile := d.getCurrentProfile()
+	if currentProfile == nil {
+		return
+	}
+
 	req.Header.Set("x-device-ap", "true")
 	req.Header.Set("content-type", "application/json")
-	decodedBytes, _ := base64.StdEncoding.DecodeString(d.profile.APIKey)
+	decodedBytes, _ := base64.StdEncoding.DecodeString(currentProfile.APIKey)
 	apiKey := string(decodedBytes)
 	if strings.HasPrefix(apiKey, "gbox-rack_") {
 		req.Header.Set("x-rack-api-key", apiKey)

@@ -34,15 +34,18 @@ type AccessPointList struct {
 }
 
 type AccessPointAPI struct {
-	client  *http.Client
-	profile *profile.Profile
+	client *http.Client
 }
 
 func NewAccessPointAPI() *AccessPointAPI {
 	return &AccessPointAPI{
-		client:  &http.Client{},
-		profile: profile.Default.GetCurrent(),
+		client: &http.Client{},
 	}
+}
+
+// getCurrentProfile gets the current profile dynamically to support profile switching
+func (ap *AccessPointAPI) getCurrentProfile() *profile.Profile {
+	return profile.Default.GetCurrent()
 }
 
 func (ap *AccessPointAPI) List() (*AccessPointList, error) {
@@ -78,10 +81,15 @@ func (ap *AccessPointAPI) List() (*AccessPointList, error) {
 	return apList, nil
 }
 
-func (d *AccessPointAPI) buildUrlFromEndpoint(endpoint string) (*url.URL, error) {
-	url, err := url.Parse(d.profile.BaseURL)
+func (ap *AccessPointAPI) buildUrlFromEndpoint(endpoint string) (*url.URL, error) {
+	currentProfile := ap.getCurrentProfile()
+	if currentProfile == nil {
+		return nil, errors.New("no current profile set")
+	}
+
+	url, err := url.Parse(currentProfile.BaseURL)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse base url: %s", d.profile.BaseURL)
+		return nil, errors.Wrapf(err, "failed to parse base url: %s", currentProfile.BaseURL)
 	}
 
 	url.Path = endpoint
@@ -89,9 +97,14 @@ func (d *AccessPointAPI) buildUrlFromEndpoint(endpoint string) (*url.URL, error)
 	return url, nil
 }
 
-func (d *AccessPointAPI) setCommonRequestHeaders(req *http.Request) {
+func (ap *AccessPointAPI) setCommonRequestHeaders(req *http.Request) {
+	currentProfile := ap.getCurrentProfile()
+	if currentProfile == nil {
+		return
+	}
+
 	req.Header.Set("content-type", "application/json")
-	decodedBytes, _ := base64.StdEncoding.DecodeString(d.profile.APIKey)
+	decodedBytes, _ := base64.StdEncoding.DecodeString(currentProfile.APIKey)
 	apiKey := string(decodedBytes)
 	if strings.HasPrefix(apiKey, "gbox-rack_") {
 		req.Header.Set("x-rack-api-key", apiKey)
