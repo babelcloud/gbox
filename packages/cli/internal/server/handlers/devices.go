@@ -603,6 +603,49 @@ func (h *DeviceHandlers) HandleWebSocket(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+func (h *DeviceHandlers) HandleDeviceAdb(w http.ResponseWriter, req *http.Request) {
+	path := strings.TrimPrefix(req.URL.Path, "/api/devices/")
+	parts := strings.Split(path, "/")
+	deviceSerial := parts[0]
+
+	if strings.Contains(req.Header.Get("via"), "gbox-device-ap") {
+		deviceSerial = h.serverService.GetAdbSerialByGboxDeviceId(deviceSerial)
+	}
+
+	if deviceSerial == "" {
+		http.Error(w, "Device serial required", http.StatusBadRequest)
+		return
+	}
+
+	if !isValidDeviceSerial(deviceSerial) {
+		http.Error(w, "Invalid device serial", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("[HandleDeviceAdb] Processing adb request for device: %s", deviceSerial)
+
+	decoder := json.NewDecoder(req.Body)
+	var reqBody struct {
+		Command string `json:"command"`
+	}
+	if err := decoder.Decode(&reqBody); err != nil {
+		http.Error(w, errors.Wrap(err, "failed to parse request body").Error(), http.StatusBadRequest)
+		return
+	}
+
+	manager := device.NewManager()
+	result, err := manager.ExecAdbCommand(deviceSerial, reqBody.Command)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	RespondJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"data":    result,
+	})
+}
+
 // Private helper methods
 
 func (h *DeviceHandlers) handleDeviceConnect(w http.ResponseWriter, r *http.Request, deviceID string) {

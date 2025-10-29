@@ -1,6 +1,7 @@
 package device
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os/exec"
@@ -168,6 +169,37 @@ func (m *Manager) getDeviceSerialnoAndAndroidId(deviceID string) (serialno strin
 	androidID = strings.TrimSpace(string(output))
 
 	return
+}
+
+type AdbCommandResult struct {
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
+	ExitCode int    `json:"exitCode"`
+}
+
+func (m *Manager) ExecAdbCommand(deviceID, command string) (*AdbCommandResult, error) {
+	cmd := exec.Command("sh", "-c", strings.Join([]string{m.adbPath, "-s", deviceID, command}, " "))
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	if err := cmd.Run(); err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			return &AdbCommandResult{
+				Stdout:   stdoutBuf.String(),
+				Stderr:   stderrBuf.String(),
+				ExitCode: exitError.ExitCode(),
+			}, nil
+		}
+		return nil, errors.Wrapf(err, "failed to exec adb command on device %s", deviceID)
+	}
+
+	return &AdbCommandResult{
+		Stdout:   stdoutBuf.String(),
+		Stderr:   stderrBuf.String(),
+		ExitCode: 0,
+	}, nil
 }
 
 // GetDeviceSerialnoAndAndroidId is a standalone function for backward compatibility
