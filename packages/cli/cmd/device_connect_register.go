@@ -26,9 +26,15 @@ func NewDeviceConnectRegisterCommand() *cobra.Command {
 
   # Register specific device
   gbox device-connect register abc123xyz456-usb`,
-		Args: cobra.MaximumNArgs(1),
+		Args:          cobra.MaximumNArgs(1),
+		SilenceUsage:  true, // Don't show usage on errors
+		SilenceErrors: true, // Don't show errors twice (we handle them in RunE)
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ExecuteDeviceConnectRegister(cmd, opts, args)
+			err := ExecuteDeviceConnectRegister(cmd, opts, args)
+			if err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+			}
+			return nil // Return nil to prevent Cobra from printing again
 		},
 	}
 
@@ -54,7 +60,7 @@ func ExecuteDeviceConnectRegister(cmd *cobra.Command, opts *DeviceConnectRegiste
 	if deviceID == "" {
 		return runInteractiveDeviceRegistration()
 	}
-	
+
 	return registerDevice(deviceID)
 }
 
@@ -64,15 +70,15 @@ func runInteractiveDeviceRegistration() error {
 		Success bool                     `json:"success"`
 		Devices []map[string]interface{} `json:"devices"`
 	}
-	
+
 	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
 		return fmt.Errorf("failed to get available devices: %v", err)
 	}
-	
+
 	if !response.Success {
 		return fmt.Errorf("failed to get devices from server")
 	}
-	
+
 	devices := response.Devices
 	if len(devices) == 0 {
 		fmt.Println("No Android devices found.")
@@ -90,27 +96,27 @@ func runInteractiveDeviceRegistration() error {
 	for i, device := range devices {
 		status := "Not Registered"
 		statusColor := color.New(color.Faint)
-		
+
 		// Extract device info from map
 		serialNo := device["ro.serialno"].(string)
 		connectionType := device["connectionType"].(string)
 		isRegistered, _ := device["isRegistrable"].(bool)
-		
+
 		if isRegistered {
 			status = "Registered"
 			statusColor = color.New(color.FgGreen)
 		}
-		
+
 		model := "Unknown"
 		if m, ok := device["ro.product.model"].(string); ok {
 			model = m
 		}
-		
+
 		manufacturer := ""
 		if mfr, ok := device["ro.product.manufacturer"].(string); ok {
 			manufacturer = mfr
 		}
-		
+
 		fmt.Printf("%d. %s (%s, %s) - %s [%s]\n",
 			i+1,
 			color.New(color.FgCyan).Sprint(serialNo+"-"+connectionType),
@@ -136,18 +142,18 @@ func registerDevice(deviceID string) error {
 	// Register device via daemon API
 	req := map[string]string{"deviceId": deviceID}
 	var resp map[string]interface{}
-	
+
 	if err := daemon.DefaultManager.CallAPI("POST", "/api/devices/register", req, &resp); err != nil {
 		return fmt.Errorf("failed to register device: %v", err)
 	}
-	
+
 	if success, ok := resp["success"].(bool); !ok || !success {
 		return fmt.Errorf("failed to register device: %v", resp["error"])
 	}
-	
+
 	fmt.Printf("Establishing remote connection for device %s...\n", deviceID)
 	fmt.Printf("Connection established successfully!\n")
-	
+
 	// Display local Web UI URL
 	fmt.Printf("\n📱 View and control your device at: %s\n", color.CyanString("http://localhost:29888"))
 	fmt.Printf("   This is the local live-view interface for device control\n")
@@ -161,6 +167,6 @@ func registerDevice(deviceID string) error {
 	}
 
 	fmt.Printf("\n💡 Device registered successfully. Use 'gbox device-connect unregister %s' to disconnect when needed.\n", deviceID)
-	
+
 	return nil
 }

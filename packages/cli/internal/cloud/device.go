@@ -17,6 +17,7 @@ import (
 
 type Device struct {
 	Id        string `json:"id,omitempty"`
+	RegId     string `json:"regId,omitempty"`
 	Ownership string `json:"ownership,omitempty"`
 	OwnerId   string `json:"ownerId,omitempty"`
 	Metadata  struct {
@@ -56,11 +57,8 @@ func (d *DeviceAPI) getCurrentProfile() *profile.Profile {
 	return profile.Default.GetCurrent()
 }
 
-func (d *DeviceAPI) GetBySerialnoAndAndroidId(serialno string, androidId string) (*DeviceList, error) {
-	queries := url.Values{}
-	queries.Set("serialno", serialno)
-	queries.Set("androidId", androidId)
-
+// getDevices is a generic method to query devices with query parameters
+func (d *DeviceAPI) getDevices(queries url.Values) (*DeviceList, error) {
 	url, err := d.buildUrlFromEndpoint("/api/v1/devices")
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build url")
@@ -93,6 +91,19 @@ func (d *DeviceAPI) GetBySerialnoAndAndroidId(serialno string, androidId string)
 	}
 
 	return deviceList, nil
+}
+
+func (d *DeviceAPI) GetBySerialnoAndAndroidId(serialno string, androidId string) (*DeviceList, error) {
+	queries := url.Values{}
+	queries.Set("serialno", serialno)
+	queries.Set("androidId", androidId)
+	return d.getDevices(queries)
+}
+
+func (d *DeviceAPI) GetByRegId(regId string) (*DeviceList, error) {
+	queries := url.Values{}
+	queries.Set("regId", regId)
+	return d.getDevices(queries)
 }
 
 func (d *DeviceAPI) Create(device *Device) (*Device, error) {

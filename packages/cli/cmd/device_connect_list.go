@@ -84,7 +84,7 @@ func ExecuteDeviceConnectList(cmd *cobra.Command, opts *DeviceConnectListOptions
 func outputDevicesJSONFromAPI(devices []map[string]interface{}) error {
 	// Create a simplified JSON output for compatibility
 	type SimpleDeviceInfo struct {
-		GboxDeviceID     string `json:"gbox_device_id"`
+		RegId            string `json:"reg_id"`
 		DeviceID         string `json:"device_id"`
 		Name             string `json:"name"`
 		Type             string `json:"type"`
@@ -96,10 +96,11 @@ func outputDevicesJSONFromAPI(devices []map[string]interface{}) error {
 		deviceID, _ := device["id"].(string)
 		name, _ := device["model"].(string)
 		serialNo, _ := device["ro.serialno"].(string)
-		gboxDeviceID, _ := device["gbox.device_id"].(string)
+		regId, _ := device["gbox.reg_id"].(string)
+		isRegistered, _ := device["isRegistered"].(bool)
 
 		status := statusNotRegistered
-		if gboxDeviceID != "" {
+		if isRegistered {
 			status = statusRegistered
 		}
 
@@ -110,7 +111,7 @@ func outputDevicesJSONFromAPI(devices []map[string]interface{}) error {
 		}
 
 		simpleDevices = append(simpleDevices, SimpleDeviceInfo{
-			GboxDeviceID:     gboxDeviceID,
+			RegId:            regId,
 			DeviceID:         deviceID,
 			Name:             name,
 			Type:             deviceType,
@@ -138,14 +139,17 @@ func outputDevicesTextFromAPI(devices []map[string]interface{}) error {
 		deviceID, _ := device["id"].(string)
 		name, _ := device["model"].(string)
 		serialNo, _ := device["ro.serialno"].(string)
-		gboxDeviceID, _ := device["gbox.device_id"].(string)
+		regId, _ := device["gbox.reg_id"].(string)
+		isRegistered, _ := device["isRegistered"].(bool)
 
 		status := statusNotRegistered
-		if gboxDeviceID != "" {
+		if isRegistered {
 			status = statusRegistered
-		} else {
-			// Display "-" when GBOX Device ID is not assigned
-			gboxDeviceID = "-"
+		}
+
+		// Display "-" for empty reg_id (always show reg_id if exists, regardless of registration status)
+		if regId == "" {
+			regId = "-"
 		}
 
 		deviceType := deviceTypeDevice
@@ -160,17 +164,17 @@ func outputDevicesTextFromAPI(devices []map[string]interface{}) error {
 		}
 
 		tableData[i] = map[string]interface{}{
-			"gbox_device_id": gboxDeviceID,
-			"device_id":      deviceID,
-			"name":           name,
-			"type":           deviceType,
-			"status":         status,
+			"reg_id":    regId,
+			"device_id": deviceID,
+			"name":      name,
+			"type":      deviceType,
+			"status":    status,
 		}
 	}
 
 	// Define table columns
 	columns := []util.TableColumn{
-		{Header: "GLOBAL DEVICE ID", Key: "gbox_device_id"},
+		{Header: "REG ID", Key: "reg_id"},
 		{Header: "DEVICE/TRANSPORT ID", Key: "device_id"},
 		{Header: "MODEL", Key: "name"},
 		{Header: "TYPE", Key: "type"},
