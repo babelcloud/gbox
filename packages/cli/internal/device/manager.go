@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -323,4 +324,53 @@ func (m *Manager) ExecAdbCommand(deviceID, command string) (*AdbCommandResult, e
 		Stderr:   stderrBuf.String(),
 		ExitCode: 0,
 	}, nil
+}
+
+// GetDisplayResolution returns the device display resolution (width, height) in pixels.
+// It prefers the "Override size" reported by `wm size` when present; otherwise it
+// falls back to the "Physical size".
+func (m *Manager) GetDisplayResolution(deviceID string) (int, int, error) {
+	cmd := exec.Command(m.adbPath, "-s", deviceID, "shell", "wm", "size")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, 0, errors.Wrapf(err, "failed to run wm size for device %s", deviceID)
+	}
+
+	stdout := strings.TrimSpace(string(output))
+	var sizeLine string
+	lines := strings.Split(stdout, "\n")
+
+	// Prefer Override size; otherwise use Physical size
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Override size:") {
+			sizeLine = strings.TrimSpace(strings.TrimPrefix(trimmed, "Override size:"))
+			break
+		}
+		if strings.HasPrefix(trimmed, "Physical size:") {
+			if sizeLine == "" {
+				sizeLine = strings.TrimSpace(strings.TrimPrefix(trimmed, "Physical size:"))
+			}
+		}
+	}
+
+	if sizeLine == "" {
+		return 0, 0, fmt.Errorf("invalid screen size output: %s", stdout)
+	}
+
+	parts := strings.Split(sizeLine, "x")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid screen size output: %s", stdout)
+	}
+
+	width, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid screen size dimensions: %s", sizeLine)
+	}
+	height, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid screen size dimensions: %s", sizeLine)
+	}
+
+	return width, height, nil
 }
