@@ -5,6 +5,8 @@ import (
 	"os"
 	"runtime"
 	"time"
+
+	"github.com/babelcloud/gbox/packages/cli/internal/version"
 )
 
 // BuildInfo contains build-time information
@@ -14,9 +16,9 @@ var BuildInfo = struct {
 	GitCommit string
 	GoVersion string
 }{
-	Version:   "dev",
+	Version:   version.Version,
 	BuildTime: time.Now().Format(time.RFC3339),
-	GitCommit: "unknown",
+	GitCommit: version.CommitID,
 	GoVersion: runtime.Version(),
 }
 
