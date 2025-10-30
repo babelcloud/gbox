@@ -24,9 +24,15 @@ func NewDeviceConnectUnregisterCommand() *cobra.Command {
 
   # Unregister all active device connections:
   gbox device-connect unregister --all`,
-		Args: cobra.MaximumNArgs(1),
+		Args:          cobra.MaximumNArgs(1),
+		SilenceUsage:  true, // Don't show usage on errors (e.g., device not found)
+		SilenceErrors: true, // Don't show errors twice (we handle them in RunE)
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ExecuteDeviceConnectUnregister(cmd, opts, args)
+			err := ExecuteDeviceConnectUnregister(cmd, opts, args)
+			if err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+			}
+			return nil // Return nil to prevent Cobra from printing again
 		},
 	}
 
@@ -60,11 +66,11 @@ func unregisterAllDevices() error {
 		Success bool                     `json:"success"`
 		Devices []map[string]interface{} `json:"devices"`
 	}
-	
+
 	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
 		return fmt.Errorf("failed to get available devices: %v", err)
 	}
-	
+
 	if !response.Success {
 		return fmt.Errorf("failed to get devices from server")
 	}
@@ -75,7 +81,7 @@ func unregisterAllDevices() error {
 		name, _ := device["ro.product.model"].(string)
 		connectionType, _ := device["connectionType"].(string)
 		isRegistrable, _ := device["isRegistrable"].(bool)
-		
+
 		if isRegistrable {
 			fmt.Printf("Unregistering %s (%s, %s)...\n", deviceID, name, connectionType)
 
@@ -105,11 +111,11 @@ func unregisterDevice(deviceID string) error {
 		Success bool                     `json:"success"`
 		Devices []map[string]interface{} `json:"devices"`
 	}
-	
+
 	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
 		return fmt.Errorf("failed to get available devices: %v", err)
 	}
-	
+
 	if !response.Success {
 		return fmt.Errorf("failed to get devices from server")
 	}
@@ -122,7 +128,7 @@ func unregisterDevice(deviceID string) error {
 			break
 		}
 	}
-	
+
 	if targetDevice == nil {
 		return fmt.Errorf("device not found: %s", deviceID)
 	}
@@ -131,7 +137,7 @@ func unregisterDevice(deviceID string) error {
 	if m, ok := targetDevice["ro.product.model"].(string); ok {
 		model = m
 	}
-	
+
 	connectionType := "Unknown"
 	if ct, ok := targetDevice["connectionType"].(string); ok {
 		connectionType = ct
@@ -155,11 +161,11 @@ func runInteractiveUnregisterSelection() error {
 		Success bool                     `json:"success"`
 		Devices []map[string]interface{} `json:"devices"`
 	}
-	
+
 	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
 		return fmt.Errorf("failed to get available devices: %v", err)
 	}
-	
+
 	if !response.Success {
 		return fmt.Errorf("failed to get devices from server")
 	}
@@ -194,7 +200,7 @@ func runInteractiveUnregisterSelection() error {
 		if mfr, ok := device["ro.product.manufacturer"].(string); ok {
 			manufacturer = mfr
 		}
-		
+
 		fmt.Printf("%d. %s (%s, %s) - %s\n",
 			i+1,
 			deviceID,

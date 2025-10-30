@@ -95,6 +95,9 @@ func (h *DeviceHandlers) HandleDeviceList(w http.ResponseWriter, r *http.Request
 
 	deviceAPI := cloud.NewDeviceAPI()
 	for _, deviceMap := range devices {
+		// Initialize isRegistered to false by default
+		deviceMap["isRegistered"] = false
+
 		serialno, ok := deviceMap["ro.serialno"].(string)
 		if !ok || serialno == "" {
 			continue
@@ -106,10 +109,20 @@ func (h *DeviceHandlers) HandleDeviceList(w http.ResponseWriter, r *http.Request
 		deviceList, err := deviceAPI.GetBySerialnoAndAndroidId(serialno, androindId)
 		if err != nil {
 			log.Print(errors.Wrapf(err, "fail to get device with serialno %s and androidId %s", serialno, androindId))
+			deviceMap["isRegistered"] = false
 			continue
 		}
 		if len(deviceList.Data) > 0 {
-			deviceMap["gbox.device_id"] = deviceList.Data[0].Id
+			// Device is registered in cloud
+			deviceMap["isRegistered"] = true
+			// Only set reg_id from cloud if device local reg_id is empty
+			// Device local reg_id takes priority as it's the source of truth
+			if localRegId, ok := deviceMap["gbox.reg_id"].(string); !ok || localRegId == "" {
+				deviceMap["gbox.reg_id"] = deviceList.Data[0].Id
+			}
+		} else {
+			// Device not found in cloud, not registered
+			deviceMap["isRegistered"] = false
 		}
 	}
 
@@ -158,25 +171,37 @@ func (h *DeviceHandlers) HandleDeviceRegister(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	serialno, androidId, err := device.GetDeviceSerialnoAndAndroidId(reqBody.DeviceId)
+	devMgr := device.NewManager()
+	ids, err := devMgr.GetIdentifiers(reqBody.DeviceId)
 	if err != nil {
 		http.Error(w, errors.Wrap(err, "failed to resolve device serialno or android_id").Error(), http.StatusInternalServerError)
 		return
 	}
 
 	deviceAPI := cloud.NewDeviceAPI()
-	device, err := deviceAPI.Create(&cloud.Device{
+	newDevice := &cloud.Device{
 		Metadata: struct {
 			Serialno  string `json:"serialno,omitempty"`
 			AndroidId string `json:"androidId,omitempty"`
 		}{
-			Serialno:  serialno,
-			AndroidId: androidId,
+			Serialno:  ids.SerialNo,
+			AndroidId: ids.AndroidID,
 		},
-	})
+		RegId: ids.RegId,
+	}
+
+	createdDevice, err := deviceAPI.Create(newDevice)
 	if err != nil {
 		http.Error(w, errors.Wrap(err, "failed to register device").Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Persist the created device ID back to the physical device as RegId
+	if createdDevice != nil && createdDevice.RegId != "" {
+		if err := devMgr.SetRegId(reqBody.DeviceId, createdDevice.RegId); err != nil {
+			// Log the error but don't fail the registration
+			log.Printf("Warning: failed to persist RegId to device %s: %v", reqBody.DeviceId, err)
+		}
 	}
 
 	go func() {
@@ -187,7 +212,7 @@ func (h *DeviceHandlers) HandleDeviceRegister(w http.ResponseWriter, r *http.Req
 
 	RespondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
-		"data":    device,
+		"data":    createdDevice,
 	})
 }
 
@@ -202,7 +227,11 @@ func (h *DeviceHandlers) HandleDeviceUnregister(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	serialno, androidId, err := device.GetDeviceSerialnoAndAndroidId(reqBody.DeviceId)
+	devMgr2 := device.NewManager()
+	ids2, err := devMgr2.GetIdentifiers(reqBody.DeviceId)
+	serialno := ids2.SerialNo
+	androidId := ids2.AndroidID
+	regId := ids2.RegId
 	if err != nil {
 		http.Error(w, errors.Wrap(err, "failed to resolve device serialno or android_id").Error(), http.StatusInternalServerError)
 		return
@@ -210,6 +239,29 @@ func (h *DeviceHandlers) HandleDeviceUnregister(w http.ResponseWriter, r *http.R
 
 	deviceAPI := cloud.NewDeviceAPI()
 
+	// If regId is available, use it to find and delete the device (most accurate)
+	if regId != "" {
+		deviceList, err := deviceAPI.GetByRegId(regId)
+		if err != nil {
+			// If lookup by regId fails, fallback to serialno/androidId lookup
+			log.Printf("Warning: failed to get devices by regId %s: %v, falling back to serialno/androidId lookup", regId, err)
+		} else if len(deviceList.Data) > 0 {
+			// Found device(s) by regId, delete them
+			for _, device := range deviceList.Data {
+				if err := deviceAPI.Delete(device.Id); err != nil {
+					http.Error(w, errors.Wrapf(err, "failed to delete device %s", device.Id).Error(), http.StatusInternalServerError)
+					return
+				}
+			}
+			// Successfully deleted by regId, return early
+			RespondJSON(w, http.StatusOK, map[string]interface{}{
+				"success": true,
+			})
+			return
+		}
+	}
+
+	// Fallback: use serialno and androidId to find and delete devices
 	deviceList, err := deviceAPI.GetBySerialnoAndAndroidId(serialno, androidId)
 	if err != nil {
 		http.Error(w, errors.Wrap(err, "failed to get devices").Error(), http.StatusInternalServerError)
@@ -222,6 +274,12 @@ func (h *DeviceHandlers) HandleDeviceUnregister(w http.ResponseWriter, r *http.R
 				http.Error(w, errors.Wrapf(err, "failed to delete device %s", device.Id).Error(), http.StatusInternalServerError)
 				return
 			}
+		}
+	} else {
+		// No devices found by serialno/androidId either
+		if regId != "" {
+			http.Error(w, fmt.Errorf("device not found by regId %s or serialno/androidId", regId).Error(), http.StatusNotFound)
+			return
 		}
 	}
 

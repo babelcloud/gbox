@@ -124,7 +124,10 @@ func (dm *DeviceKeeper) connectAP(serial string) error {
 	dm.deviceLock.LockKey(serial)
 	defer dm.deviceLock.UnlockKey(serial)
 
-	serialno, androidId, err := device.GetDeviceSerialnoAndAndroidId(serial)
+	devMgr := device.NewManager()
+	ids, err := devMgr.GetIdentifiers(serial)
+	serialno := ids.SerialNo
+	androidId := ids.AndroidID
 	if err != nil {
 		return errors.Wrapf(err, "failed to get device %s serialno and android_id", serial)
 	}

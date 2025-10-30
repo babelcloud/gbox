@@ -47,13 +47,26 @@ func (w *FMP4Muxer) Initialize(width, height int, params *CodecParams) error {
 	w.videoTrack.clockRate = 90000
 	w.audioTrack.clockRate = 48000
 
+	// 如果缺少音频配置，使用合理的默认值（AAC LC, 48kHz, 2ch）
+	var audioCfg mpeg4audio.AudioSpecificConfig
+	var hasAudioCfg bool
+	if params != nil && params.AudioConfig != nil {
+		if ac, ok := params.AudioConfig.(mpeg4audio.AudioSpecificConfig); ok {
+			audioCfg = ac
+			hasAudioCfg = true
+		}
+	}
+	if !hasAudioCfg {
+		audioCfg = mpeg4audio.AudioSpecificConfig{Type: 2, SampleRate: 48000, ChannelCount: 2}
+		hasAudioCfg = true
+	}
+
 	// 如果已经有 SPS/PPS，直接初始化
-	if params != nil && params.VideoSPS != nil && params.VideoPPS != nil && params.AudioConfig != nil {
-		if audioConfig, ok := params.AudioConfig.(mpeg4audio.AudioSpecificConfig); ok {
-			err := w.WriteInitSegment(params.VideoSPS, params.VideoPPS, audioConfig)
-			if err == nil {
-				w.initialized = true
-			}
+	if params != nil && params.VideoSPS != nil && params.VideoPPS != nil && hasAudioCfg {
+		if err := w.WriteInitSegment(params.VideoSPS, params.VideoPPS, audioCfg); err == nil {
+			w.initialized = true
+			return nil
+		} else {
 			return err
 		}
 	}
@@ -148,17 +161,27 @@ func (w *FMP4Muxer) Stream(videoCh <-chan VideoSample, audioCh <-chan AudioSampl
 // initializeFromVideoFrame tries to extract SPS/PPS from video frame and initialize the writer
 func (w *FMP4Muxer) initializeFromVideoFrame(data []byte) error {
 	if w.codecParams == nil {
-		return fmt.Errorf("no codec params available")
+		w.codecParams = &CodecParams{}
+	}
+
+	// 音频配置缺失时，使用默认的 AAC LC 配置
+	var audioCfg mpeg4audio.AudioSpecificConfig
+	if w.codecParams.AudioConfig != nil {
+		if ac, ok := w.codecParams.AudioConfig.(mpeg4audio.AudioSpecificConfig); ok {
+			audioCfg = ac
+		} else {
+			audioCfg = mpeg4audio.AudioSpecificConfig{Type: 2, SampleRate: 48000, ChannelCount: 2}
+		}
+	} else {
+		audioCfg = mpeg4audio.AudioSpecificConfig{Type: 2, SampleRate: 48000, ChannelCount: 2}
 	}
 
 	// Try to extract SPS/PPS from the video frame
 	sps, pps := w.extractSpsPpsFromFrame(data)
 
 	// If we have both SPS and PPS, initialize the writer
-	if len(sps) > 0 && len(pps) > 0 && w.codecParams.AudioConfig != nil {
-		if audioConfig, ok := w.codecParams.AudioConfig.(mpeg4audio.AudioSpecificConfig); ok {
-			return w.WriteInitSegment(sps, pps, audioConfig)
-		}
+	if len(sps) > 0 && len(pps) > 0 {
+		return w.WriteInitSegment(sps, pps, audioCfg)
 	}
 
 	return fmt.Errorf("could not extract SPS/PPS from video frame")
