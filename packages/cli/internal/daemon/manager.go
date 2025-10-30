@@ -13,11 +13,18 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/babelcloud/gbox/packages/cli/internal/server"
+	"github.com/babelcloud/gbox/packages/cli/internal/version"
 )
 
 const (
 	DefaultPort = 29888 // New port for unified gbox server
 	ServerURL   = "http://localhost:29888"
+
+	// Version headers returned by server
+	serverHeaderVersion = "X-GBOX-Version"
+	serverHeaderBuildID = "X-GBOX-Build-ID"
 )
 
 // Manager handles the gbox server daemon lifecycle
@@ -72,13 +79,25 @@ func (m *Manager) IsServerRunning() bool {
 
 // checkHTTPHealth checks if server is responding to HTTP requests
 func (m *Manager) checkHTTPHealth() bool {
-	client := &http.Client{Timeout: 500 * time.Millisecond}
+	client := &http.Client{Timeout: 150 * time.Millisecond}
 	resp, err := client.Get(fmt.Sprintf("%s/api/server/info", m.url))
 	if err != nil {
 		return false
 	}
 	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
+
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	serverVersion := resp.Header.Get(serverHeaderVersion)
+	serverBuildID := resp.Header.Get(serverHeaderBuildID)
+	clientVersion := version.Version
+	clientBuildID := server.GetBuildID()
+	if (serverVersion != "" && clientVersion != "" && serverVersion != clientVersion) ||
+		(serverBuildID != "" && clientBuildID != "" && serverBuildID != clientBuildID) {
+		return false
+	}
+	return true
 }
 
 // StartServer starts the gbox server daemon
@@ -228,11 +247,57 @@ func (m *Manager) CallAPI(method, endpoint string, body interface{}, result inte
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+
+	// perform is a small helper to execute the request
+	perform := func() (*http.Response, error) {
+		return client.Do(req)
+	}
+
+	resp, err := perform()
 	if err != nil {
 		return fmt.Errorf("API call failed: %v", err)
 	}
 	defer resp.Body.Close()
+
+	// Version/build-id check: compare headers with client values.
+	serverVersion := resp.Header.Get(serverHeaderVersion)
+	serverBuildID := resp.Header.Get(serverHeaderBuildID)
+	clientVersion := version.Version
+	clientBuildID := server.GetBuildID()
+
+	mismatch := false
+	if serverVersion != "" && clientVersion != "" && serverVersion != clientVersion {
+		mismatch = true
+	}
+	if serverBuildID != "" && clientBuildID != "" && serverBuildID != clientBuildID {
+		mismatch = true
+	}
+
+	if mismatch {
+		_ = m.StopServer()
+		if err := m.StartServer(); err != nil {
+			return fmt.Errorf("server mismatch (ver:%s!=%s or build:%s!=%s) and restart failed: %v", serverVersion, clientVersion, serverBuildID, clientBuildID, err)
+		}
+		// Retry once with a fresh request object (req body may have been consumed)
+		if body != nil {
+			jsonData, _ := json.Marshal(body)
+			req, err = http.NewRequest(method, url, bytes.NewReader(jsonData))
+			if err != nil {
+				return fmt.Errorf("failed to create retry request: %v", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+		} else {
+			req, err = http.NewRequest(method, url, nil)
+			if err != nil {
+				return fmt.Errorf("failed to create retry request: %v", err)
+			}
+		}
+		resp, err = perform()
+		if err != nil {
+			return fmt.Errorf("API call after restart failed: %v", err)
+		}
+		defer resp.Body.Close()
+	}
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
