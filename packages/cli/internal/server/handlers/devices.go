@@ -1,13 +1,18 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/exec"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/babelcloud/gbox/packages/cli/internal/cloud"
 	"github.com/babelcloud/gbox/packages/cli/internal/device"
@@ -15,6 +20,7 @@ import (
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/audio"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/h264"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/stream"
+	serverScripts "github.com/babelcloud/gbox/packages/cli/internal/server/scripts"
 	"github.com/babelcloud/gbox/packages/cli/internal/util"
 	"github.com/gorilla/websocket"
 	"github.com/pkg/errors"
@@ -186,66 +192,100 @@ func (h *DeviceHandlers) HandleDeviceRegister(w http.ResponseWriter, r *http.Req
 	decoder := json.NewDecoder(r.Body)
 	var reqBody struct {
 		DeviceId string `json:"deviceId"`
+		Type     string `json:"type"`
 	}
 	if err := decoder.Decode(&reqBody); err != nil {
 		http.Error(w, errors.Wrap(err, "failed to parse request body").Error(), http.StatusBadRequest)
 		return
 	}
 
-	devMgr := device.NewManager()
-	ids, err := devMgr.GetIdentifiers(reqBody.DeviceId)
-	if err != nil {
-		http.Error(w, errors.Wrap(err, "failed to resolve device serialno or android_id").Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Get Resolution (WxH) for Metadata
-	width, height, resErr := devMgr.GetDisplayResolution(reqBody.DeviceId)
-	var resolution string
-	if resErr == nil {
-		resolution = fmt.Sprintf("%dx%d", width, height)
-	} else {
-		resolution = ""
-		log.Printf("failed to get resolution for device %s: %v", reqBody.DeviceId, resErr)
-	}
-
 	deviceAPI := cloud.NewDeviceAPI()
-	newDevice := &cloud.Device{
-		Metadata: struct {
-			Serialno   string `json:"serialno,omitempty"`
-			AndroidId  string `json:"androidId,omitempty"`
-			Resolution string `json:"resolution,omitempty"`
-		}{
-			Serialno:   ids.SerialNo,
-			AndroidId:  ids.AndroidID,
-			Resolution: resolution,
-		},
-		RegId: ids.RegId,
-	}
+	var created *cloud.Device
+	var err error
 
-	createdDevice, err := deviceAPI.Create(newDevice)
-	if err != nil {
-		http.Error(w, errors.Wrap(err, "failed to register device").Error(), http.StatusInternalServerError)
-		return
-	}
+	if strings.ToLower(reqBody.Type) == "linux" {
+		// Best-effort: initialize xdotool and noVNC environments on Linux hosts
+		if err := runLinuxInitXdotoolScript(); err != nil {
+			log.Printf("Warning: init-linux-xdotool script failed: %v", err)
+		}
+		if err := runLinuxInitNoVncScript(); err != nil {
+			log.Printf("Warning: init-linux-novnc script failed: %v", err)
+		}
+		created, err = deviceAPI.Create(&cloud.Device{
+			Metadata: struct {
+				Serialno   string `json:"serialno,omitempty"`
+				AndroidId  string `json:"androidId,omitempty"`
+				Type       string `json:"type,omitempty"`
+				Resolution string `json:"resolution,omitempty"`
+			}{
+				Type: "linux",
+			},
+		})
+		if err != nil {
+			http.Error(w, errors.Wrap(err, "failed to register linux device").Error(), http.StatusInternalServerError)
+			return
+		}
+	} else {
+		// For Android devices, use the detailed registration logic
+		devMgr := device.NewManager()
+		ids, err := devMgr.GetIdentifiers(reqBody.DeviceId)
+		if err != nil {
+			http.Error(w, errors.Wrap(err, "failed to resolve device serialno or android_id").Error(), http.StatusInternalServerError)
+			return
+		}
 
-	// Persist the created device ID back to the physical device as RegId
-	if createdDevice != nil && createdDevice.RegId != "" {
-		if err := devMgr.SetRegId(reqBody.DeviceId, createdDevice.RegId); err != nil {
-			// Log the error but don't fail the registration
-			log.Printf("Warning: failed to persist RegId to device %s: %v", reqBody.DeviceId, err)
+		// Get Resolution (WxH) for Metadata
+		width, height, resErr := devMgr.GetDisplayResolution(reqBody.DeviceId)
+		var resolution string
+		if resErr == nil {
+			resolution = fmt.Sprintf("%dx%d", width, height)
+		} else {
+			resolution = ""
+			log.Printf("failed to get resolution for device %s: %v", reqBody.DeviceId, resErr)
+		}
+
+		newDevice := &cloud.Device{
+			Metadata: struct {
+				Serialno   string `json:"serialno,omitempty"`
+				AndroidId  string `json:"androidId,omitempty"`
+				Type       string `json:"type,omitempty"`
+				Resolution string `json:"resolution,omitempty"`
+			}{
+				Serialno:   ids.SerialNo,
+				AndroidId:  ids.AndroidID,
+				Type:       "android",
+				Resolution: resolution,
+			},
+			RegId: ids.RegId,
+		}
+
+		created, err = deviceAPI.Create(newDevice)
+		if err != nil {
+			http.Error(w, errors.Wrap(err, "failed to register device").Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Persist the created device ID back to the physical device as RegId
+		if created != nil && created.RegId != "" {
+			if err := devMgr.SetRegId(reqBody.DeviceId, created.RegId); err != nil {
+				// Log the error but don't fail the registration
+				log.Printf("Warning: failed to persist RegId to device %s: %v", reqBody.DeviceId, err)
+			}
 		}
 	}
 
-	go func() {
-		if err := h.serverService.ConnectAP(reqBody.DeviceId); err != nil {
-			log.Print(errors.Wrapf(err, "fail to connect device %s to access point", reqBody.DeviceId))
-		}
-	}()
+	// Establish connection to Access Point for Android only (Linux requires manual connect)
+	if strings.ToLower(reqBody.Type) != "linux" {
+		go func() {
+			if err := h.serverService.ConnectAP(reqBody.DeviceId); err != nil {
+				log.Print(errors.Wrapf(err, "fail to connect device %s to access point", reqBody.DeviceId))
+			}
+		}()
+	}
 
 	RespondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
-		"data":    createdDevice,
+		"data":    created,
 	})
 }
 
@@ -324,6 +364,74 @@ func (h *DeviceHandlers) HandleDeviceUnregister(w http.ResponseWriter, r *http.R
 
 	RespondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
+	})
+}
+
+// HandleLinuxAPConnect manually connects a linux device to access point
+func (h *DeviceHandlers) HandleLinuxAPConnect(w http.ResponseWriter, r *http.Request) {
+	var reqBody struct {
+		DeviceId string `json:"deviceId"`
+		RegId    string `json:"regId"`
+	}
+	if r.Method == http.MethodPost {
+		decoder := json.NewDecoder(r.Body)
+		_ = decoder.Decode(&reqBody)
+	}
+
+	deviceAPI := cloud.NewDeviceAPI()
+	deviceId := strings.TrimSpace(reqBody.DeviceId)
+	regId := strings.TrimSpace(reqBody.RegId)
+	if deviceId == "" {
+		// Try to reuse existing device by regId if provided
+		if regId != "" {
+			if list, err := deviceAPI.GetByRegId(regId); err == nil && len(list.Data) > 0 {
+				deviceId = list.Data[0].Id
+			}
+		}
+		// If still empty, create a linux device on cloud then connect it
+		if deviceId == "" {
+			dev, err := deviceAPI.Create(&cloud.Device{
+				Metadata: struct {
+					Serialno   string `json:"serialno,omitempty"`
+					AndroidId  string `json:"androidId,omitempty"`
+					Type       string `json:"type,omitempty"`
+					Resolution string `json:"resolution,omitempty"`
+				}{
+					Type: "linux",
+				},
+			})
+			if err != nil {
+				http.Error(w, errors.Wrap(err, "failed to register linux device").Error(), http.StatusInternalServerError)
+				return
+			}
+			deviceId = dev.Id
+			// Best-effort to surface regId for client persistence
+			if dev.RegId != "" {
+				regId = dev.RegId
+			} else {
+				regId = dev.Id
+			}
+		}
+	}
+
+	// Best-effort: initialize xdotool and noVNC environments on Linux hosts before connecting
+	if err := runLinuxInitXdotoolScript(); err != nil {
+		log.Printf("Warning: init-linux-xdotool script failed: %v", err)
+	}
+	if err := runLinuxInitNoVncScript(); err != nil {
+		log.Printf("Warning: init-linux-novnc script failed: %v", err)
+	}
+
+	if err := h.serverService.ConnectAPLinux(deviceId); err != nil {
+		http.Error(w, errors.Wrapf(err, "failed to connect linux device %s to access point", deviceId).Error(), http.StatusInternalServerError)
+		return
+	}
+
+	RespondJSON(w, http.StatusOK, map[string]interface{}{
+		"success":  true,
+		"deviceId": deviceId,
+		"regId":    regId,
+		"status":   "connected",
 	})
 }
 
@@ -628,6 +736,84 @@ func (h *DeviceHandlers) HandleDeviceControl(w http.ResponseWriter, req *http.Re
 	}
 }
 
+// HandleDeviceExec executes a shell command on the server, scoped under a device path
+// Path: /api/devices/{serial}/exec
+// Method: POST
+// Body JSON: { "cmd": "echo hello", "timeout_sec": 60 }
+// Response JSON: { stdout, stderr, exit_code, duration_ms }
+func (h *DeviceHandlers) HandleDeviceExec(w http.ResponseWriter, req *http.Request) {
+	// Extract device serial from path
+	path := strings.TrimPrefix(req.URL.Path, "/api/devices/")
+	parts := strings.Split(path, "/")
+	deviceSerial := parts[0]
+
+	if strings.Contains(req.Header.Get("via"), "gbox-device-ap") {
+		deviceSerial = h.serverService.GetAdbSerialByGboxDeviceId(deviceSerial)
+	}
+
+	if deviceSerial == "" {
+		http.Error(w, "Device serial required", http.StatusBadRequest)
+		return
+	}
+
+	if req.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var payload struct {
+		Cmd        string `json:"cmd"`
+		TimeoutSec int    `json:"timeout_sec"`
+	}
+	decoder := json.NewDecoder(req.Body)
+	if err := decoder.Decode(&payload); err != nil {
+		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if payload.Cmd == "" {
+		http.Error(w, "Field 'cmd' is required", http.StatusBadRequest)
+		return
+	}
+	if payload.TimeoutSec <= 0 {
+		payload.TimeoutSec = 60
+	}
+
+	ctx, cancel := context.WithTimeout(req.Context(), time.Duration(payload.TimeoutSec)*time.Second)
+	defer cancel()
+
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.CommandContext(ctx, "cmd", "/C", payload.Cmd)
+	} else {
+		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", payload.Cmd)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	start := time.Now()
+	runErr := cmd.Run()
+	duration := time.Since(start)
+
+	exitCode := 0
+	if runErr != nil {
+		if exitErr, ok := runErr.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = -1
+		}
+	}
+
+	RespondJSON(w, http.StatusOK, map[string]interface{}{
+		"device":      deviceSerial,
+		"stdout":      stdoutBuf.String(),
+		"stderr":      stderrBuf.String(),
+		"exit_code":   exitCode,
+		"duration_ms": duration.Milliseconds(),
+	})
+}
+
 // handleWebRTCMessage handles WebRTC signaling messages
 func (h *DeviceHandlers) handleWebRTCMessage(conn *websocket.Conn, msg map[string]interface{}, msgType, deviceSerial string) {
 	if h.webrtcHandlers == nil {
@@ -804,6 +990,71 @@ func (h *DeviceHandlers) handleWebSocketICECandidate(conn *websocket.Conn, msg m
 func (h *DeviceHandlers) handleWebSocketDisconnect(conn *websocket.Conn, msg map[string]interface{}) {
 	// TODO: Implement WebSocket disconnect handling
 	log.Printf("WebSocket disconnect: %v", msg)
+}
+
+// runLinuxInitNoVncScript initializes local noVNC environment on Linux hosts.
+// Best-effort: returns error but callers may choose to continue.
+func runLinuxInitNoVncScript() error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	if len(serverScripts.InitLinuxNoVncScript) == 0 {
+		return fmt.Errorf("init-linux-novnc script not embedded")
+	}
+	tmpFile, err := os.CreateTemp("", "gbox-init-novnc-*.sh")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmpFile.Name()
+	if _, err := tmpFile.Write(serverScripts.InitLinuxNoVncScript); err != nil {
+		tmpFile.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	_ = os.Chmod(tmpPath, 0700)
+
+	cmd := exec.Command("bash", tmpPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	runErr := cmd.Run()
+	_ = os.Remove(tmpPath)
+	return runErr
+}
+
+// runLinuxInitXdotoolScript installs and sets up xdotool environment (best-effort)
+func runLinuxInitXdotoolScript() error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	if len(serverScripts.InitLinuxXdotoolScript) == 0 {
+		return fmt.Errorf("init-linux-xdotool script not embedded")
+	}
+	tmpFile, err := os.CreateTemp("", "gbox-init-xdotool-*.sh")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmpFile.Name()
+	if _, err := tmpFile.Write(serverScripts.InitLinuxXdotoolScript); err != nil {
+		tmpFile.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	_ = os.Chmod(tmpPath, 0700)
+
+	cmd := exec.Command("bash", tmpPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	runErr := cmd.Run()
+	_ = os.Remove(tmpPath)
+	return runErr
 }
 
 // HandleWebMStream handles WebM streaming
