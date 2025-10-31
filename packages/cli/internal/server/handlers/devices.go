@@ -20,6 +20,19 @@ import (
 	"github.com/pkg/errors"
 )
 
+// DeviceDTO is a strong-typed representation of a device for API responses
+type DeviceDTO struct {
+	ID             string `json:"id"`
+	TransportID    string `json:"transportId"`
+	Serialno       string `json:"serialno"`
+	AndroidID      string `json:"androidId"`
+	Model          string `json:"model"`
+	Manufacturer   string `json:"manufacturer"`
+	ConnectionType string `json:"connectionType"`
+	IsRegistered   bool   `json:"isRegistered"`
+	RegId          string `json:"regId"`
+}
+
 // setWebMStreamingHeaders sets HTTP headers for WebM audio streaming
 func setWebMStreamingHeaders(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "audio/webm; codecs=opus")
@@ -58,6 +71,7 @@ type DeviceHandlers struct {
 	serverService  ServerService
 	upgrader       websocket.Upgrader
 	webrtcHandlers *WebRTCHandlers
+	deviceManager  *device.Manager
 }
 
 // NewDeviceHandlers creates a new device handlers instance
@@ -70,6 +84,7 @@ func NewDeviceHandlers(serverSvc ServerService) *DeviceHandlers {
 			},
 		},
 		webrtcHandlers: NewWebRTCHandlers(serverSvc),
+		deviceManager:  device.NewManager(),
 	}
 }
 
@@ -80,9 +95,8 @@ func (h *DeviceHandlers) HandleDeviceList(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Use unified device manager
-	deviceManager := device.NewManager()
-	devices, err := deviceManager.GetDevicesAsMap()
+	// Use unified device manager (reused)
+	devs, err := h.deviceManager.GetDevices()
 	if err != nil {
 		log.Printf("Failed to get devices: %v", err)
 		RespondJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -92,43 +106,50 @@ func (h *DeviceHandlers) HandleDeviceList(w http.ResponseWriter, r *http.Request
 		})
 		return
 	}
-
 	deviceAPI := cloud.NewDeviceAPI()
-	for _, deviceMap := range devices {
-		// Initialize isRegistered to false by default
-		deviceMap["isRegistered"] = false
 
-		serialno, ok := deviceMap["ro.serialno"].(string)
-		if !ok || serialno == "" {
-			continue
-		}
-		androindId, ok := deviceMap["android_id"].(string)
-		if !ok || androindId == "" {
-			continue
-		}
-		deviceList, err := deviceAPI.GetBySerialnoAndAndroidId(serialno, androindId)
-		if err != nil {
-			log.Print(errors.Wrapf(err, "fail to get device with serialno %s and androidId %s", serialno, androindId))
-			deviceMap["isRegistered"] = false
-			continue
-		}
-		if len(deviceList.Data) > 0 {
-			// Device is registered in cloud
-			deviceMap["isRegistered"] = true
-			// Only set reg_id from cloud if device local reg_id is empty
-			// Device local reg_id takes priority as it's the source of truth
-			if localRegId, ok := deviceMap["gbox.reg_id"].(string); !ok || localRegId == "" {
-				deviceMap["gbox.reg_id"] = deviceList.Data[0].Id
+	// Get all registered devices from cloud in one call
+	registeredDevicesMap := make(map[string]*cloud.Device)
+	allCloudDevices, err := deviceAPI.GetAll()
+	if err != nil {
+		log.Printf("Failed to get all devices from cloud: %v", err)
+	} else {
+		// Build a map of regId -> Device for quick lookup
+		for _, cloudDevice := range allCloudDevices.Data {
+			if cloudDevice.RegId != "" {
+				registeredDevicesMap[cloudDevice.RegId] = cloudDevice
 			}
-		} else {
-			// Device not found in cloud, not registered
-			deviceMap["isRegistered"] = false
 		}
+	}
+
+	dtos := make([]DeviceDTO, 0, len(devs))
+	for _, d := range devs {
+		dto := DeviceDTO{
+			ID:             "",
+			TransportID:    d.ID,
+			Serialno:       d.SerialNo,
+			AndroidID:      d.AndroidID,
+			Model:          d.Model,
+			Manufacturer:   d.Manufacturer,
+			ConnectionType: d.ConnectionType,
+			IsRegistered:   false,
+			RegId:          d.RegId,
+		}
+
+		// Check if device is registered by looking up in the map
+		if strings.TrimSpace(d.RegId) != "" {
+			if cloudDevice, found := registeredDevicesMap[d.RegId]; found {
+				dto.IsRegistered = true
+				dto.ID = cloudDevice.Id
+			}
+		}
+
+		dtos = append(dtos, dto)
 	}
 
 	RespondJSON(w, http.StatusOK, map[string]interface{}{
 		"success":         true,
-		"devices":         devices,
+		"devices":         dtos,
 		"onDemandEnabled": true,
 	})
 }

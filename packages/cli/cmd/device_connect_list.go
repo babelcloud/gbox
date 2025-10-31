@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/babelcloud/gbox/packages/cli/internal/daemon"
@@ -19,6 +20,19 @@ const (
 
 type DeviceConnectListOptions struct {
 	OutputFormat string
+}
+
+// DeviceDTO is the API response structure for devices
+type DeviceDTO struct {
+	ID             string `json:"id"`
+	TransportID    string `json:"transportId"`
+	Serialno       string `json:"serialno"`
+	AndroidID      string `json:"androidId"`
+	Model          string `json:"model"`
+	Manufacturer   string `json:"manufacturer"`
+	ConnectionType string `json:"connectionType"`
+	IsRegistered   bool   `json:"isRegistered"`
+	RegId          string `json:"regId"`
 }
 
 func NewDeviceConnectListCommand() *cobra.Command {
@@ -62,8 +76,8 @@ func ExecuteDeviceConnectList(cmd *cobra.Command, opts *DeviceConnectListOptions
 
 	// Use daemon manager to call unified server API
 	var response struct {
-		Success bool                     `json:"success"`
-		Devices []map[string]interface{} `json:"devices"`
+		Success bool        `json:"success"`
+		Devices []DeviceDTO `json:"devices"`
 	}
 
 	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
@@ -81,7 +95,7 @@ func ExecuteDeviceConnectList(cmd *cobra.Command, opts *DeviceConnectListOptions
 	return outputDevicesTextFromAPI(response.Devices)
 }
 
-func outputDevicesJSONFromAPI(devices []map[string]interface{}) error {
+func outputDevicesJSONFromAPI(devices []DeviceDTO) error {
 	// Create a simplified JSON output for compatibility
 	type SimpleDeviceInfo struct {
 		RegId            string `json:"reg_id"`
@@ -93,15 +107,16 @@ func outputDevicesJSONFromAPI(devices []map[string]interface{}) error {
 
 	var simpleDevices []SimpleDeviceInfo
 	for _, device := range devices {
-		deviceID, _ := device["id"].(string)
-		name, _ := device["model"].(string)
-		serialNo, _ := device["ro.serialno"].(string)
-		regId, _ := device["gbox.reg_id"].(string)
-		isRegistered, _ := device["isRegistered"].(bool)
+		deviceID := device.ID
+		name := device.Model
+		serialNo := device.Serialno
+		regId := device.RegId
+		isRegistered := device.IsRegistered
 
 		status := statusNotRegistered
 		if isRegistered {
-			status = statusRegistered
+			// Color "Registered" in green for better visibility
+			status = "\u001b[32m" + statusRegistered + "\u001b[0m"
 		}
 
 		deviceType := deviceTypeDevice
@@ -127,29 +142,33 @@ func outputDevicesJSONFromAPI(devices []map[string]interface{}) error {
 	return nil
 }
 
-func outputDevicesTextFromAPI(devices []map[string]interface{}) error {
+func outputDevicesTextFromAPI(devices []DeviceDTO) error {
 	if len(devices) == 0 {
 		fmt.Println("No Android devices found.")
 		return nil
 	}
 
-	// Prepare data for RenderTable
-	tableData := make([]map[string]interface{}, len(devices))
-	for i, device := range devices {
-		deviceID, _ := device["id"].(string)
-		name, _ := device["model"].(string)
-		serialNo, _ := device["ro.serialno"].(string)
-		regId, _ := device["gbox.reg_id"].(string)
-		isRegistered, _ := device["isRegistered"].(bool)
+	// Build rows for sorting
+	type row struct {
+		serial            string
+		deviceID          string
+		serialOrTransport string
+		name              string
+		deviceType        string
+		status            string
+	}
+	rows := make([]row, 0, len(devices))
+	for _, device := range devices {
+		deviceID := device.ID
+		name := device.Model
+		serialNo := device.Serialno
+		transportID := device.TransportID
+		isRegistered := device.IsRegistered
 
 		status := statusNotRegistered
 		if isRegistered {
-			status = statusRegistered
-		}
-
-		// Display "-" for empty reg_id (always show reg_id if exists, regardless of registration status)
-		if regId == "" {
-			regId = "-"
+			// Green for Registered
+			status = "\x1b[32m" + statusRegistered + "\x1b[0m"
 		}
 
 		deviceType := deviceTypeDevice
@@ -163,19 +182,55 @@ func outputDevicesTextFromAPI(devices []map[string]interface{}) error {
 			name = "-"
 		}
 
+		// Second column: for USB show Serial No; otherwise show Transport ID (full value)
+		serialOrTransport := transportID
+		if strings.EqualFold(device.ConnectionType, "usb") && strings.TrimSpace(serialNo) != "" {
+			serialOrTransport = serialNo
+		}
+
+		// DEVICE ID should be the remote cloud device ID. Fallback to "-" when empty
+		uniqueDeviceID := deviceID
+		if strings.TrimSpace(uniqueDeviceID) == "" {
+			uniqueDeviceID = "-"
+		}
+
+		rows = append(rows, row{
+			serial:            device.Serialno,
+			deviceID:          uniqueDeviceID,
+			serialOrTransport: serialOrTransport,
+			name:              name,
+			deviceType:        deviceType,
+			status:            status,
+		})
+	}
+
+	// Sort: by real Serial No first, then by deviceID, then by serial/transport
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].serial != rows[j].serial {
+			return rows[i].serial < rows[j].serial
+		}
+		if rows[i].deviceID != rows[j].deviceID {
+			return rows[i].deviceID < rows[j].deviceID
+		}
+		return rows[i].serialOrTransport < rows[j].serialOrTransport
+	})
+
+	// Prepare data for RenderTable in sorted order
+	tableData := make([]map[string]interface{}, len(rows))
+	for i, r := range rows {
 		tableData[i] = map[string]interface{}{
-			"reg_id":    regId,
-			"device_id": deviceID,
-			"name":      name,
-			"type":      deviceType,
-			"status":    status,
+			"device_id":           r.deviceID,
+			"serial_or_transport": r.serialOrTransport,
+			"name":                r.name,
+			"type":                r.deviceType,
+			"status":              r.status,
 		}
 	}
 
 	// Define table columns
 	columns := []util.TableColumn{
-		{Header: "REG ID", Key: "reg_id"},
-		{Header: "DEVICE/TRANSPORT ID", Key: "device_id"},
+		{Header: "DEVICE ID", Key: "device_id"},
+		{Header: "SERIAL NO/TRANSPORT ID", Key: "serial_or_transport"},
 		{Header: "MODEL", Key: "name"},
 		{Header: "TYPE", Key: "type"},
 		{Header: "STATUS", Key: "status"},

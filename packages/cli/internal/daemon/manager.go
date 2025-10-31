@@ -70,6 +70,8 @@ func (m *Manager) IsServerRunning() bool {
 		}
 		// PID file exists but process is dead or not responding
 		os.Remove(pidFile)
+		// Avoid a second health check log; treat as not running
+		return false
 	}
 
 	// Double-check with HTTP even without PID file
@@ -95,6 +97,7 @@ func (m *Manager) checkHTTPHealth() bool {
 	clientBuildID := server.GetBuildID()
 	if (serverVersion != "" && clientVersion != "" && serverVersion != clientVersion) ||
 		(serverBuildID != "" && clientBuildID != "" && serverBuildID != clientBuildID) {
+		log.Printf("Detected binary change: server(version=%s, build=%s) != client(version=%s, build=%s). Will restart server.", serverVersion, serverBuildID, clientVersion, clientBuildID)
 		return false
 	}
 	return true
