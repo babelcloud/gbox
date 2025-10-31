@@ -105,6 +105,8 @@ type DeviceConnectOptions struct {
 	Background bool
 }
 
+// DeviceDTO is defined in device_connect_list.go (same package)
+
 func NewDeviceConnectCommand() *cobra.Command {
 	opts := &DeviceConnectOptions{}
 
@@ -134,8 +136,9 @@ If no device ID is provided, an interactive device selection will be shown.`,
   # Register a device for remote access
   gbox device-connect register
 
-  # Unregister specific device
-  gbox device-connect unregister abc789pqr012-ip`,
+  # Unregister specific device by Serial No or Transport ID
+  gbox device-connect unregister A4RYVB3A20008848
+  gbox device-connect unregister adb-A4RYVB3A20008848._adb._tcp`,
 	}
 
 	flags := cmd.Flags()
@@ -309,8 +312,8 @@ func checkAndInstallPrerequisites() error {
 func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 	// Use daemon manager to call API
 	var response struct {
-		Success bool                     `json:"success"`
-		Devices []map[string]interface{} `json:"devices"`
+		Success bool        `json:"success"`
+		Devices []DeviceDTO `json:"devices"`
 	}
 
 	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
@@ -339,25 +342,21 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 		status := "Not Registered"
 		statusColor := color.New(color.Faint)
 
-		// Extract device info from map
-		serialNo := device["ro.serialno"].(string)
-		connectionType := device["connectionType"].(string)
-		isRegistered, _ := device["isRegistrable"].(bool)
+		serialNo := device.Serialno
+		connectionType := device.ConnectionType
+		isRegistered := device.IsRegistered
 
 		if isRegistered {
 			status = "Registered"
 			statusColor = color.New(color.FgGreen)
 		}
 
-		model := "Unknown"
-		if m, ok := device["ro.product.model"].(string); ok {
-			model = m
+		model := device.Model
+		if strings.TrimSpace(model) == "" {
+			model = "Unknown"
 		}
 
-		manufacturer := ""
-		if mfr, ok := device["ro.product.manufacturer"].(string); ok {
-			manufacturer = mfr
-		}
+		manufacturer := device.Manufacturer
 
 		fmt.Printf("%d. %s (%s, %s) - %s [%s]\n",
 			i+1,
@@ -395,7 +394,7 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 	}
 
 	selectedDevice := devices[choice-1]
-	deviceID := selectedDevice["id"].(string)
+	deviceID := selectedDevice.ID
 	return connectToDevice(deviceID, opts)
 }
 

@@ -107,6 +107,11 @@ func (d *DeviceAPI) GetByRegId(regId string) (*DeviceList, error) {
 	return d.getDevices(queries)
 }
 
+// GetAll gets all devices from the cloud
+func (d *DeviceAPI) GetAll() (*DeviceList, error) {
+	return d.getDevices(url.Values{})
+}
+
 func (d *DeviceAPI) Create(device *Device) (*Device, error) {
 	url, err := d.buildUrlFromEndpoint("/api/v1/devices")
 

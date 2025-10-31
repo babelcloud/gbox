@@ -15,12 +15,13 @@ func NewDeviceConnectUnregisterCommand() *cobra.Command {
 	opts := &DeviceConnectUnregisterOptions{}
 
 	cmd := &cobra.Command{
-		Use:     "unregister [device_id] [flags]",
+		Use:     "unregister [serial_or_transport_id] [flags]",
 		Aliases: []string{"unreg"},
 		Short:   "Unregister one or all active gbox device connections",
 		Long:    "Unregister one or all active gbox device connections.",
-		Example: `  # Unregister device with specific device ID:
-  gbox device-connect unregister abc789pqr012-ip
+		Example: `  # Unregister device with Serial No or Transport ID:
+  gbox device-connect unregister A4RYVB3A20008848
+  gbox device-connect unregister adb-A4RYVB3A20008848._adb._tcp
 
   # Unregister all active device connections:
   gbox device-connect unregister --all`,
@@ -56,15 +57,17 @@ func ExecuteDeviceConnectUnregister(cmd *cobra.Command, opts *DeviceConnectUnreg
 		return runInteractiveUnregisterSelection()
 	}
 
-	deviceID := args[0]
-	return unregisterDevice(deviceID)
+	deviceKey := args[0]
+	return unregisterDevice(deviceKey)
 }
+
+// DeviceDTO is defined in device_connect_list.go (same package)
 
 func unregisterAllDevices() error {
 	// Get devices from daemon manager
 	var response struct {
-		Success bool                     `json:"success"`
-		Devices []map[string]interface{} `json:"devices"`
+		Success bool        `json:"success"`
+		Devices []DeviceDTO `json:"devices"`
 	}
 
 	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
@@ -77,21 +80,22 @@ func unregisterAllDevices() error {
 
 	unregisteredCount := 0
 	for _, device := range response.Devices {
-		deviceID, _ := device["id"].(string)
-		name, _ := device["ro.product.model"].(string)
-		connectionType, _ := device["connectionType"].(string)
-		isRegistrable, _ := device["isRegistrable"].(bool)
+		if device.IsRegistered {
+			// Prefer transport id for API
+			deviceKey := device.TransportID
+			if deviceKey == "" {
+				deviceKey = device.Serialno
+			}
+			name := device.Model
+			connectionType := device.ConnectionType
 
-		if isRegistrable {
-			fmt.Printf("Unregistering %s (%s, %s)...\n", deviceID, name, connectionType)
-
-			req := map[string]string{"deviceId": deviceID}
+			fmt.Printf("Unregistering %s (%s, %s)...\n", deviceKey, name, connectionType)
+			req := map[string]string{"deviceId": deviceKey}
 			if err := daemon.DefaultManager.CallAPI("POST", "/api/devices/unregister", req, nil); err != nil {
-				fmt.Printf("Failed to unregister %s: %v\n", deviceID, err)
+				fmt.Printf("Failed to unregister %s: %v\n", deviceKey, err)
 				continue
 			}
-
-			fmt.Printf("Device %s unregistered successfully.\n", deviceID)
+			fmt.Printf("Device %s unregistered successfully.\n", deviceKey)
 			unregisteredCount++
 		}
 	}
@@ -105,11 +109,11 @@ func unregisterAllDevices() error {
 	return nil
 }
 
-func unregisterDevice(deviceID string) error {
+func unregisterDevice(deviceKey string) error {
 	// Get device info first to show details
 	var response struct {
-		Success bool                     `json:"success"`
-		Devices []map[string]interface{} `json:"devices"`
+		Success bool        `json:"success"`
+		Devices []DeviceDTO `json:"devices"`
 	}
 
 	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
@@ -121,36 +125,36 @@ func unregisterDevice(deviceID string) error {
 	}
 
 	// Find the device to get its details
-	var targetDevice map[string]interface{}
-	for _, device := range response.Devices {
-		if deviceID == device["id"].(string) {
-			targetDevice = device
+	var target *DeviceDTO
+	for i := range response.Devices {
+		d := &response.Devices[i]
+		if deviceKey == d.TransportID || deviceKey == d.Serialno {
+			target = d
 			break
 		}
 	}
 
-	if targetDevice == nil {
-		return fmt.Errorf("device not found: %s", deviceID)
+	if target == nil {
+		return fmt.Errorf("device not found: %s", deviceKey)
 	}
 
-	model := "Unknown"
-	if m, ok := targetDevice["ro.product.model"].(string); ok {
-		model = m
+	model := target.Model
+	if model == "" {
+		model = "Unknown"
+	}
+	connectionType := target.ConnectionType
+	if connectionType == "" {
+		connectionType = "Unknown"
 	}
 
-	connectionType := "Unknown"
-	if ct, ok := targetDevice["connectionType"].(string); ok {
-		connectionType = ct
-	}
+	fmt.Printf("Unregistering %s (%s, %s)...\n", deviceKey, model, connectionType)
 
-	fmt.Printf("Unregistering %s (%s, %s)...\n", deviceID, model, connectionType)
-
-	req := map[string]string{"deviceId": deviceID}
+	req := map[string]string{"deviceId": deviceKey}
 	if err := daemon.DefaultManager.CallAPI("POST", "/api/devices/unregister", req, nil); err != nil {
 		return fmt.Errorf("failed to unregister device: %v", err)
 	}
 
-	fmt.Printf("Device %s unregistered successfully.\n", deviceID)
+	fmt.Printf("Device %s unregistered successfully.\n", deviceKey)
 
 	return nil
 }
@@ -158,8 +162,8 @@ func unregisterDevice(deviceID string) error {
 func runInteractiveUnregisterSelection() error {
 	// Get devices from daemon manager
 	var response struct {
-		Success bool                     `json:"success"`
-		Devices []map[string]interface{} `json:"devices"`
+		Success bool        `json:"success"`
+		Devices []DeviceDTO `json:"devices"`
 	}
 
 	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
@@ -171,9 +175,9 @@ func runInteractiveUnregisterSelection() error {
 	}
 
 	// Filter only registered devices
-	var registeredDevices []map[string]interface{}
+	var registeredDevices []DeviceDTO
 	for _, device := range response.Devices {
-		if isRegistrable, ok := device["isRegistrable"].(bool); ok && isRegistrable {
+		if device.IsRegistered {
 			registeredDevices = append(registeredDevices, device)
 		}
 	}
@@ -187,26 +191,16 @@ func runInteractiveUnregisterSelection() error {
 	fmt.Println()
 
 	for i, device := range registeredDevices {
-		deviceID, _ := device["id"].(string)
-		model := "Unknown"
-		if m, ok := device["ro.product.model"].(string); ok {
-			model = m
+		// Show Transport ID primarily for non-USB, else Serial No
+		deviceKey := device.TransportID
+		if device.ConnectionType == "usb" && device.Serialno != "" {
+			deviceKey = device.Serialno
 		}
-		connectionType := "Unknown"
-		if ct, ok := device["connectionType"].(string); ok {
-			connectionType = ct
-		}
-		manufacturer := ""
-		if mfr, ok := device["ro.product.manufacturer"].(string); ok {
-			manufacturer = mfr
-		}
-
-		fmt.Printf("%d. %s (%s, %s) - %s\n",
+		fmt.Printf("%d. %s (%s, %s)\n",
 			i+1,
-			deviceID,
-			model,
-			connectionType,
-			manufacturer)
+			deviceKey,
+			device.Model,
+			device.ConnectionType)
 	}
 
 	fmt.Println()
@@ -220,6 +214,10 @@ func runInteractiveUnregisterSelection() error {
 	}
 
 	selectedDevice := registeredDevices[choice-1]
-	deviceID := selectedDevice["id"].(string)
-	return unregisterDevice(deviceID)
+	// Prefer transport id for API
+	deviceKey := selectedDevice.TransportID
+	if deviceKey == "" {
+		deviceKey = selectedDevice.Serialno
+	}
+	return unregisterDevice(deviceKey)
 }
