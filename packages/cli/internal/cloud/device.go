@@ -21,8 +21,9 @@ type Device struct {
 	Ownership string `json:"ownership,omitempty"`
 	OwnerId   string `json:"ownerId,omitempty"`
 	Metadata  struct {
-		Serialno  string `json:"serialno,omitempty"`
-		AndroidId string `json:"androidId,omitempty"`
+		Serialno   string `json:"serialno,omitempty"`
+		AndroidId  string `json:"androidId,omitempty"`
+		Resolution string `json:"resolution,omitempty"`
 	} `json:"metadata,omitzero"`
 	Labels        map[string]string `json:"labels,omitempty"`
 	AccessPointId string            `json:"accessPointId,omitempty"`

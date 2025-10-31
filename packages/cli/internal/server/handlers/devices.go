@@ -178,14 +178,26 @@ func (h *DeviceHandlers) HandleDeviceRegister(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Get Resolution (WxH) for Metadata
+	width, height, resErr := devMgr.GetDisplayResolution(reqBody.DeviceId)
+	var resolution string
+	if resErr == nil {
+		resolution = fmt.Sprintf("%dx%d", width, height)
+	} else {
+		resolution = ""
+		log.Printf("failed to get resolution for device %s: %v", reqBody.DeviceId, resErr)
+	}
+
 	deviceAPI := cloud.NewDeviceAPI()
 	newDevice := &cloud.Device{
 		Metadata: struct {
-			Serialno  string `json:"serialno,omitempty"`
-			AndroidId string `json:"androidId,omitempty"`
+			Serialno   string `json:"serialno,omitempty"`
+			AndroidId  string `json:"androidId,omitempty"`
+			Resolution string `json:"resolution,omitempty"`
 		}{
-			Serialno:  ids.SerialNo,
-			AndroidId: ids.AndroidID,
+			Serialno:   ids.SerialNo,
+			AndroidId:  ids.AndroidID,
+			Resolution: resolution,
 		},
 		RegId: ids.RegId,
 	}
