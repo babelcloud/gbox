@@ -174,6 +174,43 @@ func (dm *DeviceKeeper) connectAP(serial string) error {
 	return nil
 }
 
+// connectAPByDeviceId establishes AP connection for Linux devices using deviceId directly
+func (dm *DeviceKeeper) connectAPByDeviceId(deviceId string) error {
+	dm.deviceLock.LockKey(deviceId)
+	defer dm.deviceLock.UnlockKey(deviceId)
+
+	apList, err := dm.apAPI.List()
+	if err != nil {
+		return errors.Wrapf(err, "failed to list access point")
+	}
+	if len(apList.Data) == 0 {
+		return errors.Errorf("no access point found")
+	}
+
+	connectEndpoint, err := url.Parse(apList.Data[0].Endpoint)
+	if err != nil {
+		return errors.Wrapf(err, "invalid access point endpoint %s", apList.Data[0].Endpoint)
+	}
+	connectEndpoint.Path = path.Join("/devices", deviceId, "connect")
+
+	token, err := dm.deviceAPI.GenerateAccessPointToken(deviceId, connectEndpoint.String())
+	if err != nil {
+		return errors.Wrapf(err, "failed to generate access point token")
+	}
+
+	mux, err := connectAP(connectEndpoint.String(), token.Token, apList.Data[0].Metadata.Protocol, deviceId)
+	if err != nil {
+		return errors.Wrapf(err, "failed to connect device %s to GBOX access point", deviceId)
+	}
+
+	session := dm.addDevice(deviceId, &DeviceSession{
+		Mux:    mux,
+		Serial: deviceId,
+	}, deviceId)
+	go dm.processDeviceSession(session, deviceId)
+	return nil
+}
+
 func (dm *DeviceKeeper) disconnectAP(session *DeviceSession) error {
 	dm.deviceLock.LockKey(session.Serial)
 	defer dm.deviceLock.UnlockKey(session.Serial)

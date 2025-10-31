@@ -103,6 +103,7 @@ func printFrpcInstallationHint() {
 type DeviceConnectOptions struct {
 	DeviceID   string
 	Background bool
+	Linux      bool
 }
 
 func NewDeviceConnectCommand() *cobra.Command {
@@ -110,12 +111,13 @@ func NewDeviceConnectCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "device-connect [device_id] [flags]",
-		Short: "Manage remote connections for local Android development devices",
-		Long: `Manage remote connections for local Android development devices.
+		Short: "Manage remote connections for local devices",
+		Long: `Manage remote connections for local devices.
 This command allows you to securely connect Android devices (emulators or physical devices)
-to remote cloud services for remote access and debugging.
+or connect this Linux machine to remote cloud services for remote access and debugging.
 
-If no device ID is provided, an interactive device selection will be shown.`,
+If no device ID is provided, an interactive device selection will be shown for Android.
+Use --linux to connect this Linux machine to Access Point (AP).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ExecuteDeviceConnect(cmd, opts, args)
 		},
@@ -135,12 +137,17 @@ If no device ID is provided, an interactive device selection will be shown.`,
   gbox device-connect register
 
   # Unregister specific device
-  gbox device-connect unregister abc789pqr012-ip`,
+  gbox device-connect unregister abc789pqr012-ip
+
+  # Connect this Linux machine to AP (optionally reuse/provide device id)
+  gbox device-connect --linux
+  gbox device-connect --linux -d <device-id>`,
 	}
 
 	flags := cmd.Flags()
 	flags.StringVarP(&opts.DeviceID, "device", "d", "", "Specify the Android device ID to connect")
 	flags.BoolVarP(&opts.Background, "background", "b", false, "Run in background mode")
+	flags.BoolVar(&opts.Linux, "linux", false, "Connect this Linux machine to Access Point (AP)")
 
 	cmd.AddCommand(
 		NewDeviceConnectRegisterCommand(),
@@ -152,6 +159,12 @@ If no device ID is provided, an interactive device selection will be shown.`,
 }
 func ExecuteDeviceConnect(cmd *cobra.Command, opts *DeviceConnectOptions, args []string) error {
 	debug := os.Getenv("DEBUG") == "true"
+
+	// Linux path: directly reuse linux-connect flow and return
+	if opts.Linux {
+		linuxOpts := &DeviceConnectLinuxConnectOptions{DeviceID: opts.DeviceID}
+		return ExecuteDeviceConnectLinuxConnect(cmd, linuxOpts, args)
+	}
 
 	// Check and auto-install ADB if missing
 	if !checkAdbInstalled() {

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/babelcloud/gbox/packages/cli/internal/daemon"
 	"github.com/babelcloud/gbox/packages/cli/internal/profile"
@@ -11,6 +12,7 @@ import (
 
 type DeviceConnectRegisterOptions struct {
 	DeviceID string
+	Type     string
 }
 
 func NewDeviceConnectRegisterCommand() *cobra.Command {
@@ -19,13 +21,16 @@ func NewDeviceConnectRegisterCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "register [device_id] [flags]",
 		Aliases: []string{"reg"},
-		Short:   "Register an Android device for remote access",
-		Long:    "Register an Android device for remote access. If no device ID is provided, an interactive selection will be shown.",
+		Short:   "Register a device for remote access",
+		Long:    "Register a device for remote access. Default type is 'android'. Use --type linux to register a linux device.",
 		Example: `  # Interactively select a device to register
   gbox device-connect register
 
   # Register specific device
-  gbox device-connect register abc123xyz456-usb`,
+  gbox device-connect register abc123xyz456-usb
+
+  # Register a linux device
+  gbox device-connect register --type linux my-linux-device-id`,
 		Args:          cobra.MaximumNArgs(1),
 		SilenceUsage:  true, // Don't show usage on errors
 		SilenceErrors: true, // Don't show errors twice (we handle them in RunE)
@@ -39,15 +44,18 @@ func NewDeviceConnectRegisterCommand() *cobra.Command {
 	}
 
 	flags := cmd.Flags()
-	flags.StringVarP(&opts.DeviceID, "device", "d", "", "Specify the Android device ID to register")
+	flags.StringVarP(&opts.DeviceID, "device", "d", "", "Specify the device ID to register")
+	flags.StringVar(&opts.Type, "type", "android", "Device type to register: android|linux")
 
 	return cmd
 }
 
 func ExecuteDeviceConnectRegister(cmd *cobra.Command, opts *DeviceConnectRegisterOptions, args []string) error {
-	if !checkAdbInstalled() {
-		printAdbInstallationHint()
-		return fmt.Errorf("ADB is not installed or not in your PATH. Please install ADB and try again.")
+	if strings.ToLower(opts.Type) != "linux" {
+		if !checkAdbInstalled() {
+			printAdbInstallationHint()
+			return fmt.Errorf("ADB is not installed or not in your PATH. Please install ADB and try again.")
+		}
 	}
 
 	var deviceID string
@@ -58,10 +66,12 @@ func ExecuteDeviceConnectRegister(cmd *cobra.Command, opts *DeviceConnectRegiste
 	}
 
 	if deviceID == "" {
-		return runInteractiveDeviceRegistration()
+		if strings.ToLower(opts.Type) != "linux" {
+			return runInteractiveDeviceRegistration()
+		}
 	}
 
-	return registerDevice(deviceID)
+	return registerDevice(deviceID, opts.Type)
 }
 
 func runInteractiveDeviceRegistration() error {
@@ -135,12 +145,15 @@ func runInteractiveDeviceRegistration() error {
 
 	selectedDevice := devices[choice-1]
 	deviceID := selectedDevice["id"].(string)
-	return registerDevice(deviceID)
+	return registerDevice(deviceID, "android")
 }
 
-func registerDevice(deviceID string) error {
+func registerDevice(deviceID string, deviceType string) error {
 	// Register device via daemon API
-	req := map[string]string{"deviceId": deviceID}
+	req := map[string]string{"type": strings.ToLower(deviceType)}
+	if deviceID != "" {
+		req["deviceId"] = deviceID
+	}
 	var resp map[string]interface{}
 
 	if err := daemon.DefaultManager.CallAPI("POST", "/api/devices/register", req, &resp); err != nil {
@@ -149,6 +162,20 @@ func registerDevice(deviceID string) error {
 
 	if success, ok := resp["success"].(bool); !ok || !success {
 		return fmt.Errorf("failed to register device: %v", resp["error"])
+	}
+
+	// Resolve actual device ID from response data if available
+	actualID := deviceID
+	if data, ok := resp["data"].(map[string]interface{}); ok {
+		if id, ok2 := data["id"].(string); ok2 && id != "" {
+			actualID = id
+		}
+	}
+	if actualID != "" && deviceID == "" {
+		deviceID = actualID
+	}
+	if actualID != "" {
+		fmt.Printf("Device registered. Device ID: %s\n", actualID)
 	}
 
 	fmt.Printf("Establishing remote connection for device %s...\n", deviceID)
