@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -21,8 +22,9 @@ type Device struct {
 	Ownership string `json:"ownership,omitempty"`
 	OwnerId   string `json:"ownerId,omitempty"`
 	Metadata  struct {
-		Serialno   string `json:"serialno,omitempty"`
-		AndroidId  string `json:"androidId,omitempty"`
+		Serialno  string `json:"serialno,omitempty"`
+		AndroidId string `json:"androidId,omitempty"`
+		Type      string `json:"type,omitempty"`
 		Resolution string `json:"resolution,omitempty"`
 	} `json:"metadata,omitzero"`
 	Labels        map[string]string `json:"labels,omitempty"`
@@ -37,6 +39,13 @@ type DeviceList struct {
 	Page     int       `json:"page"`
 	PageSize int       `json:"pageSize"`
 	Total    int       `json:"total"`
+}
+
+type Box struct {
+	Id     string                 `json:"id,omitempty"`
+	Type   string                 `json:"type,omitempty"`
+	Status string                 `json:"status,omitempty"`
+	Config map[string]interface{} `json:"config,omitempty"`
 }
 
 type AccessPointToken struct {
@@ -151,6 +160,46 @@ func (d *DeviceAPI) Create(device *Device) (*Device, error) {
 	return device, nil
 }
 
+func (d *DeviceAPI) List(page, pageSize int) (*DeviceList, error) {
+	u, err := d.buildUrlFromEndpoint("/api/v1/devices")
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to build url")
+	}
+	q := u.Query()
+	if page > 0 {
+		q.Set("page", fmt.Sprintf("%d", page))
+	}
+	if pageSize > 0 {
+		q.Set("pageSize", fmt.Sprintf("%d", pageSize))
+	}
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to create request from url: %s", u.String())
+	}
+
+	d.setCommonRequestHeaders(req)
+
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get devices: %s", u.String())
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, errors.Errorf("get devices api respond %d: %s", resp.StatusCode, string(body))
+	}
+
+	decoder := json.NewDecoder(resp.Body)
+	list := &DeviceList{}
+	if err := decoder.Decode(list); err != nil {
+		return nil, errors.Wrapf(err, "failed to parse response from get devices api")
+	}
+	return list, nil
+}
+
 func (d *DeviceAPI) Delete(deviceId string) error {
 	url, err := d.buildUrlFromEndpoint(path.Join("/api/v1/devices", deviceId))
 	if err != nil {
@@ -232,6 +281,46 @@ func (d *DeviceAPI) buildUrlFromEndpoint(endpoint string) (*url.URL, error) {
 	url.Path = endpoint
 
 	return url, nil
+}
+
+func (d *DeviceAPI) DeviceToBox(deviceId string, force bool) (*Box, error) {
+	url, err := d.buildUrlFromEndpoint(path.Join("/api/v1/devices", deviceId, "box"))
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to build url")
+	}
+
+	reqBody, err := json.Marshal(map[string]interface{}{
+		"force": force,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "fail to marshal device to box request body to json")
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url.String(), bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to create request from url: %s", url.String())
+	}
+
+	d.setCommonRequestHeaders(req)
+
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to post device to box: %s", url.String())
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, errors.Errorf("post device to box api respond %d: %s", resp.StatusCode, string(body))
+	}
+
+	decoder := json.NewDecoder(resp.Body)
+	box := &Box{}
+	if err := decoder.Decode(box); err != nil {
+		return nil, errors.Wrapf(err, "failed to parse response from post device to box api")
+	}
+
+	return box, nil
 }
 
 func (d *DeviceAPI) setCommonRequestHeaders(req *http.Request) {

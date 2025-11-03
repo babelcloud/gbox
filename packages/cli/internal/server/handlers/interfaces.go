@@ -37,6 +37,7 @@ type ServerService interface {
 	ListPortForwards() interface{}
 
 	ConnectAP(serial string) error
+	ConnectAPLinux(deviceId string) error
 	DisconnectAP(serial string) error
 	GetAdbSerialByGboxDeviceId(deviceId string) string
 }

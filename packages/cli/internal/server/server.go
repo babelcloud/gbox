@@ -474,6 +474,10 @@ func (s *GBoxServer) ConnectAP(serial string) error {
 	return s.deviceKeeper.connectAP(serial)
 }
 
+func (s *GBoxServer) ConnectAPLinux(deviceId string) error {
+	return s.deviceKeeper.connectAP(deviceId)
+}
+
 func (s *GBoxServer) DisconnectAP(serial string) error {
 	return s.deviceKeeper.disconnectAPForce(serial)
 }

@@ -105,15 +105,13 @@ type DeviceConnectOptions struct {
 	Background bool
 }
 
-// DeviceDTO is defined in device_connect_list.go (same package)
-
 func NewDeviceConnectCommand() *cobra.Command {
 	opts := &DeviceConnectOptions{}
 
 	cmd := &cobra.Command{
 		Use:   "device-connect [device_id] [flags]",
-		Short: "Manage remote connections for local Android development devices",
-		Long: `Manage remote connections for local Android development devices.
+		Short: "Manage remote connections for local Android/Linux development devices",
+		Long: `Manage remote connections for local Android/Linux development devices.
 This command allows you to securely connect Android devices (emulators or physical devices)
 to remote cloud services for remote access and debugging.
 
@@ -133,12 +131,8 @@ If no device ID is provided, an interactive device selection will be shown.`,
   # List all available devices
   gbox device-connect ls
 
-  # Register a device for remote access
-  gbox device-connect register
-
-  # Unregister specific device by Serial No or Transport ID
-  gbox device-connect unregister A4RYVB3A20008848
-  gbox device-connect unregister adb-A4RYVB3A20008848._adb._tcp`,
+  # Register and connect this Linux machine to AP
+  gbox device-connect register local`,
 	}
 
 	flags := cmd.Flags()
@@ -325,7 +319,9 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 	}
 
 	devices := response.Devices
-	if len(devices) == 0 {
+	// Offer Linux local machine option when running on Linux
+	offerLinuxLocal := runtime.GOOS == "linux"
+	if len(devices) == 0 && !offerLinuxLocal {
 		fmt.Println("No Android devices found.")
 		fmt.Println()
 		printDeveloperModeHint()
@@ -333,10 +329,21 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 	}
 
 	fmt.Println()
-	fmt.Println("Select a device to register for remote access:")
+	if offerLinuxLocal {
+		fmt.Println("Select a device to register for remote access, or choose this Linux machine:")
+	} else {
+		fmt.Println("Select a device to register for remote access:")
+	}
 	fmt.Println()
 	printDeveloperModeHint()
 	fmt.Println()
+
+	indexBase := 1
+	if offerLinuxLocal {
+		// Add a first option for connecting this Linux machine to AP
+		fmt.Printf("%d. %s\n", indexBase, color.New(color.FgCyan).Sprint("This machine (Linux)"))
+		indexBase++
+	}
 
 	for i, device := range devices {
 		status := "Not Registered"
@@ -359,7 +366,7 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 		manufacturer := device.Manufacturer
 
 		fmt.Printf("%d. %s (%s, %s) - %s [%s]\n",
-			i+1,
+			indexBase+i,
 			color.New(color.FgCyan).Sprint(serialNo+"-"+connectionType),
 			model,
 			connectionType,
@@ -389,7 +396,18 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 	case <-inputDone:
 		// proceed
 	}
-	if choice < 1 || choice > len(devices) {
+	totalOptions := len(devices)
+	if offerLinuxLocal {
+		totalOptions++
+		if choice == 1 {
+			// Trigger Linux connect flow for this machine
+			linuxOpts := &DeviceConnectLinuxConnectOptions{DeviceID: opts.DeviceID}
+			return ExecuteDeviceConnectLinuxConnect(nil, linuxOpts, nil)
+		}
+		// Adjust index to map back to devices slice
+		choice = choice - 1
+	}
+	if choice < 1 || choice > totalOptions {
 		return fmt.Errorf("invalid selection: %d", choice)
 	}
 

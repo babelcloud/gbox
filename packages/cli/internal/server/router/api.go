@@ -36,6 +36,7 @@ func (r *APIRouter) RegisterRoutes(mux *http.ServeMux, server interface{}) {
 	mux.HandleFunc("/api/devices", deviceHandlers.HandleDeviceList)
 	mux.HandleFunc("/api/devices/register", deviceHandlers.HandleDeviceRegister)
 	mux.HandleFunc("/api/devices/unregister", deviceHandlers.HandleDeviceUnregister)
+	mux.HandleFunc("/api/devices/linux/connect", deviceHandlers.HandleLinuxAPConnect)
 
 	// Device-specific endpoints with path patterns - direct routing to device handlers
 	mux.HandleFunc("/api/devices/{serial}", deviceHandlers.HandleDeviceAction)
@@ -44,6 +45,7 @@ func (r *APIRouter) RegisterRoutes(mux *http.ServeMux, server interface{}) {
 	mux.HandleFunc("/api/devices/{serial}/stream", deviceHandlers.HandleDeviceStream)
 	mux.HandleFunc("/api/devices/{serial}/control", deviceHandlers.HandleDeviceControl)
 	mux.HandleFunc("/api/devices/{serial}/adb", deviceHandlers.HandleDeviceAdb)
+	mux.HandleFunc("/api/devices/{serial}/exec", deviceHandlers.HandleDeviceExec)
 
 	// Box management endpoints (proxy to remote GBOX API)
 	mux.HandleFunc("/api/boxes", boxHandlers.HandleBoxList)

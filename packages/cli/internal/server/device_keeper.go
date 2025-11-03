@@ -121,16 +121,15 @@ func (dm *DeviceKeeper) getAdbSerialByGboxDeviceId(deviceId string) string {
 }
 
 func (dm *DeviceKeeper) connectAP(serial string) error {
-	dm.deviceLock.LockKey(serial)
-	defer dm.deviceLock.UnlockKey(serial)
-
 	devMgr := device.NewManager()
 	ids, err := devMgr.GetIdentifiers(serial)
+	if err != nil {
+		// Fall back: treat input as a deviceId for non-ADB/Linux devices
+		return dm.connectAPUsingDeviceId(serial, serial)
+	}
+
 	serialno := ids.SerialNo
 	androidId := ids.AndroidID
-	if err != nil {
-		return errors.Wrapf(err, "failed to get device %s serialno and android_id", serial)
-	}
 
 	deviceList, err := dm.deviceAPI.GetBySerialnoAndAndroidId(serialno, androidId)
 	if err != nil {
@@ -140,7 +139,15 @@ func (dm *DeviceKeeper) connectAP(serial string) error {
 		return errors.Errorf("device %s not registered in GBOX", serial)
 	}
 
-	device := deviceList.Data[0]
+	dev := deviceList.Data[0]
+	return dm.connectAPUsingDeviceId(serial, dev.Id)
+}
+
+// connectAPUsingDeviceId establishes AP connection using known gbox deviceId.
+// key is used as the map/session key and logging serial (adb serial or deviceId).
+func (dm *DeviceKeeper) connectAPUsingDeviceId(key string, deviceId string) error {
+	dm.deviceLock.LockKey(key)
+	defer dm.deviceLock.UnlockKey(key)
 
 	apList, err := dm.apAPI.List()
 	if err != nil {
@@ -154,23 +161,23 @@ func (dm *DeviceKeeper) connectAP(serial string) error {
 	if err != nil {
 		return errors.Wrapf(err, "invalid access point endpoint %s", apList.Data[0].Endpoint)
 	}
-	connectEndpoint.Path = path.Join("/devices", device.Id, "connect")
+	connectEndpoint.Path = path.Join("/devices", deviceId, "connect")
 
-	token, err := dm.deviceAPI.GenerateAccessPointToken(device.Id, connectEndpoint.String())
+	token, err := dm.deviceAPI.GenerateAccessPointToken(deviceId, connectEndpoint.String())
 	if err != nil {
 		return errors.Wrapf(err, "failed to generate access point token")
 	}
 
-	mux, err := connectAP(connectEndpoint.String(), token.Token, apList.Data[0].Metadata.Protocol, serial)
+	mux, err := connectAP(connectEndpoint.String(), token.Token, apList.Data[0].Metadata.Protocol, key)
 	if err != nil {
-		return errors.Wrapf(err, "failed to connect device %s to GBOX access point", serial)
+		return errors.Wrapf(err, "failed to connect device %s to GBOX access point", key)
 	}
 
-	session := dm.addDevice(serial, &DeviceSession{
+	session := dm.addDevice(key, &DeviceSession{
 		Mux:    mux,
-		Serial: serial,
-	}, device.Id)
-	go dm.processDeviceSession(session, serial)
+		Serial: key,
+	}, deviceId)
+	go dm.processDeviceSession(session, key)
 	return nil
 }
 
@@ -281,7 +288,9 @@ func (dm *DeviceKeeper) processDeviceSession(session *DeviceSession, serial stri
 		if err != nil && dm.hasDevice(serial) {
 			log.Print(errors.Wrapf(err, "device %s session closed. try to reconnect", serial))
 			go func() {
-				if err := dm.connectAP(serial); err != nil {
+				// Use stored mapping to get gbox deviceId for reconnection
+				deviceId, _ := dm.adbDeviceBiMap.Get(serial)
+				if err := dm.connectAPUsingDeviceId(serial, deviceId); err != nil {
 					dm.disconnectAP(session)
 					log.Print(errors.Wrapf(err, "failed to reconnect device %s to GBOX access point", serial))
 				}
