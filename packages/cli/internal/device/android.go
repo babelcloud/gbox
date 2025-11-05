@@ -11,51 +11,19 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Manager manages Android devices
-type Manager struct {
-	adbPath string
-}
-
-// DeviceInfo contains device information
-type DeviceInfo struct {
-	ID             string `json:"id"`
-	Status         string `json:"status"`
-	SerialNo       string `json:"ro.serialno"`
-	AndroidID      string `json:"android_id"`
-	Model          string `json:"ro.product.model"`
-	Manufacturer   string `json:"ro.product.manufacturer"`
-	ConnectionType string `json:"connectionType"`
-	IsRegistrable  bool   `json:"isRegistrable"`
-	RegId          string `json:"reg_id"`
-}
-
 const (
 	gboxRegIdSettingKey = "gbox_reg_id"
 	gboxDeviceIDFileDir = "/sdcard/.gbox"
 	gboxRegIdFilePath   = "/sdcard/.gbox/reg_id"
 )
 
-// Identifiers contains key identifiers for a device.
-type Identifiers struct {
-	SerialNo  string
-	AndroidID string
-	RegId     string
-}
-
-// NewManager creates a new device manager
-func NewManager() *Manager {
-	adbPath, err := exec.LookPath("adb")
-	if err != nil {
-		adbPath = "adb"
-	}
-
-	return &Manager{
-		adbPath: adbPath,
-	}
+// AndroidManager manages Android devices (implements DeviceManager)
+type AndroidManager struct {
+	adbPath string
 }
 
 // GetDevices returns list of connected Android devices
-func (m *Manager) GetDevices() ([]DeviceInfo, error) {
+func (m *AndroidManager) GetDevices() ([]DeviceInfo, error) {
 	cmd := exec.Command(m.adbPath, "devices", "-l")
 	output, err := cmd.Output()
 	if err != nil {
@@ -147,37 +115,8 @@ func (m *Manager) GetDevices() ([]DeviceInfo, error) {
 	return devices, nil
 }
 
-// GetDevicesAsMap returns devices as map[string]interface{} for backward compatibility
-func (m *Manager) GetDevicesAsMap() ([]map[string]interface{}, error) {
-	devices, err := m.GetDevices()
-	if err != nil {
-		return nil, err
-	}
-
-	result := make([]map[string]interface{}, len(devices))
-	for i, device := range devices {
-		result[i] = map[string]interface{}{
-			"id":                      device.ID,
-			"udid":                    device.ID, // Use ID as UDID for compatibility
-			"status":                  device.Status,
-			"state":                   device.Status, // Add state field for compatibility
-			"ro.serialno":             device.SerialNo,
-			"android_id":              device.AndroidID,
-			"model":                   device.Model, // Add model field for easy access
-			"ro.product.model":        device.Model,
-			"device":                  device.Manufacturer, // Add device field for easy access
-			"ro.product.manufacturer": device.Manufacturer,
-			"connectionType":          device.ConnectionType,
-			"isRegistrable":           device.IsRegistrable,
-			"gbox.reg_id":             device.RegId, // Add reg_id field from DeviceInfo
-		}
-	}
-
-	return result, nil
-}
-
 // getSerialNo gets the device serial number
-func (m *Manager) getSerialNo(deviceID string) (string, error) {
+func (m *AndroidManager) getSerialNo(deviceID string) (string, error) {
 	cmd := exec.Command(m.adbPath, "-s", deviceID, "shell", "getprop", "ro.serialno")
 	output, err := cmd.Output()
 	if err != nil {
@@ -187,7 +126,7 @@ func (m *Manager) getSerialNo(deviceID string) (string, error) {
 }
 
 // getAndroidID gets the device Android ID
-func (m *Manager) getAndroidID(deviceID string) (string, error) {
+func (m *AndroidManager) getAndroidID(deviceID string) (string, error) {
 	cmd := exec.Command(m.adbPath, "-s", deviceID, "shell", "settings", "get", "secure", "android_id")
 	output, err := cmd.Output()
 	if err != nil {
@@ -197,7 +136,7 @@ func (m *Manager) getAndroidID(deviceID string) (string, error) {
 }
 
 // GetIdentifiers returns device identifiers for the given device.
-func (m *Manager) GetIdentifiers(deviceID string) (Identifiers, error) {
+func (m *AndroidManager) GetIdentifiers(deviceID string) (Identifiers, error) {
 	serialNo, err := m.getSerialNo(deviceID)
 	if err != nil {
 		return Identifiers{}, err
@@ -211,7 +150,7 @@ func (m *Manager) GetIdentifiers(deviceID string) (Identifiers, error) {
 	regId, _ := m.GetRegId(deviceID) // non-fatal
 	return Identifiers{
 		SerialNo:  serialNo,
-		AndroidID: androidID,
+		AndroidID: &androidID, // Use pointer for Android devices
 		RegId:     regId,
 	}, nil
 }
@@ -219,7 +158,7 @@ func (m *Manager) GetIdentifiers(deviceID string) (Identifiers, error) {
 // SetRegId writes a registration ID to the device.
 // It first tries to write into Android settings (global). If that fails (e.g., permission denied),
 // it falls back to writing a file on external storage.
-func (m *Manager) SetRegId(deviceID string, regId string) error {
+func (m *AndroidManager) SetRegId(deviceID string, regId string) error {
 	// Try settings put global first
 	putCmd := exec.Command(m.adbPath, "-s", deviceID, "shell", "settings", "put", "global", gboxRegIdSettingKey, regId)
 	if err := putCmd.Run(); err == nil {
@@ -262,7 +201,7 @@ func (m *Manager) SetRegId(deviceID string, regId string) error {
 }
 
 // GetRegId reads the registration ID from settings or fallback file.
-func (m *Manager) GetRegId(deviceID string) (string, error) {
+func (m *AndroidManager) GetRegId(deviceID string) (string, error) {
 	// Prefer file first
 	readCmd := exec.Command(m.adbPath, "-s", deviceID, "shell", "cat", gboxRegIdFilePath)
 	out, err := readCmd.Output()
@@ -301,7 +240,7 @@ type AdbCommandResult struct {
 	ExitCode int    `json:"exitCode"`
 }
 
-func (m *Manager) ExecAdbCommand(deviceID, command string) (*AdbCommandResult, error) {
+func (m *AndroidManager) ExecAdbCommand(deviceID, command string) (*AdbCommandResult, error) {
 	cmd := exec.Command("sh", "-c", strings.Join([]string{m.adbPath, "-s", deviceID, command}, " "))
 
 	var stdoutBuf, stderrBuf bytes.Buffer
@@ -329,7 +268,7 @@ func (m *Manager) ExecAdbCommand(deviceID, command string) (*AdbCommandResult, e
 // GetDisplayResolution returns the device display resolution (width, height) in pixels.
 // It prefers the "Override size" reported by `wm size` when present; otherwise it
 // falls back to the "Physical size".
-func (m *Manager) GetDisplayResolution(deviceID string) (int, int, error) {
+func (m *AndroidManager) GetDisplayResolution(deviceID string) (int, int, error) {
 	cmd := exec.Command(m.adbPath, "-s", deviceID, "shell", "wm", "size")
 	output, err := cmd.Output()
 	if err != nil {
@@ -373,4 +312,57 @@ func (m *Manager) GetDisplayResolution(deviceID string) (int, int, error) {
 	}
 
 	return width, height, nil
+}
+
+// GetOSVersion returns the Android OS version (e.g., "14", "13")
+func (m *AndroidManager) GetOSVersion(deviceID string) (string, error) {
+	// Try ro.build.version.release first (user-friendly version like "14", "13")
+	cmd := exec.Command(m.adbPath, "-s", deviceID, "shell", "getprop", "ro.build.version.release")
+	output, err := cmd.Output()
+	if err == nil {
+		version := strings.TrimSpace(string(output))
+		if version != "" {
+			return version, nil
+		}
+	}
+
+	// Fallback to SDK version
+	cmd = exec.Command(m.adbPath, "-s", deviceID, "shell", "getprop", "ro.build.version.sdk")
+	output, err = cmd.Output()
+	if err == nil {
+		version := strings.TrimSpace(string(output))
+		if version != "" {
+			return version, nil
+		}
+	}
+
+	return "", fmt.Errorf("failed to get Android OS version")
+}
+
+// GetMemory returns the total memory in GB (e.g., "8 GB")
+func (m *AndroidManager) GetMemory(deviceID string) (string, error) {
+	// Read MemTotal from /proc/meminfo
+	cmd := exec.Command(m.adbPath, "-s", deviceID, "shell", "cat", "/proc/meminfo")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to read meminfo for device %s", deviceID)
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "MemTotal:") {
+			// Parse line like "MemTotal:       16384000 kB"
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				memKB, err := strconv.ParseInt(fields[1], 10, 64)
+				if err == nil {
+					// Convert KB to GB
+					memGB := float64(memKB) / (1024 * 1024)
+					return fmt.Sprintf("%.0f GB", memGB), nil
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("failed to parse memory information")
 }

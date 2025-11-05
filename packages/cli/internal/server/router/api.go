@@ -36,7 +36,6 @@ func (r *APIRouter) RegisterRoutes(mux *http.ServeMux, server interface{}) {
 	mux.HandleFunc("/api/devices", deviceHandlers.HandleDeviceList)
 	mux.HandleFunc("/api/devices/register", deviceHandlers.HandleDeviceRegister)
 	mux.HandleFunc("/api/devices/unregister", deviceHandlers.HandleDeviceUnregister)
-	mux.HandleFunc("/api/devices/linux/connect", deviceHandlers.HandleLinuxAPConnect)
 
 	// Device-specific endpoints with path patterns - direct routing to device handlers
 	mux.HandleFunc("/api/devices/{serial}", deviceHandlers.HandleDeviceAction)

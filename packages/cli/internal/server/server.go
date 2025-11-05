@@ -474,16 +474,22 @@ func (s *GBoxServer) ConnectAP(serial string) error {
 	return s.deviceKeeper.connectAP(serial)
 }
 
-func (s *GBoxServer) ConnectAPLinux(deviceId string) error {
-	return s.deviceKeeper.connectAP(deviceId)
-}
-
 func (s *GBoxServer) DisconnectAP(serial string) error {
 	return s.deviceKeeper.disconnectAPForce(serial)
 }
 
-func (s *GBoxServer) GetAdbSerialByGboxDeviceId(deviceId string) string {
-	return s.deviceKeeper.getAdbSerialByGboxDeviceId(deviceId)
+func (s *GBoxServer) GetSerialByDeviceId(deviceId string) string {
+	return s.deviceKeeper.getSerialByDeviceId(deviceId)
+}
+
+func (s *GBoxServer) GetDeviceInfo(serial string) interface{} {
+	return s.deviceKeeper.GetDeviceInfo(serial)
+}
+
+func (s *GBoxServer) UpdateDeviceInfo(device interface{}) {
+	if dto, ok := device.(*handlers.DeviceDTO); ok {
+		s.deviceKeeper.updateDeviceInfo(dto)
+	}
 }
 
 // Helper function to send JSON responses
