@@ -28,15 +28,16 @@ import (
 
 // DeviceDTO is a strong-typed representation of a device for API responses
 type DeviceDTO struct {
-	ID             string `json:"id"`
-	TransportID    string `json:"transportId"`
-	Serialno       string `json:"serialno"`
-	AndroidID      string `json:"androidId"`
-	Model          string `json:"model"`
-	Manufacturer   string `json:"manufacturer"`
-	ConnectionType string `json:"connectionType"`
-	IsRegistered   bool   `json:"isRegistered"`
-	RegId          string `json:"regId"`
+	ID           string                 `json:"id"`
+	TransportID  string                 `json:"transportId"`
+	Serialno     string                 `json:"serialno"`
+	Platform     string                 `json:"platform"`   // mobile, desktop
+	OS           string                 `json:"os"`         // android, linux, windows, macos
+	DeviceType   string                 `json:"deviceType"` // physical, emulator, vm
+	IsRegistered bool                   `json:"isRegistered"`
+	RegId        string                 `json:"regId"`
+	IsLocal      bool                   `json:"isLocal"`  // true if this is the local desktop device
+	Metadata     map[string]interface{} `json:"metadata"` // Device-specific metadata
 }
 
 // setWebMStreamingHeaders sets HTTP headers for WebM audio streaming
@@ -77,7 +78,7 @@ type DeviceHandlers struct {
 	serverService  ServerService
 	upgrader       websocket.Upgrader
 	webrtcHandlers *WebRTCHandlers
-	deviceManager  *device.Manager
+	deviceManager  device.DeviceManager
 }
 
 // NewDeviceHandlers creates a new device handlers instance
@@ -90,7 +91,7 @@ func NewDeviceHandlers(serverSvc ServerService) *DeviceHandlers {
 			},
 		},
 		webrtcHandlers: NewWebRTCHandlers(serverSvc),
-		deviceManager:  device.NewManager(),
+		deviceManager:  device.NewManager("android"),
 	}
 }
 
@@ -129,17 +130,46 @@ func (h *DeviceHandlers) HandleDeviceList(w http.ResponseWriter, r *http.Request
 	}
 
 	dtos := make([]DeviceDTO, 0, len(devs))
+
+	// Add Android devices
 	for _, d := range devs {
+		// Get device information for Android device
+		androidMgr := device.NewManager("android")
+		width, height, resErr := androidMgr.GetDisplayResolution(d.ID)
+		displayResolution := ""
+		if resErr == nil {
+			displayResolution = fmt.Sprintf("%dx%d", width, height)
+		}
+
+		osVersion, _ := androidMgr.GetOSVersion(d.ID) // non-fatal
+		memory, _ := androidMgr.GetMemory(d.ID)       // non-fatal
+
+		// Build Android-specific metadata
+		metadata := make(map[string]interface{})
+		metadata["model"] = d.Model
+		metadata["manufacturer"] = d.Manufacturer
+		metadata["connectionType"] = d.ConnectionType
+		metadata["androidId"] = d.AndroidID // Android-specific field
+		if displayResolution != "" {
+			metadata["resolution"] = displayResolution
+		}
+		if osVersion != "" {
+			metadata["osVersion"] = osVersion
+		}
+		if memory != "" {
+			metadata["memory"] = memory
+		}
+
 		dto := DeviceDTO{
-			ID:             "",
-			TransportID:    d.ID,
-			Serialno:       d.SerialNo,
-			AndroidID:      d.AndroidID,
-			Model:          d.Model,
-			Manufacturer:   d.Manufacturer,
-			ConnectionType: d.ConnectionType,
-			IsRegistered:   false,
-			RegId:          d.RegId,
+			ID:           "",
+			TransportID:  d.ID,
+			Serialno:     d.SerialNo,
+			Platform:     "mobile",  // Android devices are mobile
+			OS:           "android", // Android devices
+			DeviceType:   util.DetectAndroidDeviceType(d.ID, d.SerialNo),
+			IsRegistered: false,
+			RegId:        d.RegId,
+			Metadata:     metadata,
 		}
 
 		// Check if device is registered by looking up in the map
@@ -147,11 +177,129 @@ func (h *DeviceHandlers) HandleDeviceList(w http.ResponseWriter, r *http.Request
 			if cloudDevice, found := registeredDevicesMap[d.RegId]; found {
 				dto.IsRegistered = true
 				dto.ID = cloudDevice.Id
+				// Update Platform and OS from cloud device metadata if available
+				if cloudDevice.Metadata.DeviceType != "" {
+					dto.Platform = cloudDevice.Metadata.DeviceType
+				}
+				if cloudDevice.Metadata.OsType != "" {
+					dto.OS = cloudDevice.Metadata.OsType
+				}
 			}
 		}
 
+		// Update device info cache with complete device information
+		h.serverService.UpdateDeviceInfo(&dto)
+
 		dtos = append(dtos, dto)
 	}
+
+	// Add desktop device (always show local machine)
+	// Map runtime.GOOS to osType for device manager
+	var osType string
+	switch runtime.GOOS {
+	case "darwin":
+		osType = "macos"
+	case "linux", "windows":
+		osType = strings.ToLower(runtime.GOOS)
+	default:
+		osType = "linux" // Default fallback
+	}
+
+	desktopMgr := device.NewManager(osType)
+	localRegId, _ := desktopMgr.GetRegId("") // non-fatal
+	serialno := util.GetDesktopSerialNo(osType)
+
+	// Get device information for desktop device
+	width, height, resErr := desktopMgr.GetDisplayResolution("")
+	displayResolution := ""
+	if resErr == nil {
+		displayResolution = fmt.Sprintf("%dx%d", width, height)
+	}
+
+	osVersion, _ := desktopMgr.GetOSVersion("") // non-fatal
+	memory, _ := desktopMgr.GetMemory("")       // non-fatal
+
+	// Build desktop-specific metadata
+	metadata := make(map[string]interface{})
+	if osType == "macos" {
+		metadata["chip"] = util.GetMacOSChip() // macOS-specific field
+	}
+	if osVersion != "" {
+		metadata["osVersion"] = osVersion
+	}
+	if memory != "" {
+		metadata["memory"] = memory
+	}
+	if displayResolution != "" {
+		metadata["resolution"] = displayResolution
+	}
+	// Add hostname for desktop devices
+	hostname, err := os.Hostname()
+	if err == nil && hostname != "" {
+		metadata["hostname"] = hostname
+	}
+
+	var desktopDTO DeviceDTO
+	deviceType := util.DetectDesktopDeviceType(osType)
+
+	if err == nil && localRegId != "" {
+		// Check if this desktop device is registered in cloud
+		if cloudDevice, found := registeredDevicesMap[localRegId]; found {
+			// Desktop device is registered
+			desktopDTO = DeviceDTO{
+				ID:           cloudDevice.Id,
+				TransportID:  "local",
+				Serialno:     cloudDevice.Metadata.Serialno,
+				Platform:     "desktop",
+				OS:           osType,
+				DeviceType:   deviceType,
+				IsRegistered: true,
+				RegId:        localRegId,
+				IsLocal:      true,
+				Metadata:     metadata,
+			}
+			// Update Platform and OS from cloud device metadata if available
+			if cloudDevice.Metadata.DeviceType != "" {
+				desktopDTO.Platform = cloudDevice.Metadata.DeviceType
+			}
+			if cloudDevice.Metadata.OsType != "" {
+				desktopDTO.OS = cloudDevice.Metadata.OsType
+			}
+		} else {
+			// Desktop device exists locally but not registered
+			desktopDTO = DeviceDTO{
+				ID:           "",
+				TransportID:  "local",
+				Serialno:     serialno,
+				Platform:     "desktop",
+				OS:           osType,
+				DeviceType:   deviceType,
+				IsRegistered: false,
+				RegId:        localRegId,
+				IsLocal:      true,
+				Metadata:     metadata,
+			}
+		}
+	} else {
+		// No local regId, show desktop device as unregistered
+		desktopDTO = DeviceDTO{
+			ID:           "",
+			TransportID:  "local",
+			Serialno:     serialno,
+			Platform:     "desktop",
+			OS:           osType,
+			DeviceType:   deviceType,
+			IsRegistered: false,
+			RegId:        "",
+			IsLocal:      true,
+			Metadata:     metadata,
+		}
+	}
+
+	// Update device info cache with complete desktop device information
+	h.serverService.UpdateDeviceInfo(&desktopDTO)
+
+	dtos = append(dtos, desktopDTO)
 
 	RespondJSON(w, http.StatusOK, map[string]interface{}{
 		"success":         true,
@@ -187,106 +335,289 @@ func (h *DeviceHandlers) HandleDeviceAction(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+// validateDeviceTypeAndOsType validates deviceType and osType parameters and their combination.
+// Returns normalized osType (with default value applied) and error if validation fails.
+func validateDeviceTypeAndOsType(deviceType, osType string) (string, error) {
+	// Validate deviceType
+	if deviceType != "mobile" && deviceType != "desktop" {
+		return "", fmt.Errorf("invalid deviceType: %s, must be 'mobile' or 'desktop'", deviceType)
+	}
+
+	// Validate osType based on deviceType
+	switch deviceType {
+	case "mobile":
+		// Mobile devices only support android
+		if osType != "" && osType != "android" {
+			return "", fmt.Errorf("mobile device type only supports 'android' osType, got: %s", osType)
+		}
+		// Default to android if not specified
+		if osType == "" {
+			osType = "android"
+		}
+	case "desktop":
+		// Desktop devices support linux, windows, macos
+		validDesktopOsTypes := map[string]bool{
+			"linux":   true,
+			"windows": true,
+			"macos":   true,
+		}
+		if osType != "" && !validDesktopOsTypes[osType] {
+			return "", fmt.Errorf("desktop device type only supports 'linux', 'windows', or 'macos' osType, got: %s", osType)
+		}
+	default:
+		return "", fmt.Errorf("invalid deviceType: %s, must be 'mobile' or 'desktop'", deviceType)
+	}
+
+	return osType, nil
+}
+
 // HandleDeviceRegister handles device registration requests
 func (h *DeviceHandlers) HandleDeviceRegister(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	var reqBody struct {
-		DeviceId string `json:"deviceId"`
-		Type     string `json:"type"`
+		DeviceId   string `json:"deviceId"`
+		DeviceType string `json:"deviceType"` // mobile, desktop
+		OsType     string `json:"osType"`     // android, linux, windows, macos
 	}
 	if err := decoder.Decode(&reqBody); err != nil {
 		http.Error(w, errors.Wrap(err, "failed to parse request body").Error(), http.StatusBadRequest)
 		return
 	}
 
-	deviceAPI := cloud.NewDeviceAPI()
-	var created *cloud.Device
-	var err error
+	// Normalize deviceType and osType
+	deviceType := strings.ToLower(reqBody.DeviceType)
+	osType := strings.ToLower(reqBody.OsType)
 
-	if strings.ToLower(reqBody.Type) == "linux" {
-		// Best-effort: initialize xdotool and noVNC environments on Linux hosts
+	// Validate deviceType and osType, and get normalized osType
+	normalizedOsType, err := validateDeviceTypeAndOsType(deviceType, osType)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	osType = normalizedOsType
+
+	deviceAPI := cloud.NewDeviceAPI()
+	created, err := h.registerDevice(deviceAPI, reqBody.DeviceId, deviceType, osType)
+	if err != nil {
+		// Check if it's a validation error (400) or server error (500)
+		if strings.Contains(err.Error(), "invalid") || strings.Contains(err.Error(), "only supports") {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Connect to access point asynchronously (for both desktop and mobile)
+	go func() {
+		if err := h.serverService.ConnectAP(created.Id); err != nil {
+			log.Print(errors.Wrapf(err, "fail to connect device %s to access point", created.Id))
+		}
+	}()
+
+	// Return response
+	RespondJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"data":    created,
+	})
+}
+
+// registerDevice registers a device based on deviceType and osType
+func (h *DeviceHandlers) registerDevice(deviceAPI *cloud.DeviceAPI, deviceId, deviceType, osType string) (*cloud.Device, error) {
+	// Initialize xdotool and noVNC environments for Linux desktop devices
+	if deviceType == "desktop" && osType == "linux" {
 		if err := runLinuxInitXdotoolScript(); err != nil {
 			log.Printf("Warning: init-linux-xdotool script failed: %v", err)
 		}
 		if err := runLinuxInitNoVncScript(); err != nil {
 			log.Printf("Warning: init-linux-novnc script failed: %v", err)
 		}
-		created, err = deviceAPI.Create(&cloud.Device{
-			Metadata: struct {
-				Serialno   string `json:"serialno,omitempty"`
-				AndroidId  string `json:"androidId,omitempty"`
-				Type       string `json:"type,omitempty"`
-				Resolution string `json:"resolution,omitempty"`
-			}{
-				Type: "linux",
-			},
-		})
-		if err != nil {
-			http.Error(w, errors.Wrap(err, "failed to register linux device").Error(), http.StatusInternalServerError)
-			return
+	}
+
+	// Prepare device metadata based on device type
+	var serialno, androidId, regId string
+	var err error
+	metadata := make(map[string]interface{})
+
+	if deviceType == "desktop" {
+		// Desktop device: get serialno from system
+		serialno = util.GetDesktopSerialNo(osType)
+		// Try to read existing regId from local file using DesktopManager
+		desktopMgr := device.NewManager(osType)
+		if regIdFromFile, readErr := desktopMgr.GetRegId(""); readErr == nil && regIdFromFile != "" {
+			regId = regIdFromFile
+		}
+
+		// Get device information for desktop device
+		width, height, resErr := desktopMgr.GetDisplayResolution("")
+		displayResolution := ""
+		if resErr == nil {
+			displayResolution = fmt.Sprintf("%dx%d", width, height)
+		}
+
+		osVersion, _ := desktopMgr.GetOSVersion("") // non-fatal
+		memory, _ := desktopMgr.GetMemory("")       // non-fatal
+
+		// Build desktop-specific metadata
+		if osType == "macos" {
+			metadata["chip"] = util.GetMacOSChip() // macOS-specific field
+		}
+		if osVersion != "" {
+			metadata["osVersion"] = osVersion
+		}
+		if memory != "" {
+			metadata["memory"] = memory
+		}
+		if displayResolution != "" {
+			metadata["resolution"] = displayResolution
+		}
+		// Add hostname for desktop devices
+		hostname, hostnameErr := os.Hostname()
+		if hostnameErr == nil && hostname != "" {
+			metadata["hostname"] = hostname
 		}
 	} else {
-		// For Android devices, use the detailed registration logic
-		devMgr := device.NewManager()
-		ids, err := devMgr.GetIdentifiers(reqBody.DeviceId)
+		// Mobile device: get identifiers from ADB
+		devMgr := device.NewManager("android")
+		ids, err := devMgr.GetIdentifiers(deviceId)
 		if err != nil {
-			http.Error(w, errors.Wrap(err, "failed to resolve device serialno or android_id").Error(), http.StatusInternalServerError)
-			return
+			return nil, errors.Wrap(err, "failed to resolve device serialno or android_id")
 		}
+		serialno = ids.SerialNo
+		if ids.AndroidID != nil {
+			androidId = *ids.AndroidID
+			metadata["androidId"] = androidId
+		}
+		regId = ids.RegId
 
-		// Get Resolution (WxH) for Metadata
-		width, height, resErr := devMgr.GetDisplayResolution(reqBody.DeviceId)
-		var resolution string
+		// Get device information for Android device
+		width, height, resErr := devMgr.GetDisplayResolution(deviceId)
+		displayResolution := ""
 		if resErr == nil {
-			resolution = fmt.Sprintf("%dx%d", width, height)
+			displayResolution = fmt.Sprintf("%dx%d", width, height)
+		}
+
+		osVersion, _ := devMgr.GetOSVersion(deviceId) // non-fatal
+		memory, _ := devMgr.GetMemory(deviceId)       // non-fatal
+
+		// Get device info to get model, manufacturer, connectionType
+		devices, err := devMgr.GetDevices()
+		if err == nil {
+			for _, d := range devices {
+				if d.ID == deviceId {
+					if d.Model != "" {
+						metadata["model"] = d.Model
+					}
+					if d.Manufacturer != "" {
+						metadata["manufacturer"] = d.Manufacturer
+					}
+					if d.ConnectionType != "" {
+						metadata["connectionType"] = d.ConnectionType
+					}
+					break
+				}
+			}
+		}
+
+		// Build Android-specific metadata
+		if displayResolution != "" {
+			metadata["resolution"] = displayResolution
+		}
+		if osVersion != "" {
+			metadata["osVersion"] = osVersion
+		}
+		if memory != "" {
+			metadata["memory"] = memory
+		}
+	}
+
+	// Extract fields from metadata map
+	resolution := ""
+	if res, ok := metadata["resolution"].(string); ok {
+		resolution = res
+	}
+	hostname := ""
+	if hn, ok := metadata["hostname"].(string); ok {
+		hostname = hn
+	}
+	chip := ""
+	if c, ok := metadata["chip"].(string); ok {
+		chip = c
+	}
+	osVersion := ""
+	if ov, ok := metadata["osVersion"].(string); ok {
+		osVersion = ov
+	}
+	memory := ""
+	if m, ok := metadata["memory"].(string); ok {
+		memory = m
+	}
+	model := ""
+	if m, ok := metadata["model"].(string); ok {
+		model = m
+	}
+	manufacturer := ""
+	if m, ok := metadata["manufacturer"].(string); ok {
+		manufacturer = m
+	}
+	connectionType := ""
+	if ct, ok := metadata["connectionType"].(string); ok {
+		connectionType = ct
+	}
+
+	// Create device in cloud
+	newDevice := &cloud.Device{
+		Metadata: struct {
+			Serialno       string `json:"serialno,omitempty"`
+			AndroidId      string `json:"androidId,omitempty"`
+			Type           string `json:"type,omitempty"`
+			DeviceType     string `json:"deviceType,omitempty"`
+			OsType         string `json:"osType,omitempty"`
+			Resolution     string `json:"resolution,omitempty"`
+			Hostname       string `json:"hostname,omitempty"`
+			Chip           string `json:"chip,omitempty"`
+			OsVersion      string `json:"osVersion,omitempty"`
+			Memory         string `json:"memory,omitempty"`
+			Model          string `json:"model,omitempty"`
+			Manufacturer   string `json:"manufacturer,omitempty"`
+			ConnectionType string `json:"connectionType,omitempty"`
+		}{
+			Serialno:       serialno,
+			AndroidId:      androidId,
+			Type:           osType, // Set Type field for backward compatibility with remote API
+			DeviceType:     deviceType,
+			OsType:         osType,
+			Resolution:     resolution,
+			Hostname:       hostname,
+			Chip:           chip,
+			OsVersion:      osVersion,
+			Memory:         memory,
+			Model:          model,
+			Manufacturer:   manufacturer,
+			ConnectionType: connectionType,
+		},
+		RegId: regId,
+	}
+
+	created, err := deviceAPI.Create(newDevice)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to register device")
+	}
+
+	// Persist the created device RegId back to the device
+	if created != nil && created.RegId != "" {
+		var devMgr device.DeviceManager
+		if deviceType == "desktop" {
+			devMgr = device.NewManager(osType)
 		} else {
-			resolution = ""
-			log.Printf("failed to get resolution for device %s: %v", reqBody.DeviceId, resErr)
+			devMgr = device.NewManager("android")
 		}
-
-		newDevice := &cloud.Device{
-			Metadata: struct {
-				Serialno   string `json:"serialno,omitempty"`
-				AndroidId  string `json:"androidId,omitempty"`
-				Type       string `json:"type,omitempty"`
-				Resolution string `json:"resolution,omitempty"`
-			}{
-				Serialno:   ids.SerialNo,
-				AndroidId:  ids.AndroidID,
-				Type:       "android",
-				Resolution: resolution,
-			},
-			RegId: ids.RegId,
-		}
-
-		created, err = deviceAPI.Create(newDevice)
-		if err != nil {
-			http.Error(w, errors.Wrap(err, "failed to register device").Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Persist the created device ID back to the physical device as RegId
-		if created != nil && created.RegId != "" {
-			if err := devMgr.SetRegId(reqBody.DeviceId, created.RegId); err != nil {
-				// Log the error but don't fail the registration
-				log.Printf("Warning: failed to persist RegId to device %s: %v", reqBody.DeviceId, err)
-			}
+		if err := devMgr.SetRegId(deviceId, created.RegId); err != nil {
+			log.Printf("Warning: failed to persist RegId to device %s: %v", deviceId, err)
 		}
 	}
 
-	// Establish connection to Access Point for Android only (Linux requires manual connect)
-	if strings.ToLower(reqBody.Type) != "linux" {
-		go func() {
-			if err := h.serverService.ConnectAP(reqBody.DeviceId); err != nil {
-				log.Print(errors.Wrapf(err, "fail to connect device %s to access point", reqBody.DeviceId))
-			}
-		}()
-	}
-
-	RespondJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"data":    created,
-	})
+	return created, nil
 }
 
 // HandleDeviceUnregister handles device unregistration requests
@@ -300,17 +631,65 @@ func (h *DeviceHandlers) HandleDeviceUnregister(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	devMgr2 := device.NewManager()
-	ids2, err := devMgr2.GetIdentifiers(reqBody.DeviceId)
-	serialno := ids2.SerialNo
-	androidId := ids2.AndroidID
-	regId := ids2.RegId
-	if err != nil {
-		http.Error(w, errors.Wrap(err, "failed to resolve device serialno or android_id").Error(), http.StatusInternalServerError)
+	deviceAPI := cloud.NewDeviceAPI()
+
+	// First, try to find device by regId (works for both Android and Desktop devices)
+	// If reqBody.DeviceId looks like a UUID/regId, try to find device by regId first
+	deviceList, err := deviceAPI.GetByRegId(reqBody.DeviceId)
+	if err == nil && len(deviceList.Data) > 0 {
+		// Found device(s) by regId, delete them
+		for _, device := range deviceList.Data {
+			if err := deviceAPI.Delete(device.Id); err != nil {
+				http.Error(w, errors.Wrapf(err, "failed to delete device %s", device.Id).Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		// Successfully deleted by regId, return early
+		go func() {
+			if err := h.serverService.DisconnectAP(reqBody.DeviceId); err != nil {
+				log.Print(errors.Wrapf(err, "fail to disconnect device %s from access point", reqBody.DeviceId))
+			}
+		}()
+		RespondJSON(w, http.StatusOK, map[string]interface{}{
+			"success": true,
+		})
 		return
 	}
 
-	deviceAPI := cloud.NewDeviceAPI()
+	// If not found by regId, try to resolve as Android device (for backward compatibility)
+	devMgr2 := device.NewManager("android")
+	ids2, err := devMgr2.GetIdentifiers(reqBody.DeviceId)
+	if err != nil {
+		// If GetIdentifiers fails, it might be a desktop device or invalid deviceId
+		// Try one more time to find by regId (in case it's a regId that wasn't found above)
+		deviceList, err2 := deviceAPI.GetByRegId(reqBody.DeviceId)
+		if err2 == nil && len(deviceList.Data) > 0 {
+			for _, device := range deviceList.Data {
+				if err := deviceAPI.Delete(device.Id); err != nil {
+					http.Error(w, errors.Wrapf(err, "failed to delete device %s", device.Id).Error(), http.StatusInternalServerError)
+					return
+				}
+			}
+			go func() {
+				if err := h.serverService.DisconnectAP(reqBody.DeviceId); err != nil {
+					log.Print(errors.Wrapf(err, "fail to disconnect device %s from access point", reqBody.DeviceId))
+				}
+			}()
+			RespondJSON(w, http.StatusOK, map[string]interface{}{
+				"success": true,
+			})
+			return
+		}
+		http.Error(w, errors.Wrap(err, "failed to resolve device identifiers").Error(), http.StatusInternalServerError)
+		return
+	}
+
+	serialno := ids2.SerialNo
+	var androidId string
+	if ids2.AndroidID != nil {
+		androidId = *ids2.AndroidID
+	}
+	regId := ids2.RegId
 
 	// If regId is available, use it to find and delete the device (most accurate)
 	if regId != "" {
@@ -327,6 +706,11 @@ func (h *DeviceHandlers) HandleDeviceUnregister(w http.ResponseWriter, r *http.R
 				}
 			}
 			// Successfully deleted by regId, return early
+			go func() {
+				if err := h.serverService.DisconnectAP(reqBody.DeviceId); err != nil {
+					log.Print(errors.Wrapf(err, "fail to disconnect device %s from access point", reqBody.DeviceId))
+				}
+			}()
 			RespondJSON(w, http.StatusOK, map[string]interface{}{
 				"success": true,
 			})
@@ -334,8 +718,8 @@ func (h *DeviceHandlers) HandleDeviceUnregister(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	// Fallback: use serialno and androidId to find and delete devices
-	deviceList, err := deviceAPI.GetBySerialnoAndAndroidId(serialno, androidId)
+	// Fallback: use serialno and androidId to find and delete devices (Android only)
+	deviceList, err = deviceAPI.GetBySerialnoAndAndroidId(serialno, androidId)
 	if err != nil {
 		http.Error(w, errors.Wrap(err, "failed to get devices").Error(), http.StatusInternalServerError)
 		return
@@ -354,6 +738,8 @@ func (h *DeviceHandlers) HandleDeviceUnregister(w http.ResponseWriter, r *http.R
 			http.Error(w, fmt.Errorf("device not found by regId %s or serialno/androidId", regId).Error(), http.StatusNotFound)
 			return
 		}
+		http.Error(w, fmt.Errorf("device not found").Error(), http.StatusNotFound)
+		return
 	}
 
 	go func() {
@@ -367,74 +753,6 @@ func (h *DeviceHandlers) HandleDeviceUnregister(w http.ResponseWriter, r *http.R
 	})
 }
 
-// HandleLinuxAPConnect manually connects a linux device to access point
-func (h *DeviceHandlers) HandleLinuxAPConnect(w http.ResponseWriter, r *http.Request) {
-	var reqBody struct {
-		DeviceId string `json:"deviceId"`
-		RegId    string `json:"regId"`
-	}
-	if r.Method == http.MethodPost {
-		decoder := json.NewDecoder(r.Body)
-		_ = decoder.Decode(&reqBody)
-	}
-
-	deviceAPI := cloud.NewDeviceAPI()
-	deviceId := strings.TrimSpace(reqBody.DeviceId)
-	regId := strings.TrimSpace(reqBody.RegId)
-	if deviceId == "" {
-		// Try to reuse existing device by regId if provided
-		if regId != "" {
-			if list, err := deviceAPI.GetByRegId(regId); err == nil && len(list.Data) > 0 {
-				deviceId = list.Data[0].Id
-			}
-		}
-		// If still empty, create a linux device on cloud then connect it
-		if deviceId == "" {
-			dev, err := deviceAPI.Create(&cloud.Device{
-				Metadata: struct {
-					Serialno   string `json:"serialno,omitempty"`
-					AndroidId  string `json:"androidId,omitempty"`
-					Type       string `json:"type,omitempty"`
-					Resolution string `json:"resolution,omitempty"`
-				}{
-					Type: "linux",
-				},
-			})
-			if err != nil {
-				http.Error(w, errors.Wrap(err, "failed to register linux device").Error(), http.StatusInternalServerError)
-				return
-			}
-			deviceId = dev.Id
-			// Best-effort to surface regId for client persistence
-			if dev.RegId != "" {
-				regId = dev.RegId
-			} else {
-				regId = dev.Id
-			}
-		}
-	}
-
-	// Best-effort: initialize xdotool and noVNC environments on Linux hosts before connecting
-	if err := runLinuxInitXdotoolScript(); err != nil {
-		log.Printf("Warning: init-linux-xdotool script failed: %v", err)
-	}
-	if err := runLinuxInitNoVncScript(); err != nil {
-		log.Printf("Warning: init-linux-novnc script failed: %v", err)
-	}
-
-	if err := h.serverService.ConnectAPLinux(deviceId); err != nil {
-		http.Error(w, errors.Wrapf(err, "failed to connect linux device %s to access point", deviceId).Error(), http.StatusInternalServerError)
-		return
-	}
-
-	RespondJSON(w, http.StatusOK, map[string]interface{}{
-		"success":  true,
-		"deviceId": deviceId,
-		"regId":    regId,
-		"status":   "connected",
-	})
-}
-
 // Device streaming handlers
 func (h *DeviceHandlers) HandleDeviceVideo(w http.ResponseWriter, req *http.Request) {
 	// Extract device serial from path: /api/devices/{serial}/video
@@ -443,7 +761,7 @@ func (h *DeviceHandlers) HandleDeviceVideo(w http.ResponseWriter, req *http.Requ
 	deviceSerial := parts[0]
 
 	if strings.Contains(req.Header.Get("via"), "gbox-device-ap") {
-		deviceSerial = h.serverService.GetAdbSerialByGboxDeviceId(deviceSerial)
+		deviceSerial = h.serverService.GetSerialByDeviceId(deviceSerial)
 	}
 
 	if deviceSerial == "" {
@@ -514,7 +832,7 @@ func (h *DeviceHandlers) HandleDeviceAudio(w http.ResponseWriter, req *http.Requ
 	log.Printf("[HandleDeviceAudio] Processing audio request for device: %s, URL: %s", deviceSerial, req.URL.String())
 
 	if strings.Contains(req.Header.Get("via"), "gbox-device-ap") {
-		deviceSerial = h.serverService.GetAdbSerialByGboxDeviceId(deviceSerial)
+		deviceSerial = h.serverService.GetSerialByDeviceId(deviceSerial)
 	}
 
 	if deviceSerial == "" {
@@ -593,7 +911,7 @@ func (h *DeviceHandlers) HandleDeviceStream(w http.ResponseWriter, req *http.Req
 	deviceSerial := parts[0]
 
 	if strings.Contains(req.Header.Get("via"), "gbox-device-ap") {
-		deviceSerial = h.serverService.GetAdbSerialByGboxDeviceId(deviceSerial)
+		deviceSerial = h.serverService.GetSerialByDeviceId(deviceSerial)
 	}
 
 	if deviceSerial == "" {
@@ -650,7 +968,7 @@ func (h *DeviceHandlers) HandleDeviceControl(w http.ResponseWriter, req *http.Re
 	deviceSerial := parts[0]
 
 	if strings.Contains(req.Header.Get("via"), "gbox-device-ap") {
-		deviceSerial = h.serverService.GetAdbSerialByGboxDeviceId(deviceSerial)
+		deviceSerial = h.serverService.GetSerialByDeviceId(deviceSerial)
 	}
 
 	if deviceSerial == "" {
@@ -748,7 +1066,7 @@ func (h *DeviceHandlers) HandleDeviceExec(w http.ResponseWriter, req *http.Reque
 	deviceSerial := parts[0]
 
 	if strings.Contains(req.Header.Get("via"), "gbox-device-ap") {
-		deviceSerial = h.serverService.GetAdbSerialByGboxDeviceId(deviceSerial)
+		deviceSerial = h.serverService.GetSerialByDeviceId(deviceSerial)
 	}
 
 	if deviceSerial == "" {
@@ -781,11 +1099,24 @@ func (h *DeviceHandlers) HandleDeviceExec(w http.ResponseWriter, req *http.Reque
 	ctx, cancel := context.WithTimeout(req.Context(), time.Duration(payload.TimeoutSec)*time.Second)
 	defer cancel()
 
+	// Determine device type by looking up device information
+	devicePlatform := h.getDevicePlatform(deviceSerial)
+
 	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "cmd", "/C", payload.Cmd)
+	if devicePlatform == "mobile" {
+		// Execute command on Android device via adb shell
+		adbPath, err := exec.LookPath("adb")
+		if err != nil {
+			adbPath = "adb"
+		}
+		cmd = exec.CommandContext(ctx, adbPath, "-s", deviceSerial, "shell", payload.Cmd)
 	} else {
-		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", payload.Cmd)
+		// Execute command locally on desktop device
+		if runtime.GOOS == "windows" {
+			cmd = exec.CommandContext(ctx, "cmd", "/C", payload.Cmd)
+		} else {
+			cmd = exec.CommandContext(ctx, "/bin/sh", "-c", payload.Cmd)
+		}
 	}
 
 	var stdoutBuf, stderrBuf bytes.Buffer
@@ -812,6 +1143,99 @@ func (h *DeviceHandlers) HandleDeviceExec(w http.ResponseWriter, req *http.Reque
 		"exit_code":   exitCode,
 		"duration_ms": duration.Milliseconds(),
 	})
+}
+
+// getDevicePlatform determines the platform type (mobile or desktop) for a given device serial
+// Returns "mobile" for Android devices, "desktop" for desktop devices
+func (h *DeviceHandlers) getDevicePlatform(deviceSerial string) string {
+	// First, try to get from device keeper cache (supports serialno, deviceId, or regId lookup)
+	deviceInfo := h.serverService.GetDeviceInfo(deviceSerial)
+	if deviceInfo != nil {
+		if dto, ok := deviceInfo.(*DeviceDTO); ok && dto.Platform != "" {
+			return dto.Platform
+		}
+	}
+
+	// If not in cache, try to determine from local device list
+	// This uses local API (not remote API) to get device information
+	dtos := h.getLocalDeviceList()
+	for _, dto := range dtos {
+		// Match by serialno, TransportID, or ID
+		if dto.Serialno == deviceSerial || dto.TransportID == deviceSerial || dto.ID == deviceSerial {
+			platform := dto.Platform
+			if platform == "" {
+				// Fallback: determine from OS type
+				if dto.OS == "android" {
+					platform = "mobile"
+				} else {
+					platform = "desktop"
+				}
+			}
+			// Update cache with complete device info for future use
+			h.serverService.UpdateDeviceInfo(&dto)
+			return platform
+		}
+	}
+
+	// Default to desktop if we can't determine (safer for local execution)
+	return "desktop"
+}
+
+// getLocalDeviceList gets device list locally without making remote API calls
+// This is a helper function to avoid duplicating HandleDeviceList logic
+func (h *DeviceHandlers) getLocalDeviceList() []DeviceDTO {
+	devs, err := h.deviceManager.GetDevices()
+	if err != nil {
+		return []DeviceDTO{}
+	}
+
+	dtos := make([]DeviceDTO, 0, len(devs))
+
+	// Add Android devices
+	for _, d := range devs {
+		dto := DeviceDTO{
+			ID:           "",
+			TransportID:  d.ID,
+			Serialno:     d.SerialNo,
+			Platform:     "mobile",  // Android devices are mobile
+			OS:           "android", // Android devices
+			DeviceType:   util.DetectAndroidDeviceType(d.ID, d.SerialNo),
+			IsRegistered: false,
+			RegId:        d.RegId,
+		}
+		dtos = append(dtos, dto)
+	}
+
+	// Add desktop device (always show local machine)
+	var osType string
+	switch runtime.GOOS {
+	case "darwin":
+		osType = "macos"
+	case "linux", "windows":
+		osType = strings.ToLower(runtime.GOOS)
+	default:
+		osType = "linux"
+	}
+
+	desktopMgr := device.NewManager(osType)
+	localRegId, _ := desktopMgr.GetRegId("") // non-fatal
+	serialno := util.GetDesktopSerialNo(osType)
+
+	desktopDTO := DeviceDTO{
+		ID:           "",
+		TransportID:  "local",
+		Serialno:     serialno,
+		Platform:     "desktop",
+		OS:           osType,
+		DeviceType:   util.DetectDesktopDeviceType(osType),
+		IsRegistered: false,
+		RegId:        localRegId,
+		IsLocal:      true,
+		Metadata:     make(map[string]interface{}),
+	}
+
+	dtos = append(dtos, desktopDTO)
+	return dtos
 }
 
 // handleWebRTCMessage handles WebRTC signaling messages
@@ -886,7 +1310,7 @@ func (h *DeviceHandlers) HandleDeviceAdb(w http.ResponseWriter, req *http.Reques
 	deviceSerial := parts[0]
 
 	if strings.Contains(req.Header.Get("via"), "gbox-device-ap") {
-		deviceSerial = h.serverService.GetAdbSerialByGboxDeviceId(deviceSerial)
+		deviceSerial = h.serverService.GetSerialByDeviceId(deviceSerial)
 	}
 
 	if deviceSerial == "" {
@@ -910,17 +1334,20 @@ func (h *DeviceHandlers) HandleDeviceAdb(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	manager := device.NewManager()
-	result, err := manager.ExecAdbCommand(deviceSerial, reqBody.Command)
+	manager := device.NewManager("android")
+	// ExecAdbCommand is only available on AndroidManager, not DeviceManager interface
+	// Cast to *AndroidManager to access ExecAdbCommand
+	androidMgr, ok := manager.(*device.AndroidManager)
+	if !ok {
+		http.Error(w, "ExecAdbCommand is only available for Android devices", http.StatusBadRequest)
+		return
+	}
+	result, err := androidMgr.ExecAdbCommand(deviceSerial, reqBody.Command)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	RespondJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"data":    result,
-	})
+	RespondJSON(w, http.StatusOK, result)
 }
 
 // Private helper methods

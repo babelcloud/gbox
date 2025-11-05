@@ -10,9 +10,11 @@ import (
 	"path"
 	"runtime/debug"
 	"sync"
+	"time"
 
 	"github.com/babelcloud/gbox/packages/cli/internal/cloud"
 	"github.com/babelcloud/gbox/packages/cli/internal/device"
+	"github.com/babelcloud/gbox/packages/cli/internal/server/handlers"
 	adb "github.com/basiooo/goadb"
 	"github.com/dchest/uniuri"
 	"github.com/pires/go-proxyproto"
@@ -28,6 +30,11 @@ var deviceConnectClient = &http.Client{
 	},
 }
 
+type deviceInfo struct {
+	DeviceDTO *handlers.DeviceDTO // Complete device information from handlers package
+	ExpiresAt time.Time           // Expiration time
+}
+
 type DeviceKeeper struct {
 	adbClient     *adb.Adb
 	deviceWatcher *adb.DeviceWatcher
@@ -37,6 +44,11 @@ type DeviceKeeper struct {
 
 	deviceAPI *cloud.DeviceAPI
 	apAPI     *cloud.AccessPointAPI
+
+	// Device info cache with expiration
+	// Key can be serialno, deviceId (TransportID), or regId
+	deviceInfoCache map[string]*deviceInfo
+	infoCacheMu     sync.RWMutex
 
 	mu         sync.RWMutex
 	deviceLock keymutex.KeyMutex
@@ -50,12 +62,13 @@ func NewDeviceKeeper() (*DeviceKeeper, error) {
 		return nil, errors.Wrapf(err, "failed to create adb client on port %d", adb.AdbPort)
 	}
 	return &DeviceKeeper{
-		adbClient:      adbClient,
-		adbDeviceBiMap: bimap.NewBiMap[string, string](),
-		deviceSessions: NewDeviceMap(),
-		deviceAPI:      cloud.NewDeviceAPI(),
-		apAPI:          cloud.NewAccessPointAPI(),
-		deviceLock:     keymutex.NewHashed(10000),
+		adbClient:       adbClient,
+		adbDeviceBiMap:  bimap.NewBiMap[string, string](),
+		deviceSessions:  NewDeviceMap(),
+		deviceAPI:       cloud.NewDeviceAPI(),
+		apAPI:           cloud.NewAccessPointAPI(),
+		deviceInfoCache: make(map[string]*deviceInfo),
+		deviceLock:      keymutex.NewHashed(10000),
 	}, nil
 }
 
@@ -109,29 +122,86 @@ func (dm *DeviceKeeper) Close() {
 	}
 }
 
-func (dm *DeviceKeeper) getAdbSerialByGboxDeviceId(deviceId string) string {
+// getSerialByDeviceId gets the device serial (serialno) by device ID (gbox device ID)
+// Supports both Android and desktop devices by checking both adbDeviceBiMap and deviceInfoCache
+func (dm *DeviceKeeper) getSerialByDeviceId(deviceId string) string {
+	// First, try to get from adbDeviceBiMap (for Android devices that are connected)
 	dm.mu.RLock()
-	defer dm.mu.RUnlock()
-
 	serial, ok := dm.adbDeviceBiMap.GetInverse(deviceId)
-	if !ok {
-		return ""
+	dm.mu.RUnlock()
+	if ok && serial != "" {
+		return serial
 	}
-	return serial
+
+	// If not found in adbDeviceBiMap, try to get from device info cache
+	// This works for both Android and desktop devices
+	dm.infoCacheMu.RLock()
+	defer dm.infoCacheMu.RUnlock()
+
+	// Search through cache to find device with matching ID
+	for _, info := range dm.deviceInfoCache {
+		if time.Now().After(info.ExpiresAt) {
+			continue // Skip expired entries
+		}
+		if info.DeviceDTO != nil && info.DeviceDTO.ID == deviceId {
+			// Found matching device ID, return its serialno
+			if info.DeviceDTO.Serialno != "" {
+				return info.DeviceDTO.Serialno
+			}
+		}
+	}
+
+	// Also try to match by TransportID or RegId as fallback
+	for _, info := range dm.deviceInfoCache {
+		if time.Now().After(info.ExpiresAt) {
+			continue
+		}
+		if info.DeviceDTO != nil {
+			if info.DeviceDTO.TransportID == deviceId || info.DeviceDTO.RegId == deviceId {
+				if info.DeviceDTO.Serialno != "" {
+					return info.DeviceDTO.Serialno
+				}
+			}
+		}
+	}
+
+	return ""
+}
+
+// getAdbSerialByGboxDeviceId is kept for backward compatibility
+// Use getSerialByDeviceId instead for universal device support
+func (dm *DeviceKeeper) getAdbSerialByGboxDeviceId(deviceId string) string {
+	return dm.getSerialByDeviceId(deviceId)
 }
 
 func (dm *DeviceKeeper) connectAP(serial string) error {
-	devMgr := device.NewManager()
+	devMgr := device.NewManager("android")
 	ids, err := devMgr.GetIdentifiers(serial)
+	var deviceList *cloud.DeviceList
+
 	if err != nil {
-		// Fall back: treat input as a deviceId for non-ADB/Linux devices
-		return dm.connectAPUsingDeviceId(serial, serial)
+		// Fall back: treat input as a deviceId for non-ADB devices (desktop)
+		// Try to find device by deviceId directly
+		deviceList, err = dm.deviceAPI.GetByRegId(serial)
+		if err != nil || len(deviceList.Data) == 0 {
+			// If not found by regId, treat serial as deviceId directly
+			return dm.connectAPUsingDeviceId(serial, serial, "", "")
+		}
+		// Found device by regId, use it
+		dev := deviceList.Data[0]
+		deviceType := dev.Metadata.DeviceType
+		osType := dev.Metadata.OsType
+		return dm.connectAPUsingDeviceId(serial, dev.Id, deviceType, osType)
 	}
 
+	// Android device: get serialno and androidId
 	serialno := ids.SerialNo
-	androidId := ids.AndroidID
+	var androidId string
+	if ids.AndroidID != nil {
+		androidId = *ids.AndroidID
+	}
 
-	deviceList, err := dm.deviceAPI.GetBySerialnoAndAndroidId(serialno, androidId)
+	deviceList, err = dm.deviceAPI.GetBySerialnoAndAndroidId(serialno, androidId)
 	if err != nil {
 		return errors.Wrapf(err, "failed to get GBOX devices with serialno %s and androidId %s", serialno, androidId)
 	}
@@ -140,12 +210,15 @@ func (dm *DeviceKeeper) connectAP(serial string) error {
 	}
 
 	dev := deviceList.Data[0]
-	return dm.connectAPUsingDeviceId(serial, dev.Id)
+	deviceType := dev.Metadata.DeviceType
+	osType := dev.Metadata.OsType
+	return dm.connectAPUsingDeviceId(serial, dev.Id, deviceType, osType)
 }
 
 // connectAPUsingDeviceId establishes AP connection using known gbox deviceId.
 // key is used as the map/session key and logging serial (adb serial or deviceId).
-func (dm *DeviceKeeper) connectAPUsingDeviceId(key string, deviceId string) error {
+// deviceType and osType are stored for device type-specific handling.
+func (dm *DeviceKeeper) connectAPUsingDeviceId(key string, deviceId string, deviceType string, osType string) error {
 	dm.deviceLock.LockKey(key)
 	defer dm.deviceLock.UnlockKey(key)
 
@@ -174,9 +247,23 @@ func (dm *DeviceKeeper) connectAPUsingDeviceId(key string, deviceId string) erro
 	}
 
 	session := dm.addDevice(key, &DeviceSession{
-		Mux:    mux,
-		Serial: key,
+		Mux:        mux,
+		Serial:     key,
+		DeviceType: deviceType,
+		OsType:     osType,
 	}, deviceId)
+
+	// Create minimal device info for cache (full info will be updated when device list is queried)
+	// This ensures we can look up device platform immediately after connection
+	dto := &handlers.DeviceDTO{
+		ID:         deviceId,
+		Serialno:   key,
+		Platform:   deviceType, // deviceType is actually "mobile" or "desktop" here
+		OS:         osType,
+		DeviceType: "", // Will be filled when device list is queried
+	}
+	dm.updateDeviceInfo(dto)
+
 	go dm.processDeviceSession(session, key)
 	return nil
 }
@@ -238,6 +325,80 @@ func (dm *DeviceKeeper) delDevice(session *DeviceSession) {
 
 	if dm.deviceSessions.Delete(session.Serial, session.Token) {
 		dm.adbDeviceBiMap.Delete(session.Serial)
+		// Note: We don't delete from platform cache here to allow it to expire naturally
+		// This helps with reconnection scenarios
+	}
+}
+
+// updateDeviceInfo updates the device info cache with complete device information
+// Cache expires after 1 hour of inactivity
+// Stores device info under multiple keys: serialno, TransportID, ID, and regId (if available)
+func (dm *DeviceKeeper) updateDeviceInfo(dto *handlers.DeviceDTO) {
+	dm.infoCacheMu.Lock()
+	defer dm.infoCacheMu.Unlock()
+
+	info := &deviceInfo{
+		DeviceDTO: dto,
+		ExpiresAt: time.Now().Add(1 * time.Hour),
+	}
+
+	// Store under multiple keys for flexible lookup
+	if dto.Serialno != "" {
+		dm.deviceInfoCache[dto.Serialno] = info
+	}
+	if dto.TransportID != "" && dto.TransportID != dto.Serialno {
+		dm.deviceInfoCache[dto.TransportID] = info
+	}
+	if dto.ID != "" {
+		dm.deviceInfoCache[dto.ID] = info
+	}
+	if dto.RegId != "" {
+		dm.deviceInfoCache[dto.RegId] = info
+	}
+}
+
+// GetDeviceInfo gets the complete device information from cache by serialno, deviceId, or regId
+// Returns nil if not found or expired
+func (dm *DeviceKeeper) GetDeviceInfo(key string) *handlers.DeviceDTO {
+	dm.infoCacheMu.RLock()
+	defer dm.infoCacheMu.RUnlock()
+
+	info, ok := dm.deviceInfoCache[key]
+	if !ok {
+		return nil
+	}
+
+	// Check if expired
+	if time.Now().After(info.ExpiresAt) {
+		// Clean up expired entry (async)
+		go dm.cleanupExpiredDeviceInfo(key)
+		return nil
+	}
+
+	return info.DeviceDTO
+}
+
+// cleanupExpiredDeviceInfo removes expired entries from cache
+func (dm *DeviceKeeper) cleanupExpiredDeviceInfo(key string) {
+	dm.infoCacheMu.Lock()
+	defer dm.infoCacheMu.Unlock()
+
+	info, ok := dm.deviceInfoCache[key]
+	if ok && time.Now().After(info.ExpiresAt) {
+		delete(dm.deviceInfoCache, key)
+	}
+}
+
+// CleanupExpiredDeviceInfos removes all expired entries from cache
+func (dm *DeviceKeeper) CleanupExpiredDeviceInfos() {
+	dm.infoCacheMu.Lock()
+	defer dm.infoCacheMu.Unlock()
+
+	now := time.Now()
+	for key, info := range dm.deviceInfoCache {
+		if now.After(info.ExpiresAt) {
+			delete(dm.deviceInfoCache, key)
+		}
 	}
 }
 
@@ -290,7 +451,8 @@ func (dm *DeviceKeeper) processDeviceSession(session *DeviceSession, serial stri
 			go func() {
 				// Use stored mapping to get gbox deviceId for reconnection
 				deviceId, _ := dm.adbDeviceBiMap.Get(serial)
-				if err := dm.connectAPUsingDeviceId(serial, deviceId); err != nil {
+				// Preserve device type information from the session
+				if err := dm.connectAPUsingDeviceId(serial, deviceId, session.DeviceType, session.OsType); err != nil {
 					dm.disconnectAP(session)
 					log.Print(errors.Wrapf(err, "failed to reconnect device %s to GBOX access point", serial))
 				}
@@ -366,9 +528,11 @@ func processSessionStream(stream *smux.Stream, serial string) {
 }
 
 type DeviceSession struct {
-	Mux    *smux.Session
-	Token  string
-	Serial string
+	Mux        *smux.Session
+	Token      string
+	Serial     string
+	DeviceType string // mobile or desktop
+	OsType     string // android, linux, windows, macos
 }
 
 type DeviceMap struct {

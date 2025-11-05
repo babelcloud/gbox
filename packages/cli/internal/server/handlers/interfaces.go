@@ -37,9 +37,10 @@ type ServerService interface {
 	ListPortForwards() interface{}
 
 	ConnectAP(serial string) error
-	ConnectAPLinux(deviceId string) error
 	DisconnectAP(serial string) error
-	GetAdbSerialByGboxDeviceId(deviceId string) string
+	GetSerialByDeviceId(deviceId string) string // Gets device serialno by device ID (supports both Android and desktop)
+	GetDeviceInfo(serial string) interface{}    // Returns DeviceDTO or nil
+	UpdateDeviceInfo(device interface{})        // Accepts DeviceDTO
 }
 
 // Bridge defines the interface for device bridge operations

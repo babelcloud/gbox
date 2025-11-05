@@ -22,10 +22,19 @@ type Device struct {
 	Ownership string `json:"ownership,omitempty"`
 	OwnerId   string `json:"ownerId,omitempty"`
 	Metadata  struct {
-		Serialno  string `json:"serialno,omitempty"`
-		AndroidId string `json:"androidId,omitempty"`
-		Type      string `json:"type,omitempty"`
-		Resolution string `json:"resolution,omitempty"`
+		Serialno       string `json:"serialno,omitempty"`
+		AndroidId      string `json:"androidId,omitempty"`
+		Type           string `json:"type,omitempty"`       // Deprecated: use DeviceType and OsType instead
+		DeviceType     string `json:"deviceType,omitempty"` // mobile, desktop
+		OsType         string `json:"osType,omitempty"`     // android, linux, windows, macos
+		Resolution     string `json:"resolution,omitempty"`
+		Hostname       string `json:"hostname,omitempty"`       // Desktop device hostname
+		Chip           string `json:"chip,omitempty"`           // macOS chip information
+		OsVersion      string `json:"osVersion,omitempty"`      // OS version
+		Memory         string `json:"memory,omitempty"`         // Memory size
+		Model          string `json:"model,omitempty"`          // Android device model
+		Manufacturer   string `json:"manufacturer,omitempty"`   // Android device manufacturer
+		ConnectionType string `json:"connectionType,omitempty"` // Android connection type (usb, tcp, etc.)
 	} `json:"metadata,omitzero"`
 	Labels        map[string]string `json:"labels,omitempty"`
 	AccessPointId string            `json:"accessPointId,omitempty"`

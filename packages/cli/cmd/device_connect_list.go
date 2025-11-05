@@ -14,8 +14,6 @@ import (
 const (
 	statusRegistered    = "Registered"
 	statusNotRegistered = "Not Registered"
-	deviceTypeDevice    = "device"
-	deviceTypeEmulator  = "emulator"
 )
 
 type DeviceConnectListOptions struct {
@@ -24,15 +22,17 @@ type DeviceConnectListOptions struct {
 
 // DeviceDTO is the API response structure for devices
 type DeviceDTO struct {
-	ID             string `json:"id"`
-	TransportID    string `json:"transportId"`
-	Serialno       string `json:"serialno"`
-	AndroidID      string `json:"androidId"`
-	Model          string `json:"model"`
-	Manufacturer   string `json:"manufacturer"`
-	ConnectionType string `json:"connectionType"`
-	IsRegistered   bool   `json:"isRegistered"`
-	RegId          string `json:"regId"`
+	ID           string                 `json:"id"`
+	TransportID  string                 `json:"transportId"`
+	Serialno     string                 `json:"serialno"`
+	AndroidID    string                 `json:"androidId"`
+	Platform     string                 `json:"platform"`   // mobile, desktop
+	OS           string                 `json:"os"`         // android, linux, windows, macos
+	DeviceType   string                 `json:"deviceType"` // physical, emulator, vm
+	IsRegistered bool                   `json:"isRegistered"`
+	RegId        string                 `json:"regId"`
+	IsLocal      bool                   `json:"isLocal"`  // true if this is the local desktop device
+	Metadata     map[string]interface{} `json:"metadata"` // Device-specific metadata
 }
 
 func NewDeviceConnectListCommand() *cobra.Command {
@@ -96,45 +96,8 @@ func ExecuteDeviceConnectList(cmd *cobra.Command, opts *DeviceConnectListOptions
 }
 
 func outputDevicesJSONFromAPI(devices []DeviceDTO) error {
-	// Create a simplified JSON output for compatibility
-	type SimpleDeviceInfo struct {
-		RegId            string `json:"reg_id"`
-		DeviceID         string `json:"device_id"`
-		Name             string `json:"name"`
-		Type             string `json:"type"`
-		ConnectionStatus string `json:"connection_status"`
-	}
-
-	var simpleDevices []SimpleDeviceInfo
-	for _, device := range devices {
-		deviceID := device.ID
-		name := device.Model
-		serialNo := device.Serialno
-		regId := device.RegId
-		isRegistered := device.IsRegistered
-
-		status := statusNotRegistered
-		if isRegistered {
-			// Color "Registered" in green for better visibility
-			status = "\u001b[32m" + statusRegistered + "\u001b[0m"
-		}
-
-		deviceType := deviceTypeDevice
-		// Check if it's an emulator based on serial number
-		if strings.Contains(strings.ToUpper(serialNo), "EMULATOR") {
-			deviceType = deviceTypeEmulator
-		}
-
-		simpleDevices = append(simpleDevices, SimpleDeviceInfo{
-			RegId:            regId,
-			DeviceID:         deviceID,
-			Name:             name,
-			Type:             deviceType,
-			ConnectionStatus: status,
-		})
-	}
-
-	jsonBytes, err := json.MarshalIndent(simpleDevices, "", "  ")
+	// Output full DeviceDTO with all fields
+	jsonBytes, err := json.MarshalIndent(devices, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal devices to JSON: %v", err)
 	}
@@ -144,7 +107,7 @@ func outputDevicesJSONFromAPI(devices []DeviceDTO) error {
 
 func outputDevicesTextFromAPI(devices []DeviceDTO) error {
 	if len(devices) == 0 {
-		fmt.Println("No Android devices found.")
+		fmt.Println("No devices found.")
 		return nil
 	}
 
@@ -153,14 +116,13 @@ func outputDevicesTextFromAPI(devices []DeviceDTO) error {
 		serial            string
 		deviceID          string
 		serialOrTransport string
-		name              string
+		os                string
 		deviceType        string
 		status            string
 	}
 	rows := make([]row, 0, len(devices))
 	for _, device := range devices {
 		deviceID := device.ID
-		name := device.Model
 		serialNo := device.Serialno
 		transportID := device.TransportID
 		isRegistered := device.IsRegistered
@@ -171,20 +133,62 @@ func outputDevicesTextFromAPI(devices []DeviceDTO) error {
 			status = "\x1b[32m" + statusRegistered + "\x1b[0m"
 		}
 
-		deviceType := deviceTypeDevice
-		// Check if it's an emulator based on serial number
-		if strings.Contains(strings.ToUpper(serialNo), "EMULATOR") {
-			deviceType = deviceTypeEmulator
+		// Get OS and DeviceType from device
+		os := device.OS
+		if os == "" {
+			os = "-"
 		}
 
-		// Display "-" for empty fields
-		if name == "" {
-			name = "-"
+		// Get osVersion from metadata and combine with OS
+		osVersion := ""
+		if device.Metadata != nil {
+			if ov, ok := device.Metadata["osVersion"].(string); ok && ov != "" {
+				osVersion = ov
+			}
+		}
+
+		// Format OS display: capitalize first letter and handle macOS
+		osDisplay := os
+		if os != "-" && os != "" {
+			osLower := strings.ToLower(os)
+			switch osLower {
+			case "android":
+				osDisplay = "Android"
+			case "macos":
+				osDisplay = "MacOS"
+			case "linux":
+				osDisplay = "Linux"
+			case "windows":
+				osDisplay = "Windows"
+			default:
+				// Capitalize first letter
+				if len(os) > 0 {
+					osDisplay = strings.ToUpper(os[:1]) + strings.ToLower(os[1:])
+				}
+			}
+
+			// Append version if available
+			if osVersion != "" {
+				osDisplay = fmt.Sprintf("%s %s", osDisplay, osVersion)
+			}
+		}
+
+		deviceType := device.DeviceType
+		if deviceType == "" {
+			deviceType = "-"
+		}
+
+		// Get connectionType from metadata for Android devices
+		connectionType := ""
+		if device.Metadata != nil {
+			if ct, ok := device.Metadata["connectionType"].(string); ok {
+				connectionType = ct
+			}
 		}
 
 		// Second column: for USB show Serial No; otherwise show Transport ID (full value)
 		serialOrTransport := transportID
-		if strings.EqualFold(device.ConnectionType, "usb") && strings.TrimSpace(serialNo) != "" {
+		if strings.EqualFold(connectionType, "usb") && strings.TrimSpace(serialNo) != "" {
 			serialOrTransport = serialNo
 		}
 
@@ -198,7 +202,7 @@ func outputDevicesTextFromAPI(devices []DeviceDTO) error {
 			serial:            device.Serialno,
 			deviceID:          uniqueDeviceID,
 			serialOrTransport: serialOrTransport,
-			name:              name,
+			os:                osDisplay,
 			deviceType:        deviceType,
 			status:            status,
 		})
@@ -221,8 +225,8 @@ func outputDevicesTextFromAPI(devices []DeviceDTO) error {
 		tableData[i] = map[string]interface{}{
 			"device_id":           r.deviceID,
 			"serial_or_transport": r.serialOrTransport,
-			"name":                r.name,
-			"type":                r.deviceType,
+			"os":                  r.os,
+			"device_type":         r.deviceType,
 			"status":              r.status,
 		}
 	}
@@ -231,8 +235,8 @@ func outputDevicesTextFromAPI(devices []DeviceDTO) error {
 	columns := []util.TableColumn{
 		{Header: "DEVICE ID", Key: "device_id"},
 		{Header: "SERIAL NO/TRANSPORT ID", Key: "serial_or_transport"},
-		{Header: "MODEL", Key: "name"},
-		{Header: "TYPE", Key: "type"},
+		{Header: "OS", Key: "os"},
+		{Header: "DEVICE TYPE", Key: "device_type"},
 		{Header: "STATUS", Key: "status"},
 	}
 
