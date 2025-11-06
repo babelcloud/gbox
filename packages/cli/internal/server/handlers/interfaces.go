@@ -36,11 +36,12 @@ type ServerService interface {
 
 	ConnectAP(serial string) error
 	DisconnectAP(serial string) error
-	GetSerialByDeviceId(deviceId string) string // Gets device serialno by device ID (supports both Android and desktop)
-	GetDeviceInfo(serial string) interface{}    // Returns DeviceDTO or nil
-	UpdateDeviceInfo(device interface{})        // Accepts DeviceDTO
-	IsDeviceConnected(serial string) bool       // Checks if device is currently connected to AP
-	ReconnectRegisteredDevices() error          // Reconnects all registered devices on server start
+	GetSerialByDeviceId(deviceId string) string        // Gets device serialno by device ID (supports both Android and desktop)
+	GetDeviceInfo(serial string) interface{}           // Returns DeviceDTO or nil
+	UpdateDeviceInfo(device interface{})               // Accepts DeviceDTO
+	IsDeviceConnected(serial string) bool              // Checks if device is currently connected to AP
+	GetDeviceReconnectState(serial string) interface{} // Returns reconnect state (isReconnecting, attempt, maxRetry)
+	ReconnectRegisteredDevices() error                 // Reconnects all registered devices on server start
 }
 
 // Bridge defines the interface for device bridge operations

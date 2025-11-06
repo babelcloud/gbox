@@ -13,6 +13,8 @@ import (
 
 const (
 	statusConnected     = "Connected"
+	statusReconnecting  = "Reconnecting"
+	statusDisconnected  = "Disconnected"
 	statusRegistered    = "Registered"
 	statusNotRegistered = "Not Registered"
 )
@@ -23,18 +25,21 @@ type DeviceConnectListOptions struct {
 
 // DeviceDTO is the API response structure for devices
 type DeviceDTO struct {
-	ID           string                 `json:"id"`
-	TransportID  string                 `json:"transportId"`
-	Serialno     string                 `json:"serialno"`
-	AndroidID    string                 `json:"androidId"`
-	Platform     string                 `json:"platform"`   // mobile, desktop
-	OS           string                 `json:"os"`         // android, linux, windows, macos
-	DeviceType   string                 `json:"deviceType"` // physical, emulator, vm
-	IsRegistered bool                   `json:"isRegistered"`
-	IsConnected  bool                   `json:"isConnected"` // true if device is currently connected to AP
-	RegId        string                 `json:"regId"`
-	IsLocal      bool                   `json:"isLocal"`  // true if this is the local desktop device
-	Metadata     map[string]interface{} `json:"metadata"` // Device-specific metadata
+	ID                string                 `json:"id"`
+	TransportID       string                 `json:"transportId"`
+	Serialno          string                 `json:"serialno"`
+	AndroidID         string                 `json:"androidId"`
+	Platform          string                 `json:"platform"`   // mobile, desktop
+	OS                string                 `json:"os"`         // android, linux, windows, macos
+	DeviceType        string                 `json:"deviceType"` // physical, emulator, vm
+	IsRegistered      bool                   `json:"isRegistered"`
+	IsConnected       bool                   `json:"isConnected"`       // true if device is currently connected to AP
+	IsReconnecting    bool                   `json:"isReconnecting"`    // true if device is attempting to reconnect
+	ReconnectAttempt  int                    `json:"reconnectAttempt"`  // Current reconnection attempt count
+	ReconnectMaxRetry int                    `json:"reconnectMaxRetry"` // Maximum reconnection attempts
+	RegId             string                 `json:"regId"`
+	IsLocal           bool                   `json:"isLocal"`  // true if this is the local desktop device
+	Metadata          map[string]interface{} `json:"metadata"` // Device-specific metadata
 }
 
 func NewDeviceConnectListCommand() *cobra.Command {
@@ -129,12 +134,22 @@ func outputDevicesTextFromAPI(devices []DeviceDTO) error {
 		transportID := device.TransportID
 		isRegistered := device.IsRegistered
 		isConnected := device.IsConnected
+		isReconnecting := device.IsReconnecting
+		reconnectAttempt := device.ReconnectAttempt
+		maxRetry := device.ReconnectMaxRetry
 
 		// Determine status based on connection state
 		var status string
 		if isConnected {
 			// Green for Connected
 			status = "\x1b[32m" + statusConnected + "\x1b[0m"
+		} else if isReconnecting {
+			// Cyan for Reconnecting (with attempt info)
+			reconnectInfo := fmt.Sprintf("%s (%d/%d)", statusReconnecting, reconnectAttempt, maxRetry)
+			status = "\x1b[36m" + reconnectInfo + "\x1b[0m"
+		} else if isRegistered && reconnectAttempt >= maxRetry && maxRetry > 0 {
+			// Red for Disconnected (max retries reached)
+			status = "\x1b[31m" + statusDisconnected + "\x1b[0m"
 		} else if isRegistered {
 			// Yellow for Registered but not connected
 			status = "\x1b[33m" + statusRegistered + "\x1b[0m"

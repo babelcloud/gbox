@@ -3,11 +3,12 @@ package router
 import (
 	"io/fs"
 	"net/http"
+
 	"github.com/babelcloud/gbox/packages/cli/internal/server/handlers"
 )
 
 // PagesRouter handles page routes (/, /live-view, /adb-expose)
-type PagesRouter struct{
+type PagesRouter struct {
 	handlers *handlers.PagesHandlers
 }
 
@@ -20,16 +21,21 @@ func (r *PagesRouter) RegisterRoutes(mux *http.ServeMux, server interface{}) {
 	}
 	r.handlers = handlers.NewPagesHandlers(staticFS)
 
-	// Main pages
-	mux.HandleFunc("/live-view", r.handlers.HandleLiveView)
-	mux.HandleFunc("/live-view/", r.handlers.HandleLiveView)
-	mux.HandleFunc("/adb-expose", r.handlers.HandleADBExpose)
-	mux.HandleFunc("/adb-expose/", r.handlers.HandleADBExpose)
+	// Create pattern router for page routes
+	pagesRouter := NewPatternRouter()
 
-	// Root handler (must be registered last)
-	mux.HandleFunc("/", r.handlers.HandleRoot)
+	// Page routes with optional trailing slash
+	pagesRouter.HandleFunc("/live-view", r.handlers.HandleLiveView)
+	pagesRouter.HandleFunc("/live-view/{path:.*}", r.handlers.HandleLiveView)
+	pagesRouter.HandleFunc("/adb-expose", r.handlers.HandleADBExpose)
+	pagesRouter.HandleFunc("/adb-expose/{path:.*}", r.handlers.HandleADBExpose)
+
+	// Root handler (catches all unmatched routes)
+	pagesRouter.HandleFunc("/{path:.*}", r.handlers.HandleRoot)
+
+	// Register pattern router
+	mux.HandleFunc("/", pagesRouter.ServeHTTP)
 }
-
 
 // GetPathPrefix returns the path prefix for this router
 func (r *PagesRouter) GetPathPrefix() string {
