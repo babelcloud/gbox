@@ -35,6 +35,7 @@ type DeviceDTO struct {
 	OS           string                 `json:"os"`         // android, linux, windows, macos
 	DeviceType   string                 `json:"deviceType"` // physical, emulator, vm
 	IsRegistered bool                   `json:"isRegistered"`
+	IsConnected  bool                   `json:"isConnected"` // true if device is currently connected to AP
 	RegId        string                 `json:"regId"`
 	IsLocal      bool                   `json:"isLocal"`  // true if this is the local desktop device
 	Metadata     map[string]interface{} `json:"metadata"` // Device-specific metadata
@@ -187,6 +188,9 @@ func (h *DeviceHandlers) HandleDeviceList(w http.ResponseWriter, r *http.Request
 			}
 		}
 
+		// Check if device is currently connected to AP
+		dto.IsConnected = h.serverService.IsDeviceConnected(d.SerialNo)
+
 		// Update device info cache with complete device information
 		h.serverService.UpdateDeviceInfo(&dto)
 
@@ -295,6 +299,9 @@ func (h *DeviceHandlers) HandleDeviceList(w http.ResponseWriter, r *http.Request
 			Metadata:     metadata,
 		}
 	}
+
+	// Check if desktop device is currently connected to AP
+	desktopDTO.IsConnected = h.serverService.IsDeviceConnected(desktopDTO.Serialno)
 
 	// Update device info cache with complete desktop device information
 	h.serverService.UpdateDeviceInfo(&desktopDTO)
@@ -1057,8 +1064,8 @@ func (h *DeviceHandlers) HandleDeviceControl(w http.ResponseWriter, req *http.Re
 // HandleDeviceExec executes a shell command on the server, scoped under a device path
 // Path: /api/devices/{serial}/exec
 // Method: POST
-// Body JSON: { "cmd": "echo hello", "timeout_sec": 60 }
-// Response JSON: { stdout, stderr, exit_code, duration_ms }
+// Body JSON: { "cmd": "echo hello", "timeoutSec": 60 }
+// Response JSON: { stdout, stderr, exitCode, durationMs }
 func (h *DeviceHandlers) HandleDeviceExec(w http.ResponseWriter, req *http.Request) {
 	// Extract device serial from path
 	path := strings.TrimPrefix(req.URL.Path, "/api/devices/")
@@ -1081,7 +1088,7 @@ func (h *DeviceHandlers) HandleDeviceExec(w http.ResponseWriter, req *http.Reque
 
 	var payload struct {
 		Cmd        string `json:"cmd"`
-		TimeoutSec int    `json:"timeout_sec"`
+		TimeoutSec int    `json:"timeoutSec"`
 	}
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(&payload); err != nil {
@@ -1137,11 +1144,11 @@ func (h *DeviceHandlers) HandleDeviceExec(w http.ResponseWriter, req *http.Reque
 	}
 
 	RespondJSON(w, http.StatusOK, map[string]interface{}{
-		"device":      deviceSerial,
-		"stdout":      stdoutBuf.String(),
-		"stderr":      stderrBuf.String(),
-		"exit_code":   exitCode,
-		"duration_ms": duration.Milliseconds(),
+		"device":     deviceSerial,
+		"stdout":     stdoutBuf.String(),
+		"stderr":     stderrBuf.String(),
+		"exitCode":   exitCode,
+		"durationMs": duration.Milliseconds(),
 	})
 }
 
@@ -1371,9 +1378,9 @@ func (h *DeviceHandlers) handleDeviceConnect(w http.ResponseWriter, r *http.Requ
 	}
 
 	RespondJSON(w, http.StatusOK, map[string]interface{}{
-		"success":   true,
-		"device_id": deviceID,
-		"status":    "connected",
+		"success":  true,
+		"deviceId": deviceID,
+		"status":   "connected",
 	})
 }
 
@@ -1389,9 +1396,9 @@ func (h *DeviceHandlers) handleDeviceDisconnect(w http.ResponseWriter, r *http.R
 	}
 
 	RespondJSON(w, http.StatusOK, map[string]interface{}{
-		"success":   true,
-		"device_id": deviceID,
-		"status":    "disconnected",
+		"success":  true,
+		"deviceId": deviceID,
+		"status":   "disconnected",
 	})
 }
 

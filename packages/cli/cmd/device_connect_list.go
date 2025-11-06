@@ -12,6 +12,7 @@ import (
 )
 
 const (
+	statusConnected     = "Connected"
 	statusRegistered    = "Registered"
 	statusNotRegistered = "Not Registered"
 )
@@ -30,6 +31,7 @@ type DeviceDTO struct {
 	OS           string                 `json:"os"`         // android, linux, windows, macos
 	DeviceType   string                 `json:"deviceType"` // physical, emulator, vm
 	IsRegistered bool                   `json:"isRegistered"`
+	IsConnected  bool                   `json:"isConnected"` // true if device is currently connected to AP
 	RegId        string                 `json:"regId"`
 	IsLocal      bool                   `json:"isLocal"`  // true if this is the local desktop device
 	Metadata     map[string]interface{} `json:"metadata"` // Device-specific metadata
@@ -126,11 +128,18 @@ func outputDevicesTextFromAPI(devices []DeviceDTO) error {
 		serialNo := device.Serialno
 		transportID := device.TransportID
 		isRegistered := device.IsRegistered
+		isConnected := device.IsConnected
 
-		status := statusNotRegistered
-		if isRegistered {
-			// Green for Registered
-			status = "\x1b[32m" + statusRegistered + "\x1b[0m"
+		// Determine status based on connection state
+		var status string
+		if isConnected {
+			// Green for Connected
+			status = "\x1b[32m" + statusConnected + "\x1b[0m"
+		} else if isRegistered {
+			// Yellow for Registered but not connected
+			status = "\x1b[33m" + statusRegistered + "\x1b[0m"
+		} else {
+			status = statusNotRegistered
 		}
 
 		// Get OS and DeviceType from device

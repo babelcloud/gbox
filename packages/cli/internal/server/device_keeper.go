@@ -113,6 +113,15 @@ func (dm *DeviceKeeper) Start() error {
 		}
 	}()
 
+	// Reconnect all registered devices (both Android and desktop)
+	go func() {
+		// Give adb watcher some time to detect online devices first
+		time.Sleep(2 * time.Second)
+		if err := dm.ReconnectRegisteredDevices(); err != nil {
+			log.Printf("Failed to reconnect registered devices: %v", err)
+		}
+	}()
+
 	return nil
 }
 
@@ -302,6 +311,12 @@ func (dm *DeviceKeeper) getDevice(serial string) (*DeviceSession, bool) {
 	return session, ok
 }
 
+// IsDeviceConnected checks if a device is currently connected to AP
+func (dm *DeviceKeeper) IsDeviceConnected(serial string) bool {
+	_, ok := dm.getDevice(serial)
+	return ok
+}
+
 func (dm *DeviceKeeper) hasDevice(serial string) bool {
 	dm.mu.RLock()
 	defer dm.mu.RUnlock()
@@ -400,6 +415,45 @@ func (dm *DeviceKeeper) CleanupExpiredDeviceInfos() {
 			delete(dm.deviceInfoCache, key)
 		}
 	}
+}
+
+// ReconnectRegisteredDevices reconnects all registered devices on server start
+// This is called after server startup to restore device connections
+func (dm *DeviceKeeper) ReconnectRegisteredDevices() error {
+	// Get all registered devices from cloud
+	deviceList, err := dm.deviceAPI.GetAll()
+	if err != nil {
+		return errors.Wrap(err, "failed to get registered devices from cloud")
+	}
+
+	log.Printf("Attempting to reconnect %d registered device(s)", len(deviceList.Data))
+
+	for _, dev := range deviceList.Data {
+		// Skip if device is already connected
+		if dm.IsDeviceConnected(dev.Metadata.Serialno) {
+			log.Printf("Device %s (%s) already connected, skipping", dev.Id, dev.Metadata.Serialno)
+			continue
+		}
+
+		deviceType := dev.Metadata.DeviceType
+		osType := dev.Metadata.OsType
+		serialno := dev.Metadata.Serialno
+
+		// For Android devices, wait for adb watcher to handle connection
+		// Only reconnect desktop devices here
+		if deviceType == "desktop" && serialno != "" {
+			log.Printf("Reconnecting desktop device %s (%s)", dev.Id, serialno)
+			go func(id, sn, dt, ot string) {
+				if err := dm.connectAPUsingDeviceId(sn, id, dt, ot); err != nil {
+					log.Printf("Failed to reconnect device %s: %v", id, err)
+				} else {
+					log.Printf("Successfully reconnected device %s", id)
+				}
+			}(dev.Id, serialno, deviceType, osType)
+		}
+	}
+
+	return nil
 }
 
 func connectAP(url, token, protocol, serial string) (*smux.Session, error) {
