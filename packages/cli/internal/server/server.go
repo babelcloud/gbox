@@ -5,17 +5,12 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/fs"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
-	client "github.com/babelcloud/gbox/packages/cli/internal/client"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/control"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/webrtc"
 	"github.com/babelcloud/gbox/packages/cli/internal/server/handlers"
@@ -143,242 +138,6 @@ func (s *GBoxServer) setupRoutes() {
 	for _, r := range routers {
 		r.RegisterRoutes(s.mux, s)
 	}
-
-	// Setup static files as fallback (must be last)
-	s.setupStaticFiles()
-}
-
-// setupStaticFiles sets up static file serving
-// Note: Root path is now handled by PagesRouter
-func (s *GBoxServer) setupStaticFiles() {
-	// Root path is handled by PagesRouter, no additional setup needed
-	// This function is kept for potential future static file setup
-}
-
-// serveStaticWithMIME wraps a file server to set correct MIME types
-func (s *GBoxServer) serveStaticWithMIME(fs http.FileSystem) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Set correct MIME types based on file extension
-		if strings.HasSuffix(r.URL.Path, ".css") {
-			w.Header().Set("Content-Type", "text/css")
-		} else if strings.HasSuffix(r.URL.Path, ".js") {
-			w.Header().Set("Content-Type", "application/javascript")
-		} else if strings.HasSuffix(r.URL.Path, ".html") {
-			w.Header().Set("Content-Type", "text/html")
-		}
-		http.FileServer(fs).ServeHTTP(w, r)
-	})
-}
-
-// findStaticPath finds the server static files directory
-func (s *GBoxServer) findStaticPath() string {
-	// Try various possible locations for the server static files
-	possiblePaths := []string{
-		// Relative to gbox binary location
-		"../../cli/internal/server/static",
-		"../cli/internal/server/static",
-		"packages/cli/internal/server/static",
-		// Development paths
-		"./packages/cli/internal/server/static",
-		"../../../gbox/packages/cli/internal/server/static",
-		// Current directory
-		"./static",
-		"static",
-	}
-
-	for _, path := range possiblePaths {
-		absPath, err := filepath.Abs(path)
-		if err != nil {
-			continue
-		}
-		if info, err := os.Stat(absPath); err == nil && info.IsDir() {
-			return absPath
-		}
-	}
-
-	log.Printf("Warning: Server static files not found")
-	return ""
-}
-
-// getScrcpyServerPath returns the path to scrcpy-server.jar
-func (s *GBoxServer) getScrcpyServerPath() string {
-	// Check external file
-	possiblePaths := []string{
-		"assets/scrcpy-server.jar",
-		"../assets/scrcpy-server.jar",
-		"../../assets/scrcpy-server.jar",
-		"packages/cli/assets/scrcpy-server.jar",
-	}
-
-	for _, path := range possiblePaths {
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
-	}
-
-	return ""
-}
-
-// API Handlers
-
-func (s *GBoxServer) handleStatus(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	uptime := time.Since(s.startTime)
-	s.mu.RUnlock()
-
-	status := map[string]interface{}{
-		"running": s.IsRunning(),
-		"port":    s.port,
-		"uptime":  uptime.String(),
-		"services": map[string]interface{}{
-			"device_connect": true,
-			"adb_expose":     true, // Always available through handlers
-		},
-		"version":  BuildInfo.Version,
-		"build_id": GetBuildID(),
-	}
-
-	respondJSON(w, http.StatusOK, status)
-}
-
-func (s *GBoxServer) handleRoot(w http.ResponseWriter, r *http.Request) {
-	// Only serve root page for exact path match
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
-
-	// Serve the index.html file from static directory
-	s.serveStaticFileSimple(w, r, "index.html")
-}
-
-// serveStaticFileSimple serves a file from the embedded static files
-func (s *GBoxServer) serveStaticFileSimple(w http.ResponseWriter, r *http.Request, filename string) {
-	// Read the file from embedded filesystem
-	file, err := staticFiles.Open("static/" + filename)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	defer file.Close()
-
-	// Set appropriate content type
-	if strings.HasSuffix(filename, ".html") {
-		w.Header().Set("Content-Type", "text/html")
-	} else if strings.HasSuffix(filename, ".css") {
-		w.Header().Set("Content-Type", "text/css")
-	} else if strings.HasSuffix(filename, ".js") {
-		w.Header().Set("Content-Type", "application/javascript")
-	} else if strings.HasSuffix(filename, ".svg") {
-		w.Header().Set("Content-Type", "image/svg+xml")
-	}
-
-	// Copy file content to response
-	io.Copy(w, file)
-}
-
-func (s *GBoxServer) handleShutdown(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	respondJSON(w, http.StatusOK, map[string]string{
-		"message": "Server shutting down",
-	})
-
-	// Shutdown after response
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		s.Stop()
-		os.Exit(0)
-	}()
-}
-
-func (s *GBoxServer) handleServerInfo(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	uptime := time.Since(s.startTime)
-	s.mu.RUnlock()
-
-	info := map[string]interface{}{
-		"version":  BuildInfo.Version,
-		"build_id": s.buildID, // Use stored build ID from startup
-		"port":     s.port,
-		"uptime":   uptime.String(),
-		"services": []string{
-			"device-connect",
-			"adb-expose",
-		},
-	}
-
-	// Set CORS headers for debugging
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-	respondJSON(w, http.StatusOK, info)
-}
-
-func (s *GBoxServer) handleBoxList(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Parse query parameters
-	query := r.URL.Query()
-	typeFilter := query.Get("type") // e.g., ?type=android
-
-	// Create GBOX client from profile
-	sdkClient, err := client.NewClientFromProfile()
-	if err != nil {
-		log.Printf("Failed to create GBOX client: %v", err)
-		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"error": "Failed to initialize GBOX client",
-		})
-		return
-	}
-
-	// Call GBOX API to get real box list
-	boxesData, err := client.ListBoxesRawData(sdkClient, []string{})
-	if err != nil {
-		log.Printf("Failed to list boxes from GBOX API: %v", err)
-		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"error": "Failed to fetch boxes from GBOX API",
-		})
-		return
-	}
-
-	// Convert to the expected format and add name field
-	var allBoxes []map[string]interface{}
-	for _, box := range boxesData {
-		// Add name field if not present (use ID as fallback)
-		if _, ok := box["name"]; !ok {
-			if id, ok := box["id"].(string); ok {
-				box["name"] = id
-			}
-		}
-		allBoxes = append(allBoxes, box)
-	}
-
-	// Filter boxes by type if specified
-	var filteredBoxes []map[string]interface{}
-	if typeFilter != "" {
-		for _, box := range allBoxes {
-			if boxType, ok := box["type"].(string); ok && boxType == typeFilter {
-				filteredBoxes = append(filteredBoxes, box)
-			}
-		}
-	} else {
-		filteredBoxes = allBoxes
-	}
-
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"boxes": filteredBoxes,
-		"filter": map[string]interface{}{
-			"type": typeFilter,
-		},
-	})
 }
 
 // ServerService interface implementations for handlers
@@ -437,16 +196,6 @@ func (s *GBoxServer) GetStaticFS() fs.FS {
 	return staticFiles
 }
 
-// FindLiveViewStaticPath returns live view static path (deprecated - now embedded)
-func (s *GBoxServer) FindLiveViewStaticPath() string {
-	return "" // Live-view files are now embedded, not external
-}
-
-// FindStaticPath returns static path
-func (s *GBoxServer) FindStaticPath() string {
-	return s.findStaticPath()
-}
-
 // StartPortForward starts port forwarding for ADB expose
 // This method is kept for ServerService interface compatibility
 // but ADB functionality is now handled by ADBExposeHandlers
@@ -490,6 +239,14 @@ func (s *GBoxServer) UpdateDeviceInfo(device interface{}) {
 	if dto, ok := device.(*handlers.DeviceDTO); ok {
 		s.deviceKeeper.updateDeviceInfo(dto)
 	}
+}
+
+func (s *GBoxServer) IsDeviceConnected(serial string) bool {
+	return s.deviceKeeper.IsDeviceConnected(serial)
+}
+
+func (s *GBoxServer) ReconnectRegisteredDevices() error {
+	return s.deviceKeeper.ReconnectRegisteredDevices()
 }
 
 // Helper function to send JSON responses
