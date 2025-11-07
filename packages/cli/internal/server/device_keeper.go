@@ -35,6 +35,16 @@ type deviceInfo struct {
 	ExpiresAt time.Time           // Expiration time
 }
 
+// reconnectState tracks the reconnection state for a device
+type reconnectState struct {
+	IsReconnecting bool
+	Attempt        int
+	MaxRetry       int
+	Serial         string
+	DeviceId       string
+	DisconnectedAt time.Time // When the device was disconnected
+}
+
 type DeviceKeeper struct {
 	adbClient     *adb.Adb
 	deviceWatcher *adb.DeviceWatcher
@@ -49,6 +59,11 @@ type DeviceKeeper struct {
 	// Key can be serialno, deviceId (TransportID), or regId
 	deviceInfoCache map[string]*deviceInfo
 	infoCacheMu     sync.RWMutex
+
+	// Reconnection state tracking
+	// Key is device serial
+	reconnectStates map[string]*reconnectState
+	reconnectMu     sync.RWMutex
 
 	mu         sync.RWMutex
 	deviceLock keymutex.KeyMutex
@@ -68,6 +83,7 @@ func NewDeviceKeeper() (*DeviceKeeper, error) {
 		deviceAPI:       cloud.NewDeviceAPI(),
 		apAPI:           cloud.NewAccessPointAPI(),
 		deviceInfoCache: make(map[string]*deviceInfo),
+		reconnectStates: make(map[string]*reconnectState),
 		deviceLock:      keymutex.NewHashed(10000),
 	}, nil
 }
@@ -122,12 +138,193 @@ func (dm *DeviceKeeper) Start() error {
 		}
 	}()
 
+	// Start periodic cleanup and health check tasks
+	go dm.startPeriodicCleanup()
+
 	return nil
 }
 
 func (dm *DeviceKeeper) Close() {
 	if dm.deviceWatcher != nil {
 		dm.deviceWatcher.Shutdown()
+	}
+}
+
+// startPeriodicCleanup runs periodic cleanup and health check tasks
+func (dm *DeviceKeeper) startPeriodicCleanup() {
+	cleanupTicker := time.NewTicker(10 * time.Minute) // Run cleanup every 10 minutes
+	defer cleanupTicker.Stop()
+
+	healthCheckTicker := time.NewTicker(30 * time.Second) // Run health check every 30 seconds
+	defer healthCheckTicker.Stop()
+
+	for {
+		select {
+		case <-cleanupTicker.C:
+			dm.cleanupDisconnectedDevices()
+			dm.CleanupExpiredDeviceInfos()
+		case <-healthCheckTicker.C:
+			dm.healthCheckAndReconnect()
+		}
+	}
+}
+
+// healthCheckAndReconnect checks all registered devices and attempts to reconnect if needed
+// Also checks if currently "connected" devices are actually alive
+func (dm *DeviceKeeper) healthCheckAndReconnect() {
+	// First, check all currently connected sessions for liveness
+	dm.checkConnectedDevicesHealth()
+
+	// Get all registered devices from API
+	deviceList, err := dm.deviceAPI.GetAll()
+	if err != nil {
+		log.Printf("Health check: failed to list devices: %v", err)
+		return
+	}
+
+	for _, device := range deviceList.Data {
+		// Skip if device is not registered
+		if device.RegId == "" {
+			continue
+		}
+
+		serialno := device.Metadata.Serialno
+		if serialno == "" {
+			// Desktop devices might use regId as serial
+			serialno = device.RegId
+		}
+
+		// Check if device is connected
+		isConnected := dm.IsDeviceConnected(serialno)
+
+		// Check if device is currently reconnecting
+		dm.reconnectMu.RLock()
+		_, isReconnecting := dm.reconnectStates[serialno]
+		dm.reconnectMu.RUnlock()
+
+		// If not connected and not already reconnecting, try to reconnect
+		if !isConnected && !isReconnecting {
+			deviceType := device.Metadata.DeviceType
+			osType := device.Metadata.OsType
+
+			// For Android devices, check if the physical device is online via ADB
+			if deviceType == "mobile" && osType == "android" {
+				// Check if device is visible in ADB
+				adbDevices, err := dm.adbClient.ListDevices()
+				if err != nil {
+					log.Printf("Health check: failed to list adb devices: %v", err)
+					continue
+				}
+
+				deviceFound := false
+				for _, adbDev := range adbDevices {
+					if adbDev.Serial == serialno {
+						deviceFound = true
+						break
+					}
+				}
+
+				// Only try to reconnect if device is physically present
+				if !deviceFound {
+					continue
+				}
+			}
+
+			// Try to connect
+			log.Printf("Health check: device %s (ID: %s) is registered but not connected, attempting to connect", serialno, device.Id)
+			go func(serial, deviceId, devType, osType string) {
+				if err := dm.connectAPUsingDeviceId(serial, deviceId, devType, osType); err != nil {
+					log.Printf("Health check: failed to connect device %s: %v", serial, err)
+				}
+			}(serialno, device.Id, deviceType, osType)
+		}
+	}
+}
+
+// checkConnectedDevicesHealth checks if currently connected devices are actually alive
+func (dm *DeviceKeeper) checkConnectedDevicesHealth() {
+	dm.mu.RLock()
+	// Get all connected serials
+	sessions := make(map[string]*DeviceSession)
+	dm.deviceSessions.mu.RLock()
+	for serial, session := range dm.deviceSessions.sessions {
+		sessions[serial] = session
+	}
+	dm.deviceSessions.mu.RUnlock()
+	dm.mu.RUnlock()
+
+	// Check each connected session
+	for serial, session := range sessions {
+		// Get deviceId before any removal
+		dm.mu.RLock()
+		deviceId, _ := dm.adbDeviceBiMap.Get(serial)
+		dm.mu.RUnlock()
+
+		if session.Mux == nil {
+			log.Printf("Health check: device %s has nil Mux, triggering reconnection", serial)
+			dm.delDevice(session)
+
+			// Trigger reconnection if we have deviceId
+			if deviceId != "" {
+				go dm.reconnectDeviceWithBackoff(serial, session, deviceId)
+			}
+			continue
+		}
+
+		// Check if the mux is closed or broken
+		if session.Mux.IsClosed() {
+			log.Printf("Health check: device %s connection is closed, triggering reconnection", serial)
+
+			// Remove the dead session
+			dm.delDevice(session)
+
+			// Trigger reconnection
+			if deviceId != "" {
+				go dm.reconnectDeviceWithBackoff(serial, session, deviceId)
+			}
+		}
+	}
+}
+
+// cleanupDisconnectedDevices removes mappings for devices that have been disconnected for too long
+func (dm *DeviceKeeper) cleanupDisconnectedDevices() {
+	dm.reconnectMu.Lock()
+	defer dm.reconnectMu.Unlock()
+
+	now := time.Now()
+	// Grace period for disconnected devices: 30 minutes
+	gracePeriod := 30 * time.Minute
+
+	toClean := make([]string, 0)
+	for serial, state := range dm.reconnectStates {
+		// Clean up devices that:
+		// 1. Are not reconnecting (gave up)
+		// 2. Have been disconnected for more than grace period
+		if !state.IsReconnecting && now.Sub(state.DisconnectedAt) > gracePeriod {
+			toClean = append(toClean, serial)
+		}
+	}
+
+	// Perform cleanup outside the loop to avoid modification during iteration
+	for _, serial := range toClean {
+		// Remove from bimap
+		dm.mu.Lock()
+		dm.adbDeviceBiMap.Delete(serial)
+		dm.mu.Unlock()
+
+		// Remove reconnect state
+		delete(dm.reconnectStates, serial)
+
+		// Clean up device info cache
+		dm.infoCacheMu.Lock()
+		delete(dm.deviceInfoCache, serial)
+		dm.infoCacheMu.Unlock()
+
+		log.Printf("device %s: cleaned up after %v of being disconnected", serial, gracePeriod)
+	}
+
+	if len(toClean) > 0 {
+		log.Printf("Periodic cleanup: removed %d disconnected device(s)", len(toClean))
 	}
 }
 
@@ -256,10 +453,13 @@ func (dm *DeviceKeeper) connectAPUsingDeviceId(key string, deviceId string, devi
 	}
 
 	session := dm.addDevice(key, &DeviceSession{
-		Mux:        mux,
-		Serial:     key,
-		DeviceType: deviceType,
-		OsType:     osType,
+		Mux:              mux,
+		Serial:           key,
+		DeviceType:       deviceType,
+		OsType:           osType,
+		ReconnectAttempt: 0,
+		MaxReconnect:     5, // Maximum 5 reconnection attempts
+		LastError:        nil,
 	}, deviceId)
 
 	// Create minimal device info for cache (full info will be updated when device list is queried)
@@ -300,6 +500,35 @@ func (dm *DeviceKeeper) disconnectAPForce(serial string) error {
 			dm.delDevice(session)
 		}
 	}
+
+	// For physical disconnection (device offline), clean up immediately
+	// This is different from connection loss which triggers reconnection
+	dm.mu.Lock()
+	dm.adbDeviceBiMap.Delete(serial)
+	dm.mu.Unlock()
+
+	// Clean up reconnect state if exists
+	dm.reconnectMu.Lock()
+	delete(dm.reconnectStates, serial)
+	dm.reconnectMu.Unlock()
+
+	return nil
+}
+
+// unregisterDevice is called when user explicitly unregisters a device
+// This should clean up all related data immediately
+func (dm *DeviceKeeper) unregisterDevice(serial string) error {
+	// First disconnect the device
+	if err := dm.disconnectAPForce(serial); err != nil {
+		return err
+	}
+
+	// Clean up device info cache
+	dm.infoCacheMu.Lock()
+	delete(dm.deviceInfoCache, serial)
+	dm.infoCacheMu.Unlock()
+
+	log.Printf("device %s: unregistered and cleaned up all mappings", serial)
 	return nil
 }
 
@@ -338,11 +567,11 @@ func (dm *DeviceKeeper) delDevice(session *DeviceSession) {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
-	if dm.deviceSessions.Delete(session.Serial, session.Token) {
-		dm.adbDeviceBiMap.Delete(session.Serial)
-		// Note: We don't delete from platform cache here to allow it to expire naturally
-		// This helps with reconnection scenarios
-	}
+	// Only delete from session map, keep adbDeviceBiMap for reconnection
+	dm.deviceSessions.Delete(session.Serial, session.Token)
+	// Note: We intentionally keep adbDeviceBiMap entry for reconnection
+	// Note: We don't delete from platform cache here to allow it to expire naturally
+	// This helps with reconnection scenarios
 }
 
 // updateDeviceInfo updates the device info cache with complete device information
@@ -499,22 +728,169 @@ func (dm *DeviceKeeper) processDeviceSession(session *DeviceSession, serial stri
 	}()
 
 	for {
-		stream, err := session.Mux.AcceptStream()
-		if err != nil && dm.hasDevice(serial) {
-			log.Print(errors.Wrapf(err, "device %s session closed. try to reconnect", serial))
-			go func() {
-				// Use stored mapping to get gbox deviceId for reconnection
-				deviceId, _ := dm.adbDeviceBiMap.Get(serial)
-				// Preserve device type information from the session
-				if err := dm.connectAPUsingDeviceId(serial, deviceId, session.DeviceType, session.OsType); err != nil {
-					dm.disconnectAP(session)
-					log.Print(errors.Wrapf(err, "failed to reconnect device %s to GBOX access point", serial))
-				}
-			}()
+		// Check if session.Mux is nil before calling AcceptStream
+		if session.Mux == nil {
+			log.Printf("device %s: session.Mux is nil, cannot accept stream", serial)
 			return
+		}
+
+		stream, err := session.Mux.AcceptStream()
+		if err != nil {
+			// Check if device is still registered (in bimap)
+			if dm.hasDevice(serial) {
+				log.Print(errors.Wrapf(err, "device %s session closed. will try to reconnect", serial))
+
+				// Get deviceId before delDevice (which used to delete from bimap)
+				deviceId, _ := dm.adbDeviceBiMap.Get(serial)
+
+				// Mark device as disconnected but keep bimap entry for reconnection
+				dm.delDevice(session)
+
+				// Start reconnection with exponential backoff
+				go dm.reconnectDeviceWithBackoff(serial, session, deviceId)
+				return
+			} else {
+				log.Printf("device %s: session closed and device not registered, stopping", serial)
+				return
+			}
 		}
 		log.Printf("device %s stream %d accepted", serial, stream.ID())
 		go processSessionStream(stream, serial)
+	}
+}
+
+// reconnectDeviceWithBackoff attempts to reconnect a device with exponential backoff
+// deviceId is passed in to avoid race condition with bimap
+func (dm *DeviceKeeper) reconnectDeviceWithBackoff(serial string, oldSession *DeviceSession, deviceId string) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("recovered from reconnectDeviceWithBackoff for device %s: %v", serial, r)
+		}
+	}()
+
+	if deviceId == "" {
+		log.Printf("device %s: empty device ID for reconnection", serial)
+		return
+	}
+
+	maxAttempts := oldSession.MaxReconnect
+	if maxAttempts <= 0 {
+		maxAttempts = 5
+	}
+
+	// Create and store reconnection state
+	dm.setReconnectState(serial, &reconnectState{
+		IsReconnecting: true,
+		Attempt:        0,
+		MaxRetry:       maxAttempts,
+		Serial:         serial,
+		DeviceId:       deviceId,
+		DisconnectedAt: time.Now(),
+	})
+	defer dm.removeReconnectState(serial)
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		// Update reconnection attempt count
+		dm.updateReconnectAttempt(serial, attempt)
+
+		// Calculate backoff delay: 2^attempt seconds, capped at 60 seconds
+		backoffSeconds := 1 << uint(attempt) // 2, 4, 8, 16, 32...
+		if backoffSeconds > 60 {
+			backoffSeconds = 60
+		}
+		backoffDuration := time.Duration(backoffSeconds) * time.Second
+
+		log.Printf("device %s: reconnection attempt %d/%d (waiting %v)...", serial, attempt, maxAttempts, backoffDuration)
+		time.Sleep(backoffDuration)
+
+		// Try to reconnect
+		err := dm.connectAPUsingDeviceId(serial, deviceId, oldSession.DeviceType, oldSession.OsType)
+		if err == nil {
+			log.Printf("device %s: reconnection successful on attempt %d", serial, attempt)
+			return
+		}
+
+		log.Printf("device %s: reconnection attempt %d/%d failed: %v", serial, attempt, maxAttempts, err)
+	}
+
+	// Max attempts reached - mark as disconnected permanently
+	log.Printf("device %s: max reconnection attempts (%d) reached, marking as disconnected", serial, maxAttempts)
+
+	// Keep the state to show "Disconnected" status, don't remove it
+	dm.reconnectMu.Lock()
+	if state, ok := dm.reconnectStates[serial]; ok {
+		state.IsReconnecting = false
+		state.Attempt = maxAttempts
+	}
+	dm.reconnectMu.Unlock()
+
+	// Schedule cleanup of bimap entry after a grace period (5 minutes)
+	// This allows user to see "Disconnected" status for a while
+	go func() {
+		gracePeriod := 5 * time.Minute
+		log.Printf("device %s: will clean up mapping after %v grace period", serial, gracePeriod)
+		time.Sleep(gracePeriod)
+
+		// Check if device has reconnected during grace period
+		if !dm.IsDeviceConnected(serial) {
+			dm.mu.Lock()
+			dm.adbDeviceBiMap.Delete(serial)
+			dm.mu.Unlock()
+
+			// Also clean up reconnect state
+			dm.reconnectMu.Lock()
+			delete(dm.reconnectStates, serial)
+			dm.reconnectMu.Unlock()
+
+			log.Printf("device %s: cleaned up mapping and reconnect state after grace period", serial)
+		}
+	}()
+}
+
+// setReconnectState sets the reconnection state for a device
+func (dm *DeviceKeeper) setReconnectState(serial string, state *reconnectState) {
+	dm.reconnectMu.Lock()
+	defer dm.reconnectMu.Unlock()
+	dm.reconnectStates[serial] = state
+}
+
+// updateReconnectAttempt updates the current reconnection attempt count
+func (dm *DeviceKeeper) updateReconnectAttempt(serial string, attempt int) {
+	dm.reconnectMu.Lock()
+	defer dm.reconnectMu.Unlock()
+	if state, ok := dm.reconnectStates[serial]; ok {
+		state.Attempt = attempt
+	}
+}
+
+// removeReconnectState removes the reconnection state for a device
+// Only call this when reconnection succeeds
+func (dm *DeviceKeeper) removeReconnectState(serial string) {
+	dm.reconnectMu.Lock()
+	defer dm.reconnectMu.Unlock()
+	// Only remove if not at max retries (success case)
+	if state, ok := dm.reconnectStates[serial]; ok && state.Attempt < state.MaxRetry {
+		delete(dm.reconnectStates, serial)
+	}
+}
+
+// getReconnectState gets the reconnection state for a device
+// Returns a map to avoid exposing internal reconnectState struct
+func (dm *DeviceKeeper) getReconnectState(serial string) map[string]interface{} {
+	dm.reconnectMu.RLock()
+	defer dm.reconnectMu.RUnlock()
+
+	state, ok := dm.reconnectStates[serial]
+	if !ok {
+		return nil
+	}
+
+	return map[string]interface{}{
+		"isReconnecting": state.IsReconnecting,
+		"attempt":        state.Attempt,
+		"maxRetry":       state.MaxRetry,
+		"serial":         state.Serial,
+		"deviceId":       state.DeviceId,
 	}
 }
 
@@ -582,11 +958,14 @@ func processSessionStream(stream *smux.Stream, serial string) {
 }
 
 type DeviceSession struct {
-	Mux        *smux.Session
-	Token      string
-	Serial     string
-	DeviceType string // mobile or desktop
-	OsType     string // android, linux, windows, macos
+	Mux              *smux.Session
+	Token            string
+	Serial           string
+	DeviceType       string // mobile or desktop
+	OsType           string // android, linux, windows, macos
+	ReconnectAttempt int    // Current reconnection attempt count
+	MaxReconnect     int    // Maximum reconnection attempts (default: 5)
+	LastError        error  // Last connection error
 }
 
 type DeviceMap struct {

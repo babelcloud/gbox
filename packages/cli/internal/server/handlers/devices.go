@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,19 +28,35 @@ import (
 	"github.com/pkg/errors"
 )
 
+// pathParam retrieves a path parameter from the request context
+// This is a local copy to avoid import cycle with router package
+func pathParam(r *http.Request, key string) string {
+	// Use the same context key format as PatternRouter
+	contextKey := "gbox-pattern-router:" + key
+	if val := r.Context().Value(contextKey); val != nil {
+		if str, ok := val.(string); ok {
+			return str
+		}
+	}
+	return ""
+}
+
 // DeviceDTO is a strong-typed representation of a device for API responses
 type DeviceDTO struct {
-	ID           string                 `json:"id"`
-	TransportID  string                 `json:"transportId"`
-	Serialno     string                 `json:"serialno"`
-	Platform     string                 `json:"platform"`   // mobile, desktop
-	OS           string                 `json:"os"`         // android, linux, windows, macos
-	DeviceType   string                 `json:"deviceType"` // physical, emulator, vm
-	IsRegistered bool                   `json:"isRegistered"`
-	IsConnected  bool                   `json:"isConnected"` // true if device is currently connected to AP
-	RegId        string                 `json:"regId"`
-	IsLocal      bool                   `json:"isLocal"`  // true if this is the local desktop device
-	Metadata     map[string]interface{} `json:"metadata"` // Device-specific metadata
+	ID                string                 `json:"id"`
+	TransportID       string                 `json:"transportId"`
+	Serialno          string                 `json:"serialno"`
+	Platform          string                 `json:"platform"`   // mobile, desktop
+	OS                string                 `json:"os"`         // android, linux, windows, macos
+	DeviceType        string                 `json:"deviceType"` // physical, emulator, vm
+	IsRegistered      bool                   `json:"isRegistered"`
+	IsConnected       bool                   `json:"isConnected"`       // true if device is currently connected to AP
+	IsReconnecting    bool                   `json:"isReconnecting"`    // true if device is attempting to reconnect
+	ReconnectAttempt  int                    `json:"reconnectAttempt"`  // Current reconnection attempt count
+	ReconnectMaxRetry int                    `json:"reconnectMaxRetry"` // Maximum reconnection attempts
+	RegId             string                 `json:"regId"`
+	IsLocal           bool                   `json:"isLocal"`  // true if this is the local desktop device
+	Metadata          map[string]interface{} `json:"metadata"` // Device-specific metadata
 }
 
 // setWebMStreamingHeaders sets HTTP headers for WebM audio streaming
@@ -191,6 +209,22 @@ func (h *DeviceHandlers) HandleDeviceList(w http.ResponseWriter, r *http.Request
 		// Check if device is currently connected to AP
 		dto.IsConnected = h.serverService.IsDeviceConnected(d.SerialNo)
 
+		// Check reconnection state
+		if reconnectState := h.serverService.GetDeviceReconnectState(d.SerialNo); reconnectState != nil {
+			// Use type assertion with interface{} to avoid circular dependency
+			if stateMap, ok := reconnectState.(map[string]interface{}); ok {
+				if isReconnecting, ok := stateMap["isReconnecting"].(bool); ok {
+					dto.IsReconnecting = isReconnecting
+				}
+				if attempt, ok := stateMap["attempt"].(int); ok {
+					dto.ReconnectAttempt = attempt
+				}
+				if maxRetry, ok := stateMap["maxRetry"].(int); ok {
+					dto.ReconnectMaxRetry = maxRetry
+				}
+			}
+		}
+
 		// Update device info cache with complete device information
 		h.serverService.UpdateDeviceInfo(&dto)
 
@@ -302,6 +336,21 @@ func (h *DeviceHandlers) HandleDeviceList(w http.ResponseWriter, r *http.Request
 
 	// Check if desktop device is currently connected to AP
 	desktopDTO.IsConnected = h.serverService.IsDeviceConnected(desktopDTO.Serialno)
+
+	// Check reconnection state for desktop device
+	if reconnectState := h.serverService.GetDeviceReconnectState(desktopDTO.Serialno); reconnectState != nil {
+		if stateMap, ok := reconnectState.(map[string]interface{}); ok {
+			if isReconnecting, ok := stateMap["isReconnecting"].(bool); ok {
+				desktopDTO.IsReconnecting = isReconnecting
+			}
+			if attempt, ok := stateMap["attempt"].(int); ok {
+				desktopDTO.ReconnectAttempt = attempt
+			}
+			if maxRetry, ok := stateMap["maxRetry"].(int); ok {
+				desktopDTO.ReconnectMaxRetry = maxRetry
+			}
+		}
+	}
 
 	// Update device info cache with complete desktop device information
 	h.serverService.UpdateDeviceInfo(&desktopDTO)
@@ -1087,8 +1136,10 @@ func (h *DeviceHandlers) HandleDeviceExec(w http.ResponseWriter, req *http.Reque
 	}
 
 	var payload struct {
-		Cmd        string `json:"cmd"`
-		TimeoutSec int    `json:"timeoutSec"`
+		Cmd        string            `json:"cmd"`
+		TimeoutSec int               `json:"timeoutSec"`
+		WorkingDir string            `json:"workingDir"`
+		Envs       map[string]string `json:"envs"`
 	}
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(&payload); err != nil {
@@ -1109,6 +1160,16 @@ func (h *DeviceHandlers) HandleDeviceExec(w http.ResponseWriter, req *http.Reque
 	// Determine device type by looking up device information
 	devicePlatform := h.getDevicePlatform(deviceSerial)
 
+	// Set default workingDir based on platform
+	workingDir := payload.WorkingDir
+	if workingDir == "" {
+		if devicePlatform == "mobile" {
+			workingDir = "/data/local/tmp"
+		} else {
+			workingDir = "/"
+		}
+	}
+
 	var cmd *exec.Cmd
 	if devicePlatform == "mobile" {
 		// Execute command on Android device via adb shell
@@ -1116,13 +1177,37 @@ func (h *DeviceHandlers) HandleDeviceExec(w http.ResponseWriter, req *http.Reque
 		if err != nil {
 			adbPath = "adb"
 		}
-		cmd = exec.CommandContext(ctx, adbPath, "-s", deviceSerial, "shell", payload.Cmd)
+
+		// Build command with environment variables if provided
+		shellCmd := payload.Cmd
+		if len(payload.Envs) > 0 {
+			envVars := ""
+			for k, v := range payload.Envs {
+				envVars += fmt.Sprintf("export %s=%s; ", k, v)
+			}
+			shellCmd = envVars + shellCmd
+		}
+
+		// Set working directory and execute command
+		fullCmd := fmt.Sprintf("cd %s && %s", workingDir, shellCmd)
+		cmd = exec.CommandContext(ctx, adbPath, "-s", deviceSerial, "shell", fullCmd)
 	} else {
 		// Execute command locally on desktop device
 		if runtime.GOOS == "windows" {
 			cmd = exec.CommandContext(ctx, "cmd", "/C", payload.Cmd)
 		} else {
 			cmd = exec.CommandContext(ctx, "/bin/sh", "-c", payload.Cmd)
+		}
+
+		// Set working directory
+		cmd.Dir = workingDir
+
+		// Set environment variables
+		if len(payload.Envs) > 0 {
+			cmd.Env = os.Environ()
+			for k, v := range payload.Envs {
+				cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+			}
 		}
 	}
 
@@ -1355,6 +1440,597 @@ func (h *DeviceHandlers) HandleDeviceAdb(w http.ResponseWriter, req *http.Reques
 		return
 	}
 	RespondJSON(w, http.StatusOK, result)
+}
+
+// HandleDeviceFiles handles file operations for devices
+// Routes:
+//   - GET /api/devices/{serial}/files - read file
+//   - POST /api/devices/{serial}/files - write file
+//   - DELETE /api/devices/{serial}/files - delete file
+//   - GET /api/devices/{serial}/files/list - list files
+//   - GET /api/devices/{serial}/files/info - get file info
+//   - POST /api/devices/{serial}/files/rename - rename file
+//   - GET /api/devices/{serial}/files/exists - check file exists
+func (h *DeviceHandlers) HandleDeviceFiles(w http.ResponseWriter, req *http.Request) {
+	// Extract device serial from PathParam (provided by PatternRouter)
+	deviceSerial := pathParam(req, "serial")
+
+	if strings.Contains(req.Header.Get("via"), "gbox-device-ap") {
+		deviceSerial = h.serverService.GetSerialByDeviceId(deviceSerial)
+	}
+
+	if deviceSerial == "" {
+		http.Error(w, "Device serial required", http.StatusBadRequest)
+		return
+	}
+
+	// Determine device platform
+	devicePlatform := h.getDevicePlatform(deviceSerial)
+
+	// Get workingDir from query params, default to "/" for desktop, "/data/local/tmp" for Android
+	workingDir := req.URL.Query().Get("workingDir")
+	if workingDir == "" {
+		if devicePlatform == "mobile" {
+			workingDir = "/data/local/tmp"
+		} else {
+			workingDir = "/"
+		}
+	}
+
+	// Get action from PathParam (if present)
+	action := pathParam(req, "action")
+
+	switch action {
+	case "list":
+		if req.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		h.handleDeviceFilesList(w, req, deviceSerial, devicePlatform, workingDir)
+	case "info":
+		if req.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		h.handleDeviceFilesInfo(w, req, deviceSerial, devicePlatform, workingDir)
+	case "rename":
+		if req.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		h.handleDeviceFilesRename(w, req, deviceSerial, devicePlatform, workingDir)
+	case "exists":
+		if req.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		h.handleDeviceFilesExists(w, req, deviceSerial, devicePlatform, workingDir)
+	case "":
+		// Base /files endpoint
+		switch req.Method {
+		case http.MethodGet:
+			h.handleDeviceFilesRead(w, req, deviceSerial, devicePlatform, workingDir)
+		case http.MethodPost:
+			h.handleDeviceFilesWrite(w, req, deviceSerial, devicePlatform, workingDir)
+		case http.MethodDelete:
+			h.handleDeviceFilesDelete(w, req, deviceSerial, devicePlatform, workingDir)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	default:
+		http.Error(w, "Invalid file operation path", http.StatusBadRequest)
+	}
+}
+
+// handleDeviceFilesRead reads a file from the device
+func (h *DeviceHandlers) handleDeviceFilesRead(w http.ResponseWriter, req *http.Request, deviceSerial, devicePlatform, workingDir string) {
+	path := req.URL.Query().Get("path")
+	if path == "" {
+		http.Error(w, "path parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// Resolve absolute path
+	absPath := h.resolvePath(path, workingDir)
+
+	if devicePlatform == "mobile" {
+		// For Android, use adb pull or cat
+		adbPath, err := exec.LookPath("adb")
+		if err != nil {
+			adbPath = "adb"
+		}
+
+		// Use adb shell cat to read file
+		cmd := exec.Command(adbPath, "-s", deviceSerial, "shell", "cat", absPath)
+		var stdoutBuf, stderrBuf bytes.Buffer
+		cmd.Stdout = &stdoutBuf
+		cmd.Stderr = &stderrBuf
+
+		if err := cmd.Run(); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to read file: %v, stderr: %s", err, stderrBuf.String()), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		w.Write(stdoutBuf.Bytes())
+	} else {
+		// For desktop, read file directly
+		content, err := os.ReadFile(absPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				http.Error(w, "File not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, fmt.Sprintf("Failed to read file: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		w.Write(content)
+	}
+}
+
+// handleDeviceFilesWrite writes content to a file on the device
+func (h *DeviceHandlers) handleDeviceFilesWrite(w http.ResponseWriter, req *http.Request, deviceSerial, devicePlatform, workingDir string) {
+	path := req.URL.Query().Get("path")
+	if path == "" {
+		http.Error(w, "path parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// Resolve absolute path
+	absPath := h.resolvePath(path, workingDir)
+
+	// Read body content
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to read request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if devicePlatform == "mobile" {
+		// For Android, use adb push or echo
+		adbPath, err := exec.LookPath("adb")
+		if err != nil {
+			adbPath = "adb"
+		}
+
+		// Create a temporary file locally
+		tmpFile, err := os.CreateTemp("", "gbox-file-*")
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to create temp file: %v", err), http.StatusInternalServerError)
+			return
+		}
+		tmpPath := tmpFile.Name()
+		defer os.Remove(tmpPath)
+
+		if _, err := tmpFile.Write(body); err != nil {
+			tmpFile.Close()
+			http.Error(w, fmt.Sprintf("Failed to write temp file: %v", err), http.StatusInternalServerError)
+			return
+		}
+		tmpFile.Close()
+
+		// Push file to device
+		cmd := exec.Command(adbPath, "-s", deviceSerial, "push", tmpPath, absPath)
+		var stderrBuf bytes.Buffer
+		cmd.Stderr = &stderrBuf
+
+		if err := cmd.Run(); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to write file: %v, stderr: %s", err, stderrBuf.String()), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	} else {
+		// For desktop, write file directly
+		// Create parent directories if needed
+		parentDir := h.getParentDir(absPath)
+		if err := os.MkdirAll(parentDir, 0755); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to create parent directories: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		if err := os.WriteFile(absPath, body, 0644); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to write file: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// handleDeviceFilesDelete deletes a file or directory from the device
+func (h *DeviceHandlers) handleDeviceFilesDelete(w http.ResponseWriter, req *http.Request, deviceSerial, devicePlatform, workingDir string) {
+	path := req.URL.Query().Get("path")
+	if path == "" {
+		http.Error(w, "path parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// Resolve absolute path
+	absPath := h.resolvePath(path, workingDir)
+
+	if devicePlatform == "mobile" {
+		// For Android, use adb shell rm
+		adbPath, err := exec.LookPath("adb")
+		if err != nil {
+			adbPath = "adb"
+		}
+
+		cmd := exec.Command(adbPath, "-s", deviceSerial, "shell", "rm", "-rf", absPath)
+		var stderrBuf bytes.Buffer
+		cmd.Stderr = &stderrBuf
+
+		if err := cmd.Run(); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to delete file: %v, stderr: %s", err, stderrBuf.String()), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	} else {
+		// For desktop, delete file directly
+		if err := os.RemoveAll(absPath); err != nil {
+			if os.IsNotExist(err) {
+				http.Error(w, "File not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, fmt.Sprintf("Failed to delete file: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// handleDeviceFilesList lists files in a directory on the device
+func (h *DeviceHandlers) handleDeviceFilesList(w http.ResponseWriter, req *http.Request, deviceSerial, devicePlatform, workingDir string) {
+	path := req.URL.Query().Get("path")
+	if path == "" {
+		path = workingDir
+	}
+
+	// Resolve absolute path
+	absPath := h.resolvePath(path, workingDir)
+
+	depthStr := req.URL.Query().Get("depth")
+	depth := 1
+	if depthStr != "" {
+		if d, err := strconv.Atoi(depthStr); err == nil && d > 0 {
+			depth = d
+		}
+	}
+
+	if devicePlatform == "mobile" {
+		// For Android, use adb shell ls
+		adbPath, err := exec.LookPath("adb")
+		if err != nil {
+			adbPath = "adb"
+		}
+
+		// Use find command for recursive listing with depth
+		var cmd *exec.Cmd
+		if depth > 1 {
+			maxDepth := depth
+			cmd = exec.Command(adbPath, "-s", deviceSerial, "shell", "find", absPath, "-maxdepth", strconv.Itoa(maxDepth), "-exec", "ls", "-ld", "{}", ";")
+		} else {
+			cmd = exec.Command(adbPath, "-s", deviceSerial, "shell", "ls", "-la", absPath)
+		}
+
+		var stdoutBuf, stderrBuf bytes.Buffer
+		cmd.Stdout = &stdoutBuf
+		cmd.Stderr = &stderrBuf
+
+		if err := cmd.Run(); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to list files: %v, stderr: %s", err, stderrBuf.String()), http.StatusInternalServerError)
+			return
+		}
+
+		// Parse ls output and convert to JSON format
+		// This is a simplified implementation - in production, you'd want more robust parsing
+		lines := strings.Split(strings.TrimSpace(stdoutBuf.String()), "\n")
+		files := make([]map[string]interface{}, 0)
+		for _, line := range lines {
+			if line == "" {
+				continue
+			}
+			// Parse ls -la output (simplified)
+			parts := strings.Fields(line)
+			if len(parts) < 9 {
+				continue
+			}
+			fileInfo := map[string]interface{}{
+				"name":         parts[8],
+				"path":         absPath + "/" + parts[8],
+				"type":         "dir",
+				"mode":         parts[0],
+				"lastModified": time.Now().Format(time.RFC3339), // ls doesn't provide exact time, use current
+			}
+			if strings.HasPrefix(parts[0], "-") {
+				fileInfo["type"] = "file"
+				if size, err := strconv.ParseInt(parts[4], 10, 64); err == nil {
+					fileInfo["size"] = size
+				}
+			}
+			files = append(files, fileInfo)
+		}
+
+		RespondJSON(w, http.StatusOK, files)
+	} else {
+		// For desktop, use os.ReadDir
+		entries, err := os.ReadDir(absPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				http.Error(w, "Directory not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, fmt.Sprintf("Failed to list directory: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		files := make([]map[string]interface{}, 0, len(entries))
+		for _, entry := range entries {
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+
+			filePath := absPath + "/" + entry.Name()
+			if absPath == "/" {
+				filePath = "/" + entry.Name()
+			}
+
+			fileInfo := map[string]interface{}{
+				"name":         entry.Name(),
+				"path":         filePath,
+				"type":         "file",
+				"mode":         info.Mode().String(),
+				"lastModified": info.ModTime().Format(time.RFC3339),
+			}
+
+			if entry.IsDir() {
+				fileInfo["type"] = "dir"
+			} else {
+				fileInfo["size"] = info.Size()
+			}
+
+			files = append(files, fileInfo)
+		}
+
+		RespondJSON(w, http.StatusOK, files)
+	}
+}
+
+// handleDeviceFilesInfo gets file information
+func (h *DeviceHandlers) handleDeviceFilesInfo(w http.ResponseWriter, req *http.Request, deviceSerial, devicePlatform, workingDir string) {
+	path := req.URL.Query().Get("path")
+	if path == "" {
+		http.Error(w, "path parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// Resolve absolute path
+	absPath := h.resolvePath(path, workingDir)
+
+	if devicePlatform == "mobile" {
+		// For Android, use adb shell stat
+		adbPath, err := exec.LookPath("adb")
+		if err != nil {
+			adbPath = "adb"
+		}
+
+		cmd := exec.Command(adbPath, "-s", deviceSerial, "shell", "stat", "-c", "%n|%s|%f|%Y", absPath)
+		var stdoutBuf, stderrBuf bytes.Buffer
+		cmd.Stdout = &stdoutBuf
+		cmd.Stderr = &stderrBuf
+
+		if err := cmd.Run(); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to get file info: %v, stderr: %s", err, stderrBuf.String()), http.StatusInternalServerError)
+			return
+		}
+
+		// Parse stat output
+		output := strings.TrimSpace(stdoutBuf.String())
+		parts := strings.Split(output, "|")
+		if len(parts) < 4 {
+			http.Error(w, "Failed to parse file info", http.StatusInternalServerError)
+			return
+		}
+
+		size, _ := strconv.ParseInt(parts[1], 10, 64)
+		mode, _ := strconv.ParseUint(parts[2], 16, 32)
+		mtime, _ := strconv.ParseInt(parts[3], 10, 64)
+
+		fileType := "file"
+		if os.FileMode(mode).IsDir() {
+			fileType = "dir"
+		}
+
+		fileInfo := map[string]interface{}{
+			"name":         parts[0],
+			"path":         absPath,
+			"type":         fileType,
+			"size":         size,
+			"mode":         fmt.Sprintf("%o", mode),
+			"lastModified": time.Unix(mtime, 0).Format(time.RFC3339),
+		}
+
+		RespondJSON(w, http.StatusOK, fileInfo)
+	} else {
+		// For desktop, use os.Stat
+		info, err := os.Stat(absPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				http.Error(w, "File not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, fmt.Sprintf("Failed to get file info: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		fileType := "file"
+		if info.IsDir() {
+			fileType = "dir"
+		}
+
+		fileInfo := map[string]interface{}{
+			"name":         info.Name(),
+			"path":         absPath,
+			"type":         fileType,
+			"mode":         info.Mode().String(),
+			"lastModified": info.ModTime().Format(time.RFC3339),
+		}
+
+		if !info.IsDir() {
+			fileInfo["size"] = info.Size()
+		}
+
+		RespondJSON(w, http.StatusOK, fileInfo)
+	}
+}
+
+// handleDeviceFilesRename renames a file or directory
+func (h *DeviceHandlers) handleDeviceFilesRename(w http.ResponseWriter, req *http.Request, deviceSerial, devicePlatform, workingDir string) {
+	oldPath := req.URL.Query().Get("oldPath")
+	newPath := req.URL.Query().Get("newPath")
+	if oldPath == "" || newPath == "" {
+		http.Error(w, "oldPath and newPath parameters are required", http.StatusBadRequest)
+		return
+	}
+
+	// Resolve absolute paths
+	absOldPath := h.resolvePath(oldPath, workingDir)
+	absNewPath := h.resolvePath(newPath, workingDir)
+
+	if devicePlatform == "mobile" {
+		// For Android, use adb shell mv
+		adbPath, err := exec.LookPath("adb")
+		if err != nil {
+			adbPath = "adb"
+		}
+
+		cmd := exec.Command(adbPath, "-s", deviceSerial, "shell", "mv", absOldPath, absNewPath)
+		var stderrBuf bytes.Buffer
+		cmd.Stderr = &stderrBuf
+
+		if err := cmd.Run(); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to rename file: %v, stderr: %s", err, stderrBuf.String()), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	} else {
+		// For desktop, use os.Rename
+		if err := os.Rename(absOldPath, absNewPath); err != nil {
+			if os.IsNotExist(err) {
+				http.Error(w, "File not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, fmt.Sprintf("Failed to rename file: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
+// handleDeviceFilesExists checks if a file or directory exists
+func (h *DeviceHandlers) handleDeviceFilesExists(w http.ResponseWriter, req *http.Request, deviceSerial, devicePlatform, workingDir string) {
+	path := req.URL.Query().Get("path")
+	if path == "" {
+		http.Error(w, "path parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// Resolve absolute path
+	absPath := h.resolvePath(path, workingDir)
+
+	if devicePlatform == "mobile" {
+		// For Android, use adb shell test
+		adbPath, err := exec.LookPath("adb")
+		if err != nil {
+			adbPath = "adb"
+		}
+
+		// Test if file exists
+		cmd := exec.Command(adbPath, "-s", deviceSerial, "shell", "test", "-e", absPath)
+		exists := cmd.Run() == nil
+
+		// Determine type if exists
+		var fileType string
+		if exists {
+			// Check if it's a directory
+			cmdDir := exec.Command(adbPath, "-s", deviceSerial, "shell", "test", "-d", absPath)
+			if cmdDir.Run() == nil {
+				fileType = "dir"
+			} else {
+				fileType = "file"
+			}
+		}
+
+		if exists {
+			RespondJSON(w, http.StatusOK, map[string]interface{}{
+				"exists": true,
+				"type":   fileType,
+			})
+		} else {
+			RespondJSON(w, http.StatusOK, map[string]interface{}{
+				"exists": false,
+			})
+		}
+	} else {
+		// For desktop, use os.Stat
+		info, err := os.Stat(absPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				RespondJSON(w, http.StatusOK, map[string]interface{}{
+					"exists": false,
+				})
+				return
+			}
+			http.Error(w, fmt.Sprintf("Failed to check file existence: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		fileType := "file"
+		if info.IsDir() {
+			fileType = "dir"
+		}
+
+		RespondJSON(w, http.StatusOK, map[string]interface{}{
+			"exists": true,
+			"type":   fileType,
+		})
+	}
+}
+
+// Helper methods for file operations
+
+// resolvePath resolves a path relative to workingDir
+func (h *DeviceHandlers) resolvePath(path, workingDir string) string {
+	if strings.HasPrefix(path, "/") {
+		return path
+	}
+	if workingDir == "/" {
+		return "/" + path
+	}
+	return workingDir + "/" + path
+}
+
+// getParentDir gets the parent directory of a path
+func (h *DeviceHandlers) getParentDir(path string) string {
+	// Remove trailing slash if present
+	path = strings.TrimSuffix(path, "/")
+	lastSlash := strings.LastIndex(path, "/")
+	if lastSlash == -1 {
+		return "/"
+	}
+	if lastSlash == 0 {
+		return "/"
+	}
+	return path[:lastSlash]
 }
 
 // Private helper methods

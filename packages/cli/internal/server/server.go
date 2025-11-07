@@ -245,6 +245,10 @@ func (s *GBoxServer) IsDeviceConnected(serial string) bool {
 	return s.deviceKeeper.IsDeviceConnected(serial)
 }
 
+func (s *GBoxServer) GetDeviceReconnectState(serial string) interface{} {
+	return s.deviceKeeper.getReconnectState(serial)
+}
+
 func (s *GBoxServer) ReconnectRegisteredDevices() error {
 	return s.deviceKeeper.ReconnectRegisteredDevices()
 }
