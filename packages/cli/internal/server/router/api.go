@@ -48,6 +48,8 @@ func (r *APIRouter) RegisterRoutes(mux *http.ServeMux, server interface{}) {
 	apiRouter.HandleFunc("/api/devices/{serial}/control", deviceHandlers.HandleDeviceControl)
 	apiRouter.HandleFunc("/api/devices/{serial}/adb", deviceHandlers.HandleDeviceAdb)
 	apiRouter.HandleFunc("/api/devices/{serial}/exec", deviceHandlers.HandleDeviceExec)
+	apiRouter.HandleFunc("/api/devices/{serial}/appium", deviceHandlers.HandleDeviceAppium)
+	apiRouter.HandleFunc("/api/devices/{serial}/appium/{path:.*}", deviceHandlers.HandleDeviceAppium)
 
 	// File operations endpoints
 	apiRouter.HandleFunc("/api/devices/{serial}/files", deviceHandlers.HandleDeviceFiles)
