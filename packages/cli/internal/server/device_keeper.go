@@ -563,12 +563,12 @@ func (dm *DeviceKeeper) addDevice(serial string, deviceSession *DeviceSession, g
 	return session
 }
 
-func (dm *DeviceKeeper) delDevice(session *DeviceSession) {
+func (dm *DeviceKeeper) delDevice(session *DeviceSession) bool {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
 	// Only delete from session map, keep adbDeviceBiMap for reconnection
-	dm.deviceSessions.Delete(session.Serial, session.Token)
+	return dm.deviceSessions.Delete(session.Serial, session.Token)
 	// Note: We intentionally keep adbDeviceBiMap entry for reconnection
 	// Note: We don't delete from platform cache here to allow it to expire naturally
 	// This helps with reconnection scenarios
@@ -744,7 +744,11 @@ func (dm *DeviceKeeper) processDeviceSession(session *DeviceSession, serial stri
 				deviceId, _ := dm.adbDeviceBiMap.Get(serial)
 
 				// Mark device as disconnected but keep bimap entry for reconnection
-				dm.delDevice(session)
+				if !dm.delDevice(session) {
+					// Session was already replaced by a newer connection; skip reconnection.
+					log.Printf("device %s: session token %s superseded by newer connection, skipping reconnection", serial, session.Token)
+					return
+				}
 
 				// Start reconnection with exponential backoff
 				go dm.reconnectDeviceWithBackoff(serial, session, deviceId)

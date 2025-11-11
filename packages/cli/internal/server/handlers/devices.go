@@ -9,6 +9,8 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -1442,6 +1444,111 @@ func (h *DeviceHandlers) HandleDeviceAdb(w http.ResponseWriter, req *http.Reques
 	RespondJSON(w, http.StatusOK, result)
 }
 
+// HandleDeviceAppium proxies Appium requests to the local Appium server.
+// Supports all HTTP methods and WebSocket upgrades required by Appium.
+func (h *DeviceHandlers) HandleDeviceAppium(w http.ResponseWriter, req *http.Request) {
+	deviceSerial := pathParam(req, "serial")
+	originalSerial := deviceSerial
+
+	if strings.Contains(req.Header.Get("via"), "gbox-device-ap") {
+		if resolved := h.serverService.GetSerialByDeviceId(deviceSerial); resolved != "" {
+			deviceSerial = resolved
+		} else {
+			log.Printf("[HandleDeviceAppium] Unable to resolve device serial for deviceId %q", deviceSerial)
+		}
+	}
+
+	if deviceSerial == "" {
+		http.Error(w, "Device serial required", http.StatusBadRequest)
+		return
+	}
+
+	if deviceSerial != "" && deviceSerial != originalSerial {
+		if rewritten := h.rewriteAppiumRequestBody(req, deviceSerial); rewritten {
+			log.Printf("[HandleDeviceAppium] Rewrote Appium request body to use serial %s", deviceSerial)
+		}
+	}
+
+	appiumHost := os.Getenv("APPIUM_HOST")
+	if appiumHost == "" {
+		appiumHost = "127.0.0.1"
+	}
+
+	appiumPort := os.Getenv("APPIUM_PORT")
+	if appiumPort == "" {
+		appiumPort = "4723"
+	}
+
+	targetURL := &url.URL{
+		Scheme: "http",
+		Host:   fmt.Sprintf("%s:%s", appiumHost, appiumPort),
+	}
+
+	restPath := pathParam(req, "path")
+	trimmed := strings.TrimPrefix(restPath, "/")
+	targetPath := "/"
+	if trimmed != "" {
+		targetPath = "/" + trimmed
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+	originalDirector := proxy.Director
+	originalHeaders := req.Header.Clone()
+	originalQuery := req.URL.RawQuery
+
+	proxy.Director = func(r *http.Request) {
+		// Preserve original headers before applying default director logic.
+		r.Header = originalHeaders.Clone()
+
+		originalDirector(r)
+
+		r.URL.Path = targetPath
+		r.URL.RawPath = targetPath
+		r.URL.RawQuery = originalQuery
+		r.Host = targetURL.Host
+
+		r.Header.Set("X-GBOX-Device-Serial", deviceSerial)
+		r.Header.Set("X-GBOX-Forwarded-By", "gbox-server")
+	}
+
+	proxy.ErrorHandler = func(rw http.ResponseWriter, r *http.Request, err error) {
+		log.Printf("[HandleDeviceAppium] proxy error for device %s: %v", deviceSerial, err)
+		http.Error(rw, fmt.Sprintf("Failed to proxy Appium request: %v", err), http.StatusBadGateway)
+	}
+
+	log.Printf("[HandleDeviceAppium] Proxying %s %s to %s%s", req.Method, req.URL.Path, targetURL.Host, targetPath)
+	proxy.ServeHTTP(w, req)
+}
+
+func (h *DeviceHandlers) rewriteAppiumRequestBody(req *http.Request, deviceSerial string) bool {
+	if req.Body == nil {
+		return false
+	}
+
+	bodyBytes, err := io.ReadAll(req.Body)
+	if err != nil {
+		return false
+	}
+	defer req.Body.Close()
+
+	if len(bodyBytes) == 0 {
+		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		return false
+	}
+
+	newBody, updated := rewriteAppiumPayload(bodyBytes, deviceSerial)
+	if !updated {
+		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		return false
+	}
+
+	req.Body = io.NopCloser(bytes.NewReader(newBody))
+	req.ContentLength = int64(len(newBody))
+	req.Header.Set("Content-Length", strconv.Itoa(len(newBody)))
+
+	return true
+}
+
 // HandleDeviceFiles handles file operations for devices
 // Routes:
 //   - GET /api/devices/{serial}/files - read file
@@ -1821,7 +1928,8 @@ func (h *DeviceHandlers) handleDeviceFilesInfo(w http.ResponseWriter, req *http.
 			adbPath = "adb"
 		}
 
-		cmd := exec.Command(adbPath, "-s", deviceSerial, "shell", "stat", "-c", "%n|%s|%f|%Y", absPath)
+		format := "%n\\|%s\\|%f\\|%Y"
+		cmd := exec.Command(adbPath, "-s", deviceSerial, "shell", "stat", "-c", format, absPath)
 		var stdoutBuf, stderrBuf bytes.Buffer
 		cmd.Stdout = &stdoutBuf
 		cmd.Stderr = &stderrBuf
@@ -2034,6 +2142,100 @@ func (h *DeviceHandlers) getParentDir(path string) string {
 }
 
 // Private helper methods
+
+func rewriteAppiumPayload(body []byte, deviceSerial string) ([]byte, bool) {
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, false
+	}
+
+	updated := false
+
+	if caps, ok := payload["capabilities"].(map[string]any); ok {
+		var processedFirstMatch []any
+
+		if alwaysMatch, ok := caps["alwaysMatch"].(map[string]any); ok {
+			if applyAppiumSerial(alwaysMatch, deviceSerial) {
+				updated = true
+			}
+		}
+		if fm, ok := caps["firstMatch"].([]any); ok {
+			processedFirstMatch = make([]any, len(fm))
+			copy(processedFirstMatch, fm)
+			for i, entry := range processedFirstMatch {
+				if m, ok := entry.(map[string]any); ok {
+					removed := removeAppiumSerialKeys(m)
+					processedFirstMatch[i] = m
+					updated = updated || removed
+				}
+			}
+		}
+		if updated {
+			if processedFirstMatch != nil {
+				caps["firstMatch"] = processedFirstMatch
+			}
+			payload["capabilities"] = caps
+		}
+	}
+
+	if desiredCaps, ok := payload["desiredCapabilities"].(map[string]any); ok {
+		if applyAppiumSerial(desiredCaps, deviceSerial) {
+			payload["desiredCapabilities"] = desiredCaps
+			updated = true
+		}
+	}
+
+	if !updated {
+		return nil, false
+	}
+
+	newBody, err := json.Marshal(payload)
+	if err != nil {
+		return nil, false
+	}
+	return newBody, true
+}
+
+func applyAppiumSerial(m map[string]any, serial string) bool {
+	if m == nil {
+		return false
+	}
+
+	updated := false
+
+	for _, key := range []string{"appium:udid", "udid"} {
+		if _, exists := m[key]; exists || key == "appium:udid" {
+			m[key] = serial
+			updated = true
+		}
+	}
+
+	for _, key := range []string{"appium:deviceName", "deviceName"} {
+		if _, exists := m[key]; exists {
+			m[key] = serial
+			updated = true
+		}
+	}
+
+	return updated
+}
+
+func removeAppiumSerialKeys(m map[string]any) bool {
+	if m == nil {
+		return false
+	}
+
+	removed := false
+
+	for _, key := range []string{"appium:udid", "udid"} {
+		if _, exists := m[key]; exists {
+			delete(m, key)
+			removed = true
+		}
+	}
+
+	return removed
+}
 
 func (h *DeviceHandlers) handleDeviceConnect(w http.ResponseWriter, r *http.Request, deviceID string) {
 	if r.Method != http.MethodPost {

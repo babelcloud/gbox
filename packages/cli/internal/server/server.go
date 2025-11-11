@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"embed"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log"
@@ -71,7 +70,7 @@ func (s *GBoxServer) Start() error {
 
 	s.httpServer = &http.Server{
 		Addr:         fmt.Sprintf(":%d", s.port),
-		Handler:      s.mux,
+		Handler:      loggingMiddleware(s.mux),
 		ReadTimeout:  0, // No read timeout for streaming connections
 		WriteTimeout: 0, // No write timeout for streaming connections
 		IdleTimeout:  0, // No idle timeout for streaming connections
@@ -219,6 +218,37 @@ func (s *GBoxServer) ListPortForwards() interface{} {
 	}
 }
 
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	status int
+	length int
+}
+
+func (lw *loggingResponseWriter) WriteHeader(code int) {
+	lw.status = code
+	lw.ResponseWriter.WriteHeader(code)
+}
+
+func (lw *loggingResponseWriter) Write(b []byte) (int, error) {
+	if lw.status == 0 {
+		lw.status = http.StatusOK
+	}
+	n, err := lw.ResponseWriter.Write(b)
+	lw.length += n
+	return n, err
+}
+
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		lw := &loggingResponseWriter{ResponseWriter: w}
+		next.ServeHTTP(lw, r)
+		duration := time.Since(start)
+		remoteAddr := r.RemoteAddr
+		log.Printf("%s %s %d %d %s %s", r.Method, r.URL.Path, lw.status, lw.length, duration, remoteAddr)
+	})
+}
+
 func (s *GBoxServer) ConnectAP(serial string) error {
 	return s.deviceKeeper.connectAP(serial)
 }
@@ -251,11 +281,4 @@ func (s *GBoxServer) GetDeviceReconnectState(serial string) interface{} {
 
 func (s *GBoxServer) ReconnectRegisteredDevices() error {
 	return s.deviceKeeper.ReconnectRegisteredDevices()
-}
-
-// Helper function to send JSON responses
-func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(data)
 }

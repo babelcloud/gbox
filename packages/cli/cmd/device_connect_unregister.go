@@ -147,6 +147,12 @@ func unregisterLocalDevice() error {
 	// Use regId as deviceId - the server will resolve it to actual device ID
 	req := map[string]string{"deviceId": regId}
 	if err := daemon.DefaultManager.CallAPI("POST", "/api/devices/unregister", req, nil); err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "failed to resolve device identifiers") || strings.Contains(errMsg, "status 404") {
+			fmt.Println("Local device is not currently registered.")
+			_ = writeLocalRegId("")
+			return nil
+		}
 		return fmt.Errorf("failed to unregister local device: %v", err)
 	}
 

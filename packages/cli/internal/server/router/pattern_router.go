@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"regexp"
-	"strings"
 )
 
 // PatternRouter provides pattern-based routing with placeholder support
@@ -67,28 +66,30 @@ func (pr *PatternRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func compilePattern(pattern string) (*regexp.Regexp, []string) {
 	keys := make([]string, 0)
 
-	// Escape special regex characters except {}
-	regexPattern := regexp.QuoteMeta(pattern)
+	placeholderRegex := regexp.MustCompile(`\{([^}:]+)(?::([^}]+))?\}`)
+	regexPattern := "^"
+	lastIndex := 0
 
-	// Find all placeholders like {key} or {key:regex}
-	placeholderRegex := regexp.MustCompile(`\\\{([^}:]+)(?::([^}]+))?\\\}`)
-	regexPattern = placeholderRegex.ReplaceAllStringFunc(regexPattern, func(match string) string {
-		// Extract the placeholder content (remove escaped braces)
-		content := strings.TrimPrefix(strings.TrimSuffix(match, `\}`), `\{`)
-		parts := strings.SplitN(content, ":", 2)
+	for _, match := range placeholderRegex.FindAllStringSubmatchIndex(pattern, -1) {
+		start, end := match[0], match[1]
+		keyStart, keyEnd := match[2], match[3]
+		regexPattern += regexp.QuoteMeta(pattern[lastIndex:start])
 
-		key := parts[0]
+		key := pattern[keyStart:keyEnd]
 		keys = append(keys, key)
 
-		// Use custom regex if provided, otherwise match any non-slash characters
-		if len(parts) == 2 {
-			return "(" + parts[1] + ")"
+		// If there's a custom regex (second capturing group indices), use it; otherwise default
+		if len(match) >= 6 && match[4] != -1 && match[5] != -1 {
+			customRegex := pattern[match[4]:match[5]]
+			regexPattern += "(" + customRegex + ")"
+		} else {
+			regexPattern += `([^/]+)`
 		}
-		return `([^/]+)`
-	})
+		lastIndex = end
+	}
 
-	// Anchor the pattern to match the full path
-	regexPattern = "^" + regexPattern + "$"
+	regexPattern += regexp.QuoteMeta(pattern[lastIndex:])
+	regexPattern += "$"
 
 	return regexp.MustCompile(regexPattern), keys
 }
