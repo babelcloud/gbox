@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
+	"github.com/babelcloud/gbox/packages/cli/internal/util"
 	"github.com/babelcloud/gbox/packages/cli/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -17,10 +18,19 @@ var (
 
 	scriptDir string
 
+	// Global verbose flag
+	verbose bool
+
 	rootCmd = &cobra.Command{
 		Use:   "gbox",
 		Short: "GBOX CLI Tool",
 		Long: `GBOX CLI is a command-line tool for managing and operating box and mcp resources. It provides a set of commands to create, manage, and operate these resources.`,
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			// Initialize logger based on verbose flag
+			util.InitLogger(verbose)
+			// Setup global logger for existing log.Printf calls
+			util.SetupGlobalLogger()
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flag("version").Changed {
 				info := version.ClientInfo()
@@ -34,6 +44,11 @@ var (
 
 func Execute() error {
 	return rootCmd.Execute()
+}
+
+// IsVerbose returns the global verbose flag status
+func IsVerbose() bool {
+	return verbose
 }
 
 func init() {
@@ -58,6 +73,7 @@ func init() {
 		scriptDir = filepath.Join(exeDir, "cmd", "script")
 	}
 
+	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "Enable verbose logging")
 	rootCmd.Flags().BoolP("version", "v", false, "Print version information and exit")
 
 	for alias, cmd := range aliasMap {
@@ -70,6 +86,9 @@ func init() {
 	rootCmd.AddCommand(NewAdbExposeCommand())
 	rootCmd.AddCommand(NewDeviceConnectCommand())
 	rootCmd.AddCommand(NewPruneCommand())
+
+	// Add unified server command with subcommands
+	rootCmd.AddCommand(NewServerCmd())
 
 	// Enable custom help output ordering
 	setupHelpCommand(rootCmd)

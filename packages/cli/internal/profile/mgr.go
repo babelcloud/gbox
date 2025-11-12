@@ -3,17 +3,19 @@ package profile
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
+	"github.com/babelcloud/gbox/packages/cli/internal/util"
 	"github.com/pelletier/go-toml/v2"
+	"github.com/pkg/errors"
 )
 
 // Common error messages
@@ -40,6 +42,7 @@ type Profile struct {
 	OrgSlug string `toml:"org_slug,omitempty"`
 	APIKey  string `toml:"key"`
 	BaseURL string `toml:"base_url,omitempty"`
+	Rack    string `toml:"rack,omtiempty"`
 }
 
 // ProfileDefaults represents global defaults
@@ -51,6 +54,11 @@ type ProfileDefaults struct {
 type OrgInfo struct {
 	Name string
 	Slug string
+}
+
+type RackInfo struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // ProfileManager manages profile files
@@ -222,137 +230,123 @@ func (pm *ProfileManager) listTable() {
 		}
 	}
 
-	// Calculate column widths based on content
-	maxIDLen := 2      // "ID" header
-	maxKeyLen := 3     // "Key" header
-	maxOrgLen := 12    // "Organization" header
-	maxBaseURLLen := 8 // "Base URL" header
+	// Prepare data for RenderTable with sorted order
+	profileIDs := make([]string, 0, len(pm.config.Profiles))
+	for id := range pm.config.Profiles {
+		profileIDs = append(profileIDs, id)
+	}
 
-	for id, profile := range pm.config.Profiles {
-		// Add arrow to current profile ID for width calculation
-		displayID := id
-		if id == pm.config.Current {
-			displayID = "→ " + id
-		}
-		if len(displayID) > maxIDLen {
-			maxIDLen = len(displayID)
-		}
-
-		// Calculate masked key width
-		maskedKey := pm.GetMaskedAPIKey(profile.APIKey)
-		if len(maskedKey) > maxKeyLen {
-			maxKeyLen = len(maskedKey)
-		}
-
-		if len(profile.GetOrgName()) > maxOrgLen {
-			maxOrgLen = len(profile.GetOrgName())
-		}
-		if showBaseURL {
-			baseURL := profile.BaseURL
-			if baseURL == "" {
-				baseURL = pm.config.Defaults.BaseURL + " (default)"
-			}
-			if len(baseURL) > maxBaseURLLen {
-				maxBaseURLLen = len(baseURL)
+	// Sort profile IDs to maintain consistent order
+	for i := 0; i < len(profileIDs); i++ {
+		for j := i + 1; j < len(profileIDs); j++ {
+			if profileIDs[i] > profileIDs[j] {
+				profileIDs[i], profileIDs[j] = profileIDs[j], profileIDs[i]
 			}
 		}
 	}
 
-	// Add some padding
-	maxIDLen += 2
-	maxKeyLen += 2
-	maxOrgLen += 2
-	maxBaseURLLen += 2
-
-	// Print header based on whether base URL column is needed
-	if showBaseURL {
-		fmt.Printf("  %-*s %-*s %-*s %-*s\n", maxIDLen-2, "ID", maxKeyLen, "Key", maxOrgLen, "Organization", maxBaseURLLen, "Base URL")
-		fmt.Println("  " + strings.Repeat("-", maxIDLen+maxKeyLen+maxOrgLen+maxBaseURLLen))
-	} else {
-		fmt.Printf("  %-*s %-*s %-*s\n", maxIDLen-2, "ID", maxKeyLen, "Key", maxOrgLen, "Organization")
-		fmt.Println("  " + strings.Repeat("-", maxIDLen+maxKeyLen+maxOrgLen-1))
-	}
-
-	// Print profiles
-	for id, profile := range pm.config.Profiles {
+	tableData := make([]map[string]interface{}, len(profileIDs))
+	for i, id := range profileIDs {
+		profile := pm.config.Profiles[id]
 		isCurrent := id == pm.config.Current
-
-		// Get masked key
 		maskedKey := pm.GetMaskedAPIKey(profile.APIKey)
+
+		// Format arrow and ID separately
+		arrow := "  " // Default to 2 spaces for alignment
+		if isCurrent {
+			arrow = "\033[32m→\033[0m" // Just the arrow
+		}
+
+		row := map[string]interface{}{
+			"arrow": arrow,
+			"id":    id,
+			"key":   maskedKey,
+			"org":   profile.GetOrgName(),
+		}
 
 		if showBaseURL {
 			baseURL := profile.BaseURL
 			if baseURL == "" {
 				baseURL = pm.config.Defaults.BaseURL + " (default)"
 			}
-			if isCurrent {
-				fmt.Print("\033[32m→ ") // Color the arrow and space
-				fmt.Printf("\033[32m%-*s\033[0m %-*s %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.GetOrgName(), maxBaseURLLen, baseURL)
-			} else {
-				fmt.Printf("  %-*s %-*s %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.GetOrgName(), maxBaseURLLen, baseURL)
-			}
-		} else {
-			if isCurrent {
-				fmt.Print("\033[32m→ ") // Color the arrow and space
-				fmt.Printf("\033[32m%-*s\033[0m %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.GetOrgName())
-			} else {
-				fmt.Printf("  %-*s %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.GetOrgName())
-			}
+			row["base_url"] = baseURL
+		}
+
+		tableData[i] = row
+	}
+
+	// Define table columns
+	var columns []util.TableColumn
+	if showBaseURL {
+		columns = []util.TableColumn{
+			{Header: " ", Key: "arrow"},
+			{Header: "ID", Key: "id"},
+			{Header: "Key", Key: "key"},
+			{Header: "Organization", Key: "org"},
+			{Header: "Base URL", Key: "base_url"},
+		}
+	} else {
+		columns = []util.TableColumn{
+			{Header: " ", Key: "arrow"},
+			{Header: "ID", Key: "id"},
+			{Header: "Key", Key: "key"},
+			{Header: "Organization", Key: "org"},
 		}
 	}
+
+	// Add indentation prefix
+	fmt.Print("  ")
+	util.RenderTable(columns, tableData)
 }
 
 // ListTableForSelection displays profiles in table format for selection (used in profile use command)
 func (pm *ProfileManager) ListTableForSelection() {
-	// Calculate column widths based on content
-	maxIDLen := 2      // "ID" header
-	maxKeyLen := 3     // "Key" header
-	maxOrgLen := 12    // "Organization" header
+	// Prepare data for RenderTable with sorted order
+	profileIDs := make([]string, 0, len(pm.config.Profiles))
+	for id := range pm.config.Profiles {
+		profileIDs = append(profileIDs, id)
+	}
 
-	for id, profile := range pm.config.Profiles {
-		// Add arrow to current profile ID for width calculation
-		displayID := id
-		if id == pm.config.Current {
-			displayID = "→ " + id
-		}
-		if len(displayID) > maxIDLen {
-			maxIDLen = len(displayID)
-		}
-
-		// Calculate masked key width
-		maskedKey := pm.GetMaskedAPIKey(profile.APIKey)
-		if len(maskedKey) > maxKeyLen {
-			maxKeyLen = len(maskedKey)
-		}
-
-		if len(profile.GetOrgName()) > maxOrgLen {
-			maxOrgLen = len(profile.GetOrgName())
+	// Sort profile IDs to maintain consistent order
+	for i := 0; i < len(profileIDs); i++ {
+		for j := i + 1; j < len(profileIDs); j++ {
+			if profileIDs[i] > profileIDs[j] {
+				profileIDs[i], profileIDs[j] = profileIDs[j], profileIDs[i]
+			}
 		}
 	}
 
-	// Add some padding
-	maxIDLen += 2
-	maxKeyLen += 2
-	maxOrgLen += 2
-
-	// Print header
-	fmt.Printf("  %-*s %-*s %-*s\n", maxIDLen-2, "ID", maxKeyLen, "Key", maxOrgLen, "Organization")
-	fmt.Println("  " + strings.Repeat("-", maxIDLen+maxKeyLen+maxOrgLen-1))
-
-	// Print profiles
-	for id, profile := range pm.config.Profiles {
+	tableData := make([]map[string]interface{}, len(profileIDs))
+	for i, id := range profileIDs {
+		profile := pm.config.Profiles[id]
 		isCurrent := id == pm.config.Current
-
-		// Get masked key
 		maskedKey := pm.GetMaskedAPIKey(profile.APIKey)
 
+		// Format arrow and ID separately
+		arrow := "  " // Default to 2 spaces for alignment
 		if isCurrent {
-			fmt.Print("\033[32m→ ") // Color the arrow and space
-			fmt.Printf("\033[32m%-*s\033[0m %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.GetOrgName())
-		} else {
-			fmt.Printf("  %-*s %-*s %-*s\n", maxIDLen-2, id, maxKeyLen, maskedKey, maxOrgLen, profile.GetOrgName())
+			arrow = "\033[32m→\033[0m" // Just the arrow
+		}
+
+		tableData[i] = map[string]interface{}{
+			"arrow": arrow,
+			"id":    id,
+			"key":   maskedKey,
+			"org":   profile.GetOrgName(),
 		}
 	}
+
+	// Define table columns
+	columns := []util.TableColumn{
+		{Header: " ", Key: "arrow"},
+		{Header: "ID", Key: "id"},
+		{Header: "Key", Key: "key"},
+		{Header: "Organization", Key: "org"},
+	}
+
+	// Add indentation prefix
+	fmt.Print("  ")
+	util.RenderTable(columns, tableData)
 }
 
 // Add adds a new profile
@@ -360,6 +354,10 @@ func (pm *ProfileManager) Add(id, org, key, baseURL string) error {
 	// Determine base URL with priority: provided baseURL > config default
 	if baseURL == "" {
 		baseURL = config.GetBaseURL()
+	}
+
+	if strings.HasPrefix(key, "gbox-rack_") {
+		return pm.addRack(key, baseURL)
 	}
 
 	// Store the effective base URL for this profile
@@ -467,6 +465,26 @@ func (pm *ProfileManager) Add(id, org, key, baseURL string) error {
 		// Always set as current for new profile
 		pm.config.Current = id
 	}
+
+	return pm.Save()
+}
+
+func (pm *ProfileManager) addRack(key, baseURL string) error {
+	rackInfo, err := pm.getRackInfoFromAPI(key, baseURL)
+	if err != nil {
+		return errors.Wrap(err, "failed to validate API key and get rack info")
+	}
+
+	profile := Profile{
+		Rack:   rackInfo.Name,
+		APIKey: base64.StdEncoding.EncodeToString([]byte(key)),
+	}
+
+	profile.BaseURL = baseURL
+
+	profileID := "rack_" + rackInfo.Name
+	pm.config.Profiles[profileID] = profile
+	pm.config.Current = profileID
 
 	return pm.Save()
 }
@@ -778,7 +796,7 @@ func maskAPIKey(key string) string {
 	if len(key) <= 8 {
 		return "***"
 	}
-	return key[:4] + "****" + key[len(key)-4:]
+	return key[:10] + "****" + key[len(key)-4:]
 }
 
 // toJSON converts data to JSON string
@@ -853,6 +871,55 @@ func (pm *ProfileManager) getOrgInfoFromAPI(apiKey, baseURL string) (*OrgInfo, e
 		Name: orgInfo.Name,
 		Slug: orgInfo.Slug,
 	}, nil
+}
+
+func (pm *ProfileManager) getRackInfoFromAPI(apiKey, baseURL string) (*RackInfo, error) {
+	rackUrl, err := url.Parse(baseURL)
+	if err != nil {
+		return nil, errors.Wrapf(err, "invalid base url: %s", baseURL)
+	}
+
+	rackUrl.Path = path.Join("/api/v1/rack")
+
+	req, err := http.NewRequest(http.MethodGet, rackUrl.String(), nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create request")
+	}
+
+	req.Header.Set("x-rack-api-key", apiKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to make request")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("invalid API key")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Read response body for debugging
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	// Debug: print response body
+	if os.Getenv("DEBUG") == "true" {
+		fmt.Fprintf(os.Stderr, "Response body: %s\n", string(body))
+	}
+
+	var rackInfo RackInfo
+	if err := json.Unmarshal(body, &rackInfo); err != nil {
+		return nil, errors.Wrapf(err, "failed to parse response body: %s", string(body))
+	}
+
+	return &rackInfo, nil
 }
 
 // GetDevicesURL returns the devices URL for the current profile

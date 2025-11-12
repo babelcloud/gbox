@@ -1,127 +1,42 @@
 package cmd
 
 import (
-	"archive/tar"
-	"compress/gzip"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"github.com/babelcloud/gbox/packages/cli/config"
+	"github.com/babelcloud/gbox/packages/cli/internal/daemon"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect"
 	"github.com/babelcloud/gbox/packages/cli/internal/profile"
 )
 
-// printDeveloperModeHint prints the developer mode hint with dim formatting
-func printDeveloperModeHint() {
-	color.New(color.Faint).Println("If you can not see your devices here, make sure you have turned on the developer mode on your Android device. For more details, see https://docs.gbox.ai/cli")
-}
-
-func checkAdbInstalled() bool {
-	_, err := exec.LookPath("adb")
-	return err == nil
-}
-
-func checkFrpcInstalled() bool {
-	_, err := exec.LookPath("frpc")
-	return err == nil
-}
-
-func printAdbInstallationHint() {
-	const (
-		ansiRed    = "\033[31m"
-		ansiYellow = "\033[33m"
-		ansiBold   = "\033[1m"
-		ansiReset  = "\033[0m"
-	)
-
-	fmt.Println()
-	fmt.Printf("%s%s⚠️  IMPORTANT: Android Debug Bridge (ADB) Required%s\n", ansiRed, ansiBold, ansiReset)
-	fmt.Printf("%s%s================================================%s\n", ansiYellow, ansiBold, ansiReset)
-	fmt.Printf("%sTo use the device-connect feature, you need to install ADB tools first:%s\n", ansiYellow, ansiReset)
-	fmt.Println()
-	fmt.Printf("%s📱 Installation Methods:%s\n", ansiBold, ansiReset)
-	fmt.Printf("  • macOS: brew install android-platform-tools\n")
-	fmt.Printf("  • Ubuntu/Debian: sudo apt-get install android-tools-adb\n")
-	fmt.Printf("  • Windows: Download Android SDK Platform Tools\n")
-	fmt.Println()
-	fmt.Printf("%s🔗 After installation, ensure:%s\n", ansiBold, ansiReset)
-	fmt.Printf("  1. Enable Developer Options and USB Debugging on your Android device\n")
-	fmt.Printf("  2. Connect device via USB or start an emulator\n")
-	fmt.Printf("  3. Run 'adb devices' to confirm device recognition\n")
-	fmt.Println()
-	fmt.Printf("%s%s================================================%s\n", ansiYellow, ansiBold, ansiReset)
-	fmt.Println()
-}
-
-func printFrpcInstallationHint() {
-	const (
-		ansiRed    = "\033[31m"
-		ansiYellow = "\033[33m"
-		ansiBold   = "\033[1m"
-		ansiReset  = "\033[0m"
-	)
-
-	fmt.Println()
-	fmt.Printf("%s%s⚠️  IMPORTANT: FRP Client (frpc) Required%s\n", ansiRed, ansiBold, ansiReset)
-	fmt.Printf("%s%s==============================================%s\n", ansiYellow, ansiBold, ansiReset)
-	fmt.Printf("%sTo use the device-connect feature, you need to install frpc (FRP Client) first:%s\n", ansiYellow, ansiReset)
-	fmt.Println()
-	fmt.Printf("%s🌐 Installation Methods:%s\n", ansiBold, ansiReset)
-	fmt.Printf("  • macOS: brew install frpc\n")
-	fmt.Printf("  • Ubuntu/Debian: Download from https://github.com/fatedier/frp/releases\n")
-	fmt.Printf("  • Windows: Download from https://github.com/fatedier/frp/releases\n")
-	fmt.Println()
-	fmt.Printf("%s📥 Manual Installation:%s\n", ansiBold, ansiReset)
-	fmt.Printf("  1. Download frpc binary for your platform from GitHub releases\n")
-	fmt.Printf("  2. Extract and place frpc in your PATH or current directory\n")
-	fmt.Printf("  3. Ensure frpc is executable: chmod +x frpc\n")
-	fmt.Println()
-	fmt.Printf("%s🔗 After installation, ensure:%s\n", ansiBold, ansiReset)
-	fmt.Printf("  1. frpc is in your PATH or current directory\n")
-	fmt.Printf("  2. Run 'frpc version' to confirm installation\n")
-	fmt.Println()
-	fmt.Printf("%s%s==============================================%s\n", ansiYellow, ansiBold, ansiReset)
-	fmt.Println()
-}
+// Note: Device client functionality has been moved to daemon.DefaultManager
+// All device operations now go through the unified server API
 
 type DeviceConnectOptions struct {
 	DeviceID   string
 	Background bool
 }
 
-// Global client instance
-var deviceClient *device_connect.Client
-
-// getDeviceClient returns the global device client, initializing it if needed
-func getDeviceClient() *device_connect.Client {
-	if deviceClient == nil {
-		deviceClient = device_connect.NewClient(device_connect.DefaultURL)
-	}
-	return deviceClient
-}
-
 func NewDeviceConnectCommand() *cobra.Command {
 	opts := &DeviceConnectOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "device-connect [command] [flags]",
-		Short: "Manage remote connections for local Android development devices",
-		Long: `Manage remote connections for local Android development devices.
+		Use:   "device-connect [device_id] [flags]",
+		Short: "Manage remote connections for local Android/Linux development devices",
+		Long: `Manage remote connections for local Android/Linux development devices.
 This command allows you to securely connect Android devices (emulators or physical devices)
-to remote cloud services for remote access and debugging.`,
+to remote cloud services for remote access and debugging.
+
+If no device ID is provided, an interactive device selection will be shown.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return ExecuteDeviceConnect(cmd, opts, args)
 		},
@@ -129,37 +44,30 @@ to remote cloud services for remote access and debugging.`,
   gbox device-connect
 
   # Connect to specific device
-  gbox device-connect --device abc123xyz456-usb
+  gbox device-connect abc123xyz456-usb
 
-  # Connect device in background
-  gbox device-connect --device abc789pqr012-ip --background
+  # Connect in background mode
+  gbox device-connect --background
 
   # List all available devices
   gbox device-connect ls
 
-  # List devices in JSON format
-  gbox device-connect ls --format json
-
-  # Unregister specific device
-  gbox device-connect unregister abc789pqr012-ip
-
-  # Stop the device proxy service
-  gbox device-connect kill-server`,
+  # Register and connect this Linux machine to AP
+  gbox device-connect register local`,
 	}
 
 	flags := cmd.Flags()
-	flags.StringVarP(&opts.DeviceID, "device", "d", "", "Specify the Android device ID to connect to")
-	flags.BoolVarP(&opts.Background, "background", "b", false, "Run connection in background")
+	flags.StringVarP(&opts.DeviceID, "device", "d", "", "Specify the Android device ID to connect")
+	flags.BoolVarP(&opts.Background, "background", "b", false, "Run in background mode")
 
 	cmd.AddCommand(
+		NewDeviceConnectRegisterCommand(),
 		NewDeviceConnectListCommand(),
 		NewDeviceConnectUnregisterCommand(),
-		NewDeviceConnectKillServerCommand(),
 	)
 
 	return cmd
 }
-
 func ExecuteDeviceConnect(cmd *cobra.Command, opts *DeviceConnectOptions, args []string) error {
 	debug := os.Getenv("DEBUG") == "true"
 
@@ -220,15 +128,26 @@ func ExecuteDeviceConnect(cmd *cobra.Command, opts *DeviceConnectOptions, args [
 		return err
 	}
 
-	// Ensure device proxy service is running
-	if err := device_connect.EnsureDeviceProxyRunning(isServiceRunning); err != nil {
-		return fmt.Errorf("failed to start device proxy service: %v", err)
+	// Always use the unified server (like adb start-server)
+	// The server will be auto-started if not running
+
+	// Note: Legacy mode with external binaries is being phased out
+	// All functionality now goes through the unified gbox server
+
+	// The actual device connection will happen via HTTP API calls
+	// to the server, which will be started automatically by the daemon manager
+
+	var deviceID string
+	if len(args) > 0 {
+		deviceID = args[0]
+	} else if opts.DeviceID != "" {
+		deviceID = opts.DeviceID
 	}
 
-	if opts.DeviceID == "" {
+	if deviceID == "" {
 		return runInteractiveDeviceSelection(opts)
 	}
-	return connectToDevice(opts.DeviceID, opts)
+	return connectToDevice(deviceID, opts)
 }
 
 // checkAndInstallPrerequisites checks and installs Node.js, npm, Appium and related components
@@ -305,62 +224,24 @@ func checkAndInstallPrerequisites() error {
 	return nil
 }
 
-func isServiceRunning() (bool, error) {
-	// First check if PID file exists
-	deviceProxyHome := config.GetDeviceProxyHome()
-	pidFile := filepath.Join(deviceProxyHome, "device-proxy.pid")
-
-	if _, err := os.Stat(pidFile); os.IsNotExist(err) {
-		return false, nil
-	}
-
-	// Read PID from file
-	pidBytes, err := os.ReadFile(pidFile)
-	if err != nil {
-		return false, nil
-	}
-
-	var pid int
-	if _, err := fmt.Sscanf(string(pidBytes), "%d", &pid); err != nil {
-		return false, nil
-	}
-
-	// Check if process is still running
-	if err := exec.Command("kill", "-0", fmt.Sprintf("%d", pid)).Run(); err != nil {
-		// Process is not running, remove PID file
-		os.Remove(pidFile)
-		return false, nil
-	}
-
-	// Try to check service status via API
-	client := getDeviceClient()
-	running, onDemandEnabled, err := client.IsServiceRunning()
-	if err != nil {
-		// If API check fails, assume service is running (we have a valid PID)
-		return true, nil
-	}
-
-	// Check if onDemandEnabled is false and warn user
-	if running && !onDemandEnabled {
-		fmt.Println("Warning: Reusing existing device-proxy service that does not have on-demand registration enabled.")
-		fmt.Println("All devices will be automatically registered for remote access.")
-		fmt.Println("If you don't want this behavior, either:")
-		fmt.Println("  - Stop the existing service and restart with ENABLE_DEVICE_REGISTER_ON_DEMAND=true")
-		fmt.Println("  - Use 'gbox device-connect kill-server' to stop the current service")
-		fmt.Println()
-	}
-
-	return running, nil
-}
-
 func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
-	client := getDeviceClient()
-	devices, err := getDevicesWithValidation(client, 60*time.Second)
-	if err != nil {
+	// Use daemon manager to call API
+	var response struct {
+		Success bool        `json:"success"`
+		Devices []DeviceDTO `json:"devices"`
+	}
+
+	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
 		return fmt.Errorf("failed to get available devices: %v", err)
 	}
+
+	if !response.Success {
+		return fmt.Errorf("failed to get devices from server")
+	}
+
+	devices := response.Devices
 	if len(devices) == 0 {
-		fmt.Println("No Android devices found.")
+		fmt.Println("No devices found.")
 		fmt.Println()
 		printDeveloperModeHint()
 		return nil
@@ -372,20 +253,9 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 	printDeveloperModeHint()
 	fmt.Println()
 
+	// Display all devices returned from API
 	for i, device := range devices {
-		status := "Not Registered"
-		statusColor := color.New(color.Faint) // 使用淡色（灰色）
-		if device.IsRegistrable {             // Assuming IsRegistrable should be IsRegistered
-			status = "Registered"
-			statusColor = color.New(color.FgGreen)
-		}
-		fmt.Printf("%d. %s (%s, %s) - %s [%s]\n",
-			i+1,
-			color.New(color.FgCyan).Sprint(device.SerialNo+"-"+device.ConnectionType),
-			device.ProductModel,
-			device.ConnectionType,
-			device.ProductManufacturer,
-			statusColor.Sprint(status))
+		formatDeviceOption(i+1, device)
 	}
 	fmt.Println()
 	fmt.Print("Enter a number: ")
@@ -405,43 +275,188 @@ func runInteractiveDeviceSelection(opts *DeviceConnectOptions) error {
 
 	select {
 	case <-intCh:
-		// User pressed Ctrl+C during selection; stop proxy first then exit gracefully
-		_ = executeKillServer()
+		// User pressed Ctrl+C during selection; exit gracefully
 		return nil
 	case <-inputDone:
 		// proceed
 	}
-	if choice < 1 || choice > len(devices) {
+	totalOptions := len(devices)
+	if choice < 1 || choice > totalOptions {
 		return fmt.Errorf("invalid selection: %d", choice)
 	}
 
 	selectedDevice := devices[choice-1]
-	return connectToDevice(selectedDevice.Id, opts)
+
+	// Handle local device registration
+	if selectedDevice.IsLocal {
+		// Use empty deviceID to register as desktop with auto-detected OS
+		// Server will automatically connect desktop devices after registration
+		return registerDevice("", "")
+	}
+
+	// For Android devices, use TransportID for API call, fallback to Serialno if empty
+	deviceID := selectedDevice.TransportID
+	if strings.TrimSpace(deviceID) == "" {
+		deviceID = selectedDevice.Serialno
+	}
+	return connectToDevice(deviceID, opts)
+}
+
+// formatDeviceOption formats a device for display in the interactive selection
+func formatDeviceOption(index int, device DeviceDTO) {
+	status := "Not Registered"
+	statusColor := color.New(color.Faint)
+
+	// If IsLocal=true, replace serialNo with "local" for display
+	displaySerialNo := device.Serialno
+	if device.IsLocal {
+		displaySerialNo = "local"
+	}
+
+	isRegistered := device.IsRegistered
+
+	if isRegistered {
+		status = "Registered"
+		statusColor = color.New(color.FgGreen)
+	}
+
+	// Get device-specific fields from metadata
+	var model, manufacturer, connectionType string
+	if device.Metadata != nil {
+		if m, ok := device.Metadata["model"].(string); ok {
+			model = m
+		}
+		if m, ok := device.Metadata["manufacturer"].(string); ok {
+			manufacturer = m
+		}
+		if ct, ok := device.Metadata["connectionType"].(string); ok {
+			connectionType = ct
+		}
+	}
+
+	if strings.TrimSpace(model) == "" {
+		model = "Unknown"
+	}
+	if strings.TrimSpace(manufacturer) == "" {
+		manufacturer = "Unknown"
+	}
+
+	// Map Platform and OS to display label
+	var platformLabel string
+	if device.Platform == "mobile" && device.OS == "android" {
+		platformLabel = "Android"
+	} else if device.Platform == "desktop" {
+		// Map OS to display label for desktop
+		switch device.OS {
+		case "macos":
+			platformLabel = "MacOS"
+		case "linux":
+			platformLabel = "Linux"
+		case "windows":
+			platformLabel = "Windows"
+		default:
+			platformLabel = device.OS
+		}
+	} else {
+		platformLabel = device.Platform
+	}
+
+	// For local devices, get OS version and hostname for display from metadata
+	if device.IsLocal {
+		var osVersion string
+		var hostname string
+		if device.Metadata != nil {
+			if ov, ok := device.Metadata["osVersion"].(string); ok {
+				osVersion = ov
+			}
+			if hn, ok := device.Metadata["hostname"].(string); ok {
+				hostname = hn
+			}
+		}
+		if osVersion == "" {
+			// Fallback to runtime detection
+			switch runtime.GOOS {
+			case "linux":
+				if version, err := getLinuxVersion(); err == nil {
+					osVersion = version
+				} else {
+					osVersion = "Unknown"
+				}
+			case "darwin":
+				if version, err := getMacOSVersion(); err == nil {
+					osVersion = version
+				} else {
+					osVersion = "Unknown"
+				}
+			case "windows":
+				if version, err := getWindowsVersion(); err == nil {
+					osVersion = version
+				} else {
+					osVersion = "Unknown"
+				}
+			default:
+				osVersion = "Unknown"
+			}
+		}
+		// Use hostname from metadata, fallback to manufacturer if not available
+		if hostname == "" {
+			hostname = manufacturer
+		}
+		fmt.Printf("%d. %s (%s, %s) - %s [%s]\n",
+			index,
+			color.New(color.FgCyan).Sprint(displaySerialNo),
+			platformLabel,
+			osVersion,
+			hostname,
+			statusColor.Sprint(status))
+	} else {
+		// Format: serialNo (Platform, model, connectionType) - manufacturer [status]
+		// For Android devices, connectionType is in metadata
+		if connectionType == "" {
+			connectionType = "unknown"
+		}
+		fmt.Printf("%d. %s (%s, %s, %s) - %s [%s]\n",
+			index,
+			color.New(color.FgCyan).Sprint(displaySerialNo),
+			platformLabel,
+			model,
+			connectionType,
+			manufacturer,
+			statusColor.Sprint(status))
+	}
 }
 
 func connectToDevice(deviceID string, opts *DeviceConnectOptions) error {
-	client := getDeviceClient()
-
-	device, err := getDeviceInfoWithRetry(client, deviceID, 60*time.Second)
-	if err != nil {
-		return fmt.Errorf("failed to get device info: %v", err)
+	// Register device via daemon API
+	// For Android devices
+	req := map[string]string{
+		"deviceId":   deviceID,
+		"deviceType": "mobile",
+		"osType":     "android",
 	}
+	var resp map[string]interface{}
 
-	fmt.Printf("Establishing remote connection for %s (%s, %s)...\n",
-		device.ProductModel, device.ConnectionType, device.ProductManufacturer)
-
-	// Register the device
-	if err := client.RegisterDevice(deviceID); err != nil {
+	if err := daemon.DefaultManager.CallAPI("POST", "/api/devices/register", req, &resp); err != nil {
 		return fmt.Errorf("failed to register device: %v", err)
 	}
 
+	if success, ok := resp["success"].(bool); !ok || !success {
+		return fmt.Errorf("failed to register device: %v", resp["error"])
+	}
+
+	fmt.Printf("Establishing remote connection for device %s...\n", deviceID)
+
 	fmt.Printf("Connection established successfully!\n")
+
+	// Display local Web UI URL
+	fmt.Printf("\n📱 View and control your device at: %s\n", color.CyanString("http://localhost:29888"))
+	fmt.Printf("   This is the local live-view interface for device control\n")
 
 	// Get and display devices URL for the current profile
 	pm := profile.NewProfileManager()
 	if err := pm.Load(); err == nil {
 		if devicesURL, err := pm.GetDevicesURL(); err == nil {
-			fmt.Printf("You can view your devices at: %s\n", color.CyanString(devicesURL))
+			fmt.Printf("\n☁️  Remote access available at: %s\n", color.CyanString(devicesURL))
 		}
 	}
 
@@ -457,347 +472,154 @@ func connectToDevice(deviceID string, opts *DeviceConnectOptions) error {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	<-sigChan
-	fmt.Printf("Disconnecting %s (%s, %s)...\n",
-		device.ProductModel, device.ConnectionType, device.ProductManufacturer)
+	fmt.Printf("Disconnecting device %s...\n", deviceID)
 
-	// First unregister the device
-	if err := client.UnregisterDevice(deviceID); err != nil {
+	// Unregister the device via daemon API
+	req = map[string]string{"deviceId": deviceID}
+	if err := daemon.DefaultManager.CallAPI("POST", "/api/devices/unregister", req, nil); err != nil {
 		fmt.Printf("Warning: failed to unregister device: %v\n", err)
 	}
 
-	// Then stop the device proxy service using existing kill-server logic
-	if err := executeKillServer(); err != nil {
-		fmt.Printf("Warning: failed to stop device proxy service: %v\n", err)
-	}
-
 	return nil
 }
 
-// executeKillServer calls the existing kill-server functionality
-func executeKillServer() error {
-	opts := &DeviceConnectKillServerOptions{
-		Force: true,
-		All:   false,
-	}
-	// Create a dummy command for ExecuteDeviceConnectKillServer
-	// We only need this for the function signature, the actual cmd parameter is not used in the implementation
-	return ExecuteDeviceConnectKillServer(nil, opts)
-}
+// registerDevice registers a device for remote access
+// If deviceID is empty and deviceType is empty, register as desktop with auto-detected OS
+// If deviceID is provided, register as mobile (Android) device
+// If deviceType is provided (for backward compatibility), use it to determine type
+func registerDevice(deviceID string, deviceType string) error {
+	// Register device via daemon API
+	req := make(map[string]string)
+	isDesktop := false
 
-// getDeviceInfoWithRetry waits for the API to be ready and then looks up the device
-func getDeviceInfoWithRetry(client *device_connect.Client, deviceID string, timeout time.Duration) (*device_connect.DeviceInfo, error) {
-	devices, err := getDevicesWithValidation(client, timeout)
-	if err != nil {
-		return nil, err
-	}
-	for _, d := range devices {
-		if d.Id == deviceID {
-			return &d, nil
+	// Determine device type based on parameters
+	if deviceID == "" && deviceType == "" {
+		// Empty deviceID and deviceType means register local machine as desktop
+		req["deviceType"] = "desktop"
+		isDesktop = true
+		// Auto-detect OS type
+		switch runtime.GOOS {
+		case "linux":
+			req["osType"] = "linux"
+		case "darwin":
+			req["osType"] = "macos"
+		case "windows":
+			req["osType"] = "windows"
+		default:
+			req["osType"] = "linux" // Default fallback
 		}
-	}
-	return nil, fmt.Errorf("device not found: %s", deviceID)
-}
-
-// getDevicesWithValidation retries fetching devices until at least one device has a non-empty serial number,
-// or until the timeout is reached. This avoids the abnormal "-usb" entries when the upstream is not ready.
-func getDevicesWithValidation(client *device_connect.Client, timeout time.Duration) ([]device_connect.DeviceInfo, error) {
-	deadline := time.Now().Add(timeout)
-	var lastErr error
-	var lastDevices []device_connect.DeviceInfo
-	for {
-		devices, err := client.GetDevices()
-		if err == nil {
-			lastDevices = devices
-			if !hasAnyEmptySerial(devices) {
-				return devices, nil
-			}
-			lastErr = fmt.Errorf("some devices missing serial numbers; retrying")
+	} else if deviceType != "" {
+		// Backward compatibility: use provided deviceType
+		oldType := strings.ToLower(deviceType)
+		if oldType == "android" {
+			req["deviceType"] = "mobile"
+			req["osType"] = "android"
+		} else if oldType == "linux" {
+			req["deviceType"] = "desktop"
+			req["osType"] = "linux"
+			isDesktop = true
 		} else {
-			lastErr = err
-		}
-
-		if time.Now().After(deadline) {
-			if len(lastDevices) > 0 {
-				valid := filterValidDevices(lastDevices)
-				if len(valid) > 0 {
-					return valid, nil
-				}
+			// Default: treat as desktop and try to detect OS
+			req["deviceType"] = "desktop"
+			isDesktop = true
+			switch runtime.GOOS {
+			case "linux":
+				req["osType"] = "linux"
+			case "darwin":
+				req["osType"] = "macos"
+			case "windows":
+				req["osType"] = "windows"
+			default:
+				req["osType"] = "linux" // Default fallback
 			}
-			return nil, lastErr
 		}
-		time.Sleep(1 * time.Second)
+	} else {
+		// deviceID is provided, register as mobile (Android) device
+		req["deviceType"] = "mobile"
+		req["osType"] = "android"
 	}
-}
 
-// allSerialMissing returns true when every device has an empty SerialNo
-func allSerialMissing(devices []device_connect.DeviceInfo) bool {
-	if len(devices) == 0 {
-		return false
-	}
-	for _, d := range devices {
-		if d.SerialNo != "" {
-			return false
-		}
-	}
-	return true
-}
-
-// hasAnyEmptySerial returns true if any device has an empty SerialNo
-func hasAnyEmptySerial(devices []device_connect.DeviceInfo) bool {
-	for _, d := range devices {
-		if d.SerialNo == "" {
-			return true
-		}
-	}
-	return false
-}
-
-// filterValidDevices returns only devices with a non-empty SerialNo
-func filterValidDevices(devices []device_connect.DeviceInfo) []device_connect.DeviceInfo {
-	var result []device_connect.DeviceInfo
-	for _, d := range devices {
-		if d.SerialNo != "" {
-			result = append(result, d)
-		}
-	}
-	return result
-}
-
-// runAsRoot executes a command with root privileges if needed
-func runAsRoot(name string, args ...string) error {
-	// Check if already running as root (Unix-like systems)
-	if runtime.GOOS != "windows" {
-		cmd := exec.Command("id", "-u")
-		output, err := cmd.Output()
-		if err == nil && strings.TrimSpace(string(output)) == "0" {
-			// Already root, run directly
-			cmd := exec.Command(name, args...)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			return cmd.Run()
+	// For desktop devices, try to reuse regId if deviceID is empty
+	if isDesktop && deviceID == "" {
+		if regId, _ := readLocalRegId(); regId != "" {
+			req["regId"] = regId
 		}
 	}
 
-	// Check if sudo is available
-	if _, err := exec.LookPath("sudo"); err == nil {
-		// Use sudo
-		fullArgs := append([]string{name}, args...)
-		cmd := exec.Command("sudo", fullArgs...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
+	if deviceID != "" {
+		req["deviceId"] = deviceID
+	}
+	var resp map[string]interface{}
+
+	if err := daemon.DefaultManager.CallAPI("POST", "/api/devices/register", req, &resp); err != nil {
+		return fmt.Errorf("failed to register device: %v", err)
 	}
 
-	// No sudo available, try running directly
-	cmd := exec.Command(name, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-// installADB attempts to install ADB using the system package manager
-func installADB() error {
-	if _, err := exec.LookPath("brew"); err == nil {
-		// macOS with Homebrew
-		cmd := exec.Command("brew", "install", "android-platform-tools")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
+	if success, ok := resp["success"].(bool); !ok || !success {
+		return fmt.Errorf("failed to register device: %v", resp["error"])
 	}
 
-	if _, err := exec.LookPath("apt-get"); err == nil {
-		// Debian/Ubuntu
-		return runAsRoot("apt-get", "install", "-y", "android-tools-adb")
+	// Resolve actual device ID and regId from response
+	actualID := deviceID
+	regIdStr := ""
+	if data, ok := resp["data"].(map[string]interface{}); ok {
+		if id, ok2 := data["id"].(string); ok2 && id != "" {
+			actualID = id
+		}
+		if rid, ok2 := data["regId"].(string); ok2 && rid != "" {
+			regIdStr = rid
+		} else if actualID != "" {
+			regIdStr = actualID
+		}
 	}
-
-	if _, err := exec.LookPath("yum"); err == nil {
-		// RHEL/CentOS
-		return runAsRoot("yum", "install", "-y", "android-tools")
-	}
-
-	return fmt.Errorf("unable to detect package manager")
-}
-
-// installFrpc attempts to install frpc using the system package manager or GitHub releases
-func installFrpc() error {
-	// Try Homebrew first on macOS
-	if runtime.GOOS == "darwin" {
-		if _, err := exec.LookPath("brew"); err == nil {
-			cmd := exec.Command("brew", "install", "frpc")
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err == nil {
-				return nil
+	// Also check top-level fields
+	if regIdStr == "" {
+		if v, ok := resp["regId"]; ok {
+			if rid, ok2 := v.(string); ok2 && rid != "" {
+				regIdStr = rid
 			}
-			// If brew fails, fall through to GitHub installation
+		}
+	}
+	if actualID != "" && deviceID == "" {
+		deviceID = actualID
+	}
+
+	// For desktop devices, persist regId for future reuse
+	if isDesktop && regIdStr != "" {
+		_ = writeLocalRegId(regIdStr)
+	}
+
+	// Display registration result
+	if isDesktop {
+		if actualID != "" && regIdStr != "" {
+			fmt.Printf("Desktop device registered. Device ID: %s (regId: %s)\n", actualID, regIdStr)
+		} else if actualID != "" {
+			fmt.Printf("Desktop device registered. Device ID: %s\n", actualID)
+		} else {
+			fmt.Printf("Desktop device registered.\n")
+		}
+	} else {
+		if actualID != "" {
+			fmt.Printf("Device registered. Device ID: %s\n", actualID)
 		}
 	}
 
-	// Download from GitHub releases for all platforms
-	return installFrpcFromGitHub()
-}
+	fmt.Printf("Establishing remote connection for device %s...\n", deviceID)
+	fmt.Printf("Connection established successfully!\n")
 
-// installFrpcFromGitHub downloads and installs frpc from GitHub releases
-func installFrpcFromGitHub() error {
-	// Get latest frpc version from GitHub API
-	resp, err := http.Get("https://api.github.com/repos/fatedier/frp/releases/latest")
-	if err != nil {
-		return fmt.Errorf("failed to fetch frpc version: %v", err)
-	}
-	defer resp.Body.Close()
+	// Display local Web UI URL
+	fmt.Printf("\n📱 View and control your device at: %s\n", color.CyanString("http://localhost:29888"))
+	fmt.Printf("   This is the local live-view interface for device control\n")
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to fetch frpc version: HTTP %d", resp.StatusCode)
-	}
-
-	var release struct {
-		TagName string `json:"tag_name"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return fmt.Errorf("failed to parse release info: %v", err)
-	}
-
-	// Remove 'v' prefix from version
-	frpcVersion := strings.TrimPrefix(release.TagName, "v")
-	if frpcVersion == "" {
-		return fmt.Errorf("invalid version tag: %s", release.TagName)
-	}
-
-	// Detect OS and architecture
-	osType := runtime.GOOS
-	archType := runtime.GOARCH
-
-	// Map architecture names to frp naming convention
-	switch archType {
-	case "amd64":
-		// Keep as is
-	case "arm64":
-		// Keep as is
-	case "arm":
-		// Keep as is
-	default:
-		return fmt.Errorf("unsupported architecture: %s", archType)
-	}
-
-	// Construct download URL
-	downloadURL := fmt.Sprintf(
-		"https://github.com/fatedier/frp/releases/download/v%s/frp_%s_%s_%s.tar.gz",
-		frpcVersion, frpcVersion, osType, archType,
-	)
-
-	// Create temporary directory for frpc binary only
-	tempDir, err := os.MkdirTemp("", "frpc-install-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp directory: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Download and stream-extract in one pass
-	resp, err = http.Get(downloadURL)
-	if err != nil {
-		return fmt.Errorf("failed to download frpc: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download frpc: HTTP %d", resp.StatusCode)
-	}
-
-	// Create gzip reader directly from HTTP response body (no intermediate file)
-	gzr, err := gzip.NewReader(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to create gzip reader: %v", err)
-	}
-	defer gzr.Close()
-
-	// Create tar reader from gzip stream
-	tr := tar.NewReader(gzr)
-
-	// Extract frpc binary directly from stream
-	var frpcBinaryPath string
-	for {
-		header, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("failed to read tar entry: %v", err)
-		}
-
-		// Look for frpc binary
-		if filepath.Base(header.Name) == "frpc" && header.Typeflag == tar.TypeReg {
-			frpcBinaryPath = filepath.Join(tempDir, "frpc")
-
-			// Create file with proper permissions
-			outFile, err := os.OpenFile(frpcBinaryPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
-			if err != nil {
-				return fmt.Errorf("failed to create frpc binary: %v", err)
-			}
-
-			// Stream-copy from tar to file
-			if _, err := io.Copy(outFile, tr); err != nil {
-				outFile.Close()
-				return fmt.Errorf("failed to extract frpc binary: %v", err)
-			}
-
-			if err := outFile.Close(); err != nil {
-				return fmt.Errorf("failed to close frpc binary: %v", err)
-			}
-
-			// Found and extracted, stop processing archive
-			break
+	// Get and display devices URL for the current profile
+	pm := profile.NewProfileManager()
+	if err := pm.Load(); err == nil {
+		if devicesURL, err := pm.GetDevicesURL(); err == nil {
+			fmt.Printf("\n☁️  Remote access available at: %s\n", color.CyanString(devicesURL))
 		}
 	}
 
-	if frpcBinaryPath == "" {
-		return fmt.Errorf("frpc binary not found in archive")
-	}
-
-	// Install to system location
-	installPath := "/usr/local/bin/frpc"
-	if err := installBinaryWithSudo(frpcBinaryPath, installPath); err != nil {
-		return fmt.Errorf("failed to install frpc to %s: %v", installPath, err)
-	}
-
-	return nil
-}
-
-// installBinaryWithSudo installs a binary to the system location, using sudo if necessary
-func installBinaryWithSudo(src, dst string) error {
-	// Try direct copy first (works if we have write permission)
-	if err := copyBinaryFile(src, dst); err == nil {
-		return nil
-	}
-
-	// If direct copy fails, use install command with runAsRoot (Unix-like systems)
-	if runtime.GOOS != "windows" {
-		if err := runAsRoot("install", "-m", "755", src, dst); err != nil {
-			return fmt.Errorf("install with elevated privileges failed: %v", err)
-		}
-		return nil
-	}
-
-	return fmt.Errorf("permission denied and elevated privileges not available")
-}
-
-// copyBinaryFile copies a binary file with executable permissions
-func copyBinaryFile(src, dst string) error {
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("failed to open source: %v", err)
-	}
-	defer srcFile.Close()
-
-	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
-	if err != nil {
-		return fmt.Errorf("failed to create destination: %v", err)
-	}
-	defer dstFile.Close()
-
-	if _, err := io.Copy(dstFile, srcFile); err != nil {
-		return fmt.Errorf("failed to copy: %v", err)
-	}
+	fmt.Printf("\n💡 Device registered successfully. Use 'gbox device-connect unregister %s' to disconnect when needed.\n", deviceID)
 
 	return nil
 }

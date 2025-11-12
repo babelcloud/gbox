@@ -177,29 +177,19 @@ func InstallAppium(cfg AppiumConfig) error {
 	debug := os.Getenv("DEBUG") == "true"
 
 	// Check if Appium is already installed
-	fmt.Println()
-	fmt.Println("📦 Checking Appium server...")
 	if IsAppiumInstalled(appiumHome) {
-		// Get Appium version
-		appiumBinary := filepath.Join(appiumHome, "node_modules", ".bin", "appium")
-		version := ""
-		if versionCmd := exec.Command(appiumBinary, "-v"); versionCmd != nil {
-			versionCmd.Env = append(os.Environ(), "APPIUM_HOME="+appiumHome)
-			if versionOutput, err := versionCmd.Output(); err == nil {
-				version = strings.TrimSpace(string(versionOutput))
-			}
+		// Check if components need installation
+		err := installAppiumComponents(appiumHome, cfg)
+		if err != nil {
+			return err
 		}
-
-		if version != "" {
-			fmt.Printf("✅ Appium server [%s] is already installed\n", version)
-		} else {
-			fmt.Println("✅ Appium server is already installed")
-		}
-
-		return installAppiumComponents(appiumHome, cfg)
+		// All components are already installed, no need to show messages
+		return nil
 	}
 
 	// Appium not installed
+	fmt.Println()
+	fmt.Println("📦 Checking Appium server...")
 	fmt.Println("⚠️  Appium server not found, installing...")
 
 	// Start spinner
@@ -358,11 +348,9 @@ func installAppiumComponents(appiumHome string, cfg AppiumConfig) error {
 	}
 
 	var installErrors []string
+	var needsInstall bool
 
 	// ===== Check and install drivers =====
-	fmt.Println()
-	fmt.Println("📦 Checking Appium drivers...")
-
 	// Get currently installed drivers
 	installedDrivers, err := getInstalledDrivers(appiumBinary, appiumHome)
 	if err != nil {
@@ -374,7 +362,7 @@ func installAppiumComponents(appiumHome string, cfg AppiumConfig) error {
 
 	// Check configured drivers
 	if len(cfg.Drivers) == 0 {
-		fmt.Println("ℹ️  No drivers configured")
+		// No drivers configured, nothing to check
 	} else {
 		// Check each configured driver
 		var toInstall []string
@@ -383,14 +371,21 @@ func installAppiumComponents(appiumHome string, cfg AppiumConfig) error {
 				continue
 			}
 			if driverInfo, exists := installedDrivers[driver]; exists && driverInfo.Installed {
-				fmt.Printf("✅ Driver [%s@%s] is already installed\n", driver, driverInfo.Version)
+				// Driver already installed, no need to show message
 			} else {
 				toInstall = append(toInstall, driver)
 			}
 		}
 
-		// Install missing drivers
+		// Only show checking message if there are drivers to install
 		if len(toInstall) > 0 {
+			if !needsInstall {
+				fmt.Println()
+				fmt.Println("📦 Checking Appium drivers...")
+			}
+			needsInstall = true
+
+			// Install missing drivers
 			fmt.Printf("⚠️  Missing drivers: %s, installing...\n", strings.Join(toInstall, ", "))
 
 			for _, driver := range toInstall {
@@ -438,9 +433,6 @@ func installAppiumComponents(appiumHome string, cfg AppiumConfig) error {
 	}
 
 	// ===== Check and install plugins =====
-	fmt.Println()
-	fmt.Println("📦 Checking Appium plugins...")
-
 	// Get currently installed plugins
 	installedPlugins, err := getInstalledPlugins(appiumBinary, appiumHome)
 	if err != nil {
@@ -452,7 +444,7 @@ func installAppiumComponents(appiumHome string, cfg AppiumConfig) error {
 
 	// Check configured plugins
 	if len(cfg.Plugins) == 0 {
-		fmt.Println("ℹ️  No plugins configured")
+		// No plugins configured, nothing to check
 	} else {
 		// Check each configured plugin
 		var toInstall []string
@@ -461,14 +453,21 @@ func installAppiumComponents(appiumHome string, cfg AppiumConfig) error {
 				continue
 			}
 			if pluginInfo, exists := installedPlugins[plugin]; exists && pluginInfo.Installed {
-				fmt.Printf("✅ Plugin [%s@%s] is already installed\n", plugin, pluginInfo.Version)
+				// Plugin already installed, no need to show message
 			} else {
 				toInstall = append(toInstall, plugin)
 			}
 		}
 
-		// Install missing plugins
+		// Only show checking message if there are plugins to install
 		if len(toInstall) > 0 {
+			if !needsInstall {
+				fmt.Println()
+				fmt.Println("📦 Checking Appium plugins...")
+			}
+			needsInstall = true
+
+			// Install missing plugins
 			fmt.Printf("⚠️  Missing plugins: %s, installing...\n", strings.Join(toInstall, ", "))
 
 			for _, plugin := range toInstall {

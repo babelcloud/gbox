@@ -56,9 +56,33 @@ clean: ## Clean the build directory
 	@rm -f $(BINARY_NAME)*
 	@echo "Cleaning completed"
 
+# Build dependencies (live-view and scrcpy-server)
+build-deps: build-live-view download-scrcpy-server ## Build all dependencies
+
+# Build live-view static files and copy to CLI static directory
+build-live-view: ## Build live-view static files
+	@echo "Building live-view static files..."
+	@$(MAKE) -C ../live-view build
+	@echo "Cleaning old live-view static files..."
+	@rm -rf internal/server/static/live-view
+	@echo "Copying live-view static files to CLI..."
+	@mkdir -p internal/server/static/live-view
+	@cp -r ../live-view/static/* internal/server/static/live-view/
+	@echo "✅ Live-view static files ready for embedding"
+
+# Download scrcpy-server.jar
+download-scrcpy-server: ## Download scrcpy-server.jar
+	@if [ ! -f "assets/scrcpy-server.jar" ]; then \
+		echo "Downloading scrcpy-server.jar..."; \
+		./scripts/download-scrcpy-server.sh; \
+	else \
+		echo "scrcpy-server.jar already exists"; \
+	fi
+
 # Build binary for a single platform
-binary: ## Build binary for the current platform (GOOS/GOARCH)
+binary: build-deps ## Build binary for the current platform (GOOS/GOARCH)
 	@echo "Building $(BINARY_NAME) binary ($(GOOS)/$(GOARCH))..."
+	@echo "Note: live-view static files will be embedded in the binary"
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o $(BINARY_NAME) $(MAIN_FILE)
 	@echo "Binary built: $(BINARY_NAME)"
 
@@ -74,7 +98,7 @@ test: ## Run tests
 	go test ./... -v
 
 # Build binaries for all supported platforms
-binary-all: ## Build binaries for all supported platforms
+binary-all: build-deps ## Build binaries for all supported platforms
 	@echo "Building binaries for all supported platforms..."
 	@for platform in $(PLATFORMS); do \
 		os=$$(echo $$platform | cut -d- -f1); \
