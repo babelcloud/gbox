@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"runtime"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -150,6 +152,24 @@ func (dm *DeviceKeeper) Close() {
 	}
 }
 
+// getLocalRegId gets the reg_id of the local machine
+func (dm *DeviceKeeper) getLocalRegId() string {
+	var osType string
+	switch runtime.GOOS {
+	case "darwin":
+		osType = "macos"
+	case "linux", "windows":
+		osType = strings.ToLower(runtime.GOOS)
+	default:
+		osType = "linux"
+	}
+	desktopMgr := device.NewManager(osType)
+	if regId, err := desktopMgr.GetRegId(""); err == nil {
+		return regId
+	}
+	return ""
+}
+
 // startPeriodicCleanup runs periodic cleanup and health check tasks
 func (dm *DeviceKeeper) startPeriodicCleanup() {
 	cleanupTicker := time.NewTicker(10 * time.Minute) // Run cleanup every 10 minutes
@@ -175,6 +195,13 @@ func (dm *DeviceKeeper) healthCheckAndReconnect() {
 	// First, check all currently connected sessions for liveness
 	dm.checkConnectedDevicesHealth()
 
+	// Get local machine reg_id
+	localRegId := dm.getLocalRegId()
+	if localRegId == "" {
+		// If local reg_id is not available, skip reconnection check
+		return
+	}
+
 	// Get all registered devices from API
 	deviceList, err := dm.deviceAPI.GetAll()
 	if err != nil {
@@ -185,6 +212,11 @@ func (dm *DeviceKeeper) healthCheckAndReconnect() {
 	for _, device := range deviceList.Data {
 		// Skip if device is not registered
 		if device.RegId == "" {
+			continue
+		}
+
+		// Only reconnect devices with matching reg_id
+		if device.RegId != localRegId {
 			continue
 		}
 
@@ -649,24 +681,41 @@ func (dm *DeviceKeeper) CleanupExpiredDeviceInfos() {
 // ReconnectRegisteredDevices reconnects all registered devices on server start
 // This is called after server startup to restore device connections
 func (dm *DeviceKeeper) ReconnectRegisteredDevices() error {
+	// Get local machine reg_id
+	localRegId := dm.getLocalRegId()
+	if localRegId == "" {
+		// If local reg_id is not available, skip reconnection
+		log.Printf("Local reg_id not available, skipping device reconnection")
+		return nil
+	}
+
 	// Get all registered devices from cloud
 	deviceList, err := dm.deviceAPI.GetAll()
 	if err != nil {
 		return errors.Wrap(err, "failed to get registered devices from cloud")
 	}
 
-	log.Printf("Attempting to reconnect %d registered device(s)", len(deviceList.Data))
+	log.Printf("Attempting to reconnect registered device(s) with matching reg_id")
 
 	for _, dev := range deviceList.Data {
+		// Only reconnect devices with matching reg_id
+		if dev.RegId == "" || dev.RegId != localRegId {
+			continue
+		}
+
 		// Skip if device is already connected
-		if dm.IsDeviceConnected(dev.Metadata.Serialno) {
-			log.Printf("Device %s (%s) already connected, skipping", dev.Id, dev.Metadata.Serialno)
+		serialno := dev.Metadata.Serialno
+		if serialno == "" {
+			// Desktop devices might use regId as serial
+			serialno = dev.RegId
+		}
+		if dm.IsDeviceConnected(serialno) {
+			log.Printf("Device %s (%s) already connected, skipping", dev.Id, serialno)
 			continue
 		}
 
 		deviceType := dev.Metadata.DeviceType
 		osType := dev.Metadata.OsType
-		serialno := dev.Metadata.Serialno
 
 		// For Android devices, wait for adb watcher to handle connection
 		// Only reconnect desktop devices here
