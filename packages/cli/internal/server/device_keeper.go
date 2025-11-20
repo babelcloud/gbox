@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"runtime"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -150,6 +152,32 @@ func (dm *DeviceKeeper) Close() {
 	}
 }
 
+// deviceToReconnect represents a device that needs to be reconnected
+type deviceToReconnect struct {
+	serialno   string
+	deviceId   string
+	deviceType string
+	osType     string
+}
+
+// getLocalRegId gets the reg_id of the local machine
+func (dm *DeviceKeeper) getLocalRegId() string {
+	var osType string
+	switch runtime.GOOS {
+	case "darwin":
+		osType = "macos"
+	case "linux", "windows":
+		osType = strings.ToLower(runtime.GOOS)
+	default:
+		osType = "linux"
+	}
+	desktopMgr := device.NewManager(osType)
+	if regId, err := desktopMgr.GetRegId(""); err == nil {
+		return regId
+	}
+	return ""
+}
+
 // startPeriodicCleanup runs periodic cleanup and health check tasks
 func (dm *DeviceKeeper) startPeriodicCleanup() {
 	cleanupTicker := time.NewTicker(10 * time.Minute) // Run cleanup every 10 minutes
@@ -169,22 +197,95 @@ func (dm *DeviceKeeper) startPeriodicCleanup() {
 	}
 }
 
-// healthCheckAndReconnect checks all registered devices and attempts to reconnect if needed
-// Also checks if currently "connected" devices are actually alive
-func (dm *DeviceKeeper) healthCheckAndReconnect() {
-	// First, check all currently connected sessions for liveness
-	dm.checkConnectedDevicesHealth()
+// collectDevicesToReconnect collects all devices that need to be reconnected
+// checkReconnecting: if true, skip devices that are currently reconnecting
+func (dm *DeviceKeeper) collectDevicesToReconnect(checkReconnecting bool) ([]deviceToReconnect, error) {
+	// Get local machine reg_id
+	localRegId := dm.getLocalRegId()
+	if localRegId == "" {
+		return nil, nil
+	}
 
 	// Get all registered devices from API
 	deviceList, err := dm.deviceAPI.GetAll()
 	if err != nil {
-		log.Printf("Health check: failed to list devices: %v", err)
-		return
+		return nil, errors.Wrap(err, "failed to list devices")
 	}
 
+	// Build a map of registered devices by reg_id for quick lookup
+	registeredDevicesByRegId := make(map[string]*cloud.Device)
+	for _, dev := range deviceList.Data {
+		if dev != nil && dev.RegId != "" {
+			registeredDevicesByRegId[dev.RegId] = dev
+		}
+	}
+
+	// Collect all devices that need to be reconnected
+	devicesToReconnect := make([]deviceToReconnect, 0)
+
+	// For Android devices, get all ADB-connected devices and check their reg_id
+	androidMgr := device.NewManager("android")
+	adbDevices, err := androidMgr.GetDevices()
+	if err == nil {
+		for _, adbDev := range adbDevices {
+			// Skip if device has no reg_id
+			if adbDev.RegId == "" {
+				continue
+			}
+
+			// Find the registered device info for this Android device by reg_id
+			registeredDev, found := registeredDevicesByRegId[adbDev.RegId]
+			if !found {
+				continue
+			}
+
+			serialno := adbDev.SerialNo
+			if serialno == "" {
+				serialno = adbDev.ID
+			}
+
+			// Check if device is connected
+			isConnected := dm.IsDeviceConnected(serialno)
+			if isConnected {
+				continue
+			}
+
+			// Check if device is currently reconnecting (only if checkReconnecting is true)
+			if checkReconnecting {
+				dm.reconnectMu.RLock()
+				_, isReconnecting := dm.reconnectStates[serialno]
+				dm.reconnectMu.RUnlock()
+				if isReconnecting {
+					continue
+				}
+			}
+
+			devicesToReconnect = append(devicesToReconnect, deviceToReconnect{
+				serialno:   serialno,
+				deviceId:   registeredDev.Id,
+				deviceType: "mobile",
+				osType:     "android",
+			})
+		}
+	}
+
+	// For desktop devices, process from API device list
 	for _, device := range deviceList.Data {
 		// Skip if device is not registered
 		if device.RegId == "" {
+			continue
+		}
+
+		// Only reconnect devices with matching reg_id
+		if device.RegId != localRegId {
+			continue
+		}
+
+		deviceType := device.Metadata.DeviceType
+		osType := device.Metadata.OsType
+
+		// Skip Android devices (already processed above)
+		if deviceType == "mobile" && osType == "android" {
 			continue
 		}
 
@@ -196,48 +297,52 @@ func (dm *DeviceKeeper) healthCheckAndReconnect() {
 
 		// Check if device is connected
 		isConnected := dm.IsDeviceConnected(serialno)
-
-		// Check if device is currently reconnecting
-		dm.reconnectMu.RLock()
-		_, isReconnecting := dm.reconnectStates[serialno]
-		dm.reconnectMu.RUnlock()
-
-		// If not connected and not already reconnecting, try to reconnect
-		if !isConnected && !isReconnecting {
-			deviceType := device.Metadata.DeviceType
-			osType := device.Metadata.OsType
-
-			// For Android devices, check if the physical device is online via ADB
-			if deviceType == "mobile" && osType == "android" {
-				// Check if device is visible in ADB
-				adbDevices, err := dm.adbClient.ListDevices()
-				if err != nil {
-					log.Printf("Health check: failed to list adb devices: %v", err)
-					continue
-				}
-
-				deviceFound := false
-				for _, adbDev := range adbDevices {
-					if adbDev.Serial == serialno {
-						deviceFound = true
-						break
-					}
-				}
-
-				// Only try to reconnect if device is physically present
-				if !deviceFound {
-					continue
-				}
-			}
-
-			// Try to connect
-			log.Printf("Health check: device %s (ID: %s) is registered but not connected, attempting to connect", serialno, device.Id)
-			go func(serial, deviceId, devType, osType string) {
-				if err := dm.connectAPUsingDeviceId(serial, deviceId, devType, osType); err != nil {
-					log.Printf("Health check: failed to connect device %s: %v", serial, err)
-				}
-			}(serialno, device.Id, deviceType, osType)
+		if isConnected {
+			continue
 		}
+
+		// Check if device is currently reconnecting (only if checkReconnecting is true)
+		if checkReconnecting {
+			dm.reconnectMu.RLock()
+			_, isReconnecting := dm.reconnectStates[serialno]
+			dm.reconnectMu.RUnlock()
+			if isReconnecting {
+				continue
+			}
+		}
+
+		devicesToReconnect = append(devicesToReconnect, deviceToReconnect{
+			serialno:   serialno,
+			deviceId:   device.Id,
+			deviceType: deviceType,
+			osType:     osType,
+		})
+	}
+
+	return devicesToReconnect, nil
+}
+
+// healthCheckAndReconnect checks all registered devices and attempts to reconnect if needed
+// Also checks if currently "connected" devices are actually alive
+func (dm *DeviceKeeper) healthCheckAndReconnect() {
+	// First, check all currently connected sessions for liveness
+	dm.checkConnectedDevicesHealth()
+
+	// Collect devices that need to be reconnected (check reconnecting state)
+	devicesToReconnect, err := dm.collectDevicesToReconnect(true)
+	if err != nil {
+		log.Printf("Health check: failed to collect devices to reconnect: %v", err)
+		return
+	}
+
+	// Reconnect all collected devices
+	for _, dev := range devicesToReconnect {
+		log.Printf("Health check: device %s (ID: %s) is registered but not connected, attempting to connect", dev.serialno, dev.deviceId)
+		go func(d deviceToReconnect) {
+			if err := dm.connectAPUsingDeviceId(d.serialno, d.deviceId, d.deviceType, d.osType); err != nil {
+				log.Printf("Health check: failed to connect device %s: %v", d.serialno, err)
+			}
+		}(dev)
 	}
 }
 
@@ -649,37 +754,29 @@ func (dm *DeviceKeeper) CleanupExpiredDeviceInfos() {
 // ReconnectRegisteredDevices reconnects all registered devices on server start
 // This is called after server startup to restore device connections
 func (dm *DeviceKeeper) ReconnectRegisteredDevices() error {
-	// Get all registered devices from cloud
-	deviceList, err := dm.deviceAPI.GetAll()
+	log.Printf("Attempting to reconnect registered device(s) with matching reg_id")
+
+	// Collect devices that need to be reconnected (don't check reconnecting state on startup)
+	devicesToReconnect, err := dm.collectDevicesToReconnect(false)
 	if err != nil {
-		return errors.Wrap(err, "failed to get registered devices from cloud")
+		return errors.Wrap(err, "failed to collect devices to reconnect")
 	}
 
-	log.Printf("Attempting to reconnect %d registered device(s)", len(deviceList.Data))
+	if len(devicesToReconnect) == 0 {
+		log.Printf("No devices to reconnect")
+		return nil
+	}
 
-	for _, dev := range deviceList.Data {
-		// Skip if device is already connected
-		if dm.IsDeviceConnected(dev.Metadata.Serialno) {
-			log.Printf("Device %s (%s) already connected, skipping", dev.Id, dev.Metadata.Serialno)
-			continue
-		}
-
-		deviceType := dev.Metadata.DeviceType
-		osType := dev.Metadata.OsType
-		serialno := dev.Metadata.Serialno
-
-		// For Android devices, wait for adb watcher to handle connection
-		// Only reconnect desktop devices here
-		if deviceType == "desktop" && serialno != "" {
-			log.Printf("Reconnecting desktop device %s (%s)", dev.Id, serialno)
-			go func(id, sn, dt, ot string) {
-				if err := dm.connectAPUsingDeviceId(sn, id, dt, ot); err != nil {
-					log.Printf("Failed to reconnect device %s: %v", id, err)
-				} else {
-					log.Printf("Successfully reconnected device %s", id)
-				}
-			}(dev.Id, serialno, deviceType, osType)
-		}
+	// Reconnect all collected devices
+	for _, dev := range devicesToReconnect {
+		log.Printf("Reconnecting device %s (%s)", dev.deviceId, dev.serialno)
+		go func(d deviceToReconnect) {
+			if err := dm.connectAPUsingDeviceId(d.serialno, d.deviceId, d.deviceType, d.osType); err != nil {
+				log.Printf("Failed to reconnect device %s: %v", d.deviceId, err)
+			} else {
+				log.Printf("Successfully reconnected device %s", d.deviceId)
+			}
+		}(dev)
 	}
 
 	return nil
