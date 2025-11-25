@@ -1,6 +1,6 @@
 {
   "name": "@gbox.ai/live-view",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "type": "module",
   "description": "Live view component for Android device streaming",
   "main": "dist/index.umd.js",
