@@ -17,7 +17,6 @@ At first, you need to set up the registry and token of GitHub. Create a `.npmrc`
 
 ```
 @babelcloud:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${YOUR_GITHUB_PERSONAL_ACCESS_TOKEN}
 ```
 
 Then
