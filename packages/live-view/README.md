@@ -24,22 +24,40 @@ pnpm add @gbox.ai/live-view
 ### As a React Component
 
 ```tsx
-import { AndroidLiveView } from '@gbox.ai/live-view';
+// Import styles
+import '@gbox.ai/live-view/style.css';
+
+// import component
+import AndroidLiveView from '@gbox.ai/live-view';
 
 function App() {
   return (
     <AndroidLiveView
-      apiUrl="/api"
-      wsUrl="ws://localhost:8080/ws"
-      showControls={true}
-      showDeviceList={true}
-      showAndroidControls={true}
+      connectParams={{
+        deviceSerial: "your-device-serial",
+        apiUrl: "http://localhost:29888/api",
+        wsUrl: "ws://localhost:29888"
+      }}
       onConnect={(device) => console.log('Connected to', device)}
       onDisconnect={() => console.log('Disconnected')}
       onError={(error) => console.error('Error:', error)}
     />
   );
 }
+```
+
+#### Next.js Usage Example
+
+In Next.js projects, you can import styles in `app/layout.tsx` or `pages/_app.tsx`:
+
+**App Router (app/layout.tsx):**
+```tsx
+import '@gbox.ai/live-view/style.css';
+```
+
+**Pages Router (pages/_app.tsx):**
+```tsx
+import '@gbox.ai/live-view/style.css';
 ```
 
 ### Props

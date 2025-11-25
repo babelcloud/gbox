@@ -22,7 +22,7 @@ export interface AndroidLiveviewComponentProps {
   onStatsUpdate?: (stats: Stats) => void;
   onConnect?: (device: Device) => void;
   onDisconnect?: () => void;
-  connectaParams: {
+  connectParams: {
     deviceSerial: string;
     apiUrl: string;
     wsUrl: string;
@@ -36,7 +36,7 @@ export function AndroidLiveviewComponent(props: AndroidLiveviewComponentProps) {
     onStatsUpdate: _onStatsUpdate,
     onConnect: _onConnect,
     onDisconnect,
-    connectaParams,
+    connectParams,
   } = props;
 
   const clientRef = useRef<WebRTCClient | H264Client | MP4Client | null>(null);
@@ -104,7 +104,7 @@ export function AndroidLiveviewComponent(props: AndroidLiveviewComponentProps) {
     controlHandler.handleControlAction(action);
   }, [controlHandler]);
 
-  const { deviceSerial, apiUrl, wsUrl } = connectaParams;
+  const { deviceSerial, apiUrl, wsUrl } = connectParams;
 
   useEffect(() => {
     console.log("====");

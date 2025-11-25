@@ -8,7 +8,7 @@ if (!rootElement) {
 
 ReactDOM.createRoot(rootElement).render(
   <AndroidLiveviewComponent
-    connectaParams={{
+    connectParams={{
       deviceSerial: "68afd15",
       apiUrl: "http://localhost:29888/api",
       wsUrl: "ws://localhost:29888",

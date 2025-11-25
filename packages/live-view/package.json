@@ -6,13 +6,22 @@
   "main": "dist/index.umd.js",
   "module": "dist/index.es.js",
   "types": "dist/index.d.ts",
+  "sideEffects": [
+    "./dist/style.css",
+    "./dist/index.es.js",
+    "./dist/index.umd.js"
+  ],
   "exports": {
     ".": {
       "import": "./dist/index.es.js",
       "require": "./dist/index.umd.js",
       "types": "./dist/index.d.ts"
     },
-    "./style.css": "./dist/style.css"
+    "./style.css": {
+      "import": "./dist/style.css",
+      "require": "./dist/style.css",
+      "default": "./dist/style.css"
+    }
   },
   "files": [
     "dist",
@@ -62,7 +71,8 @@
     "rollup-plugin-postcss": "^4.0.2",
     "ts-jest": "^29.1.1",
     "typescript": "^5.3.3",
-    "vite": "^5.0.8"
+    "vite": "^5.0.8",
+    "vite-plugin-dts": "^4.5.4"
   },
   "publishConfig": {
     "access": "public"
