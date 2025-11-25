@@ -1,4 +1,4 @@
-# @babelcloud/live-view
+# @gbox.ai/live-view
 
 Live view component for Android device streaming using WebRTC.
 
@@ -13,23 +13,10 @@ Live view component for Android device streaming using WebRTC.
 
 ## Installation
 
-At first, go to [GitHub token settings](https://github.com/settings/tokens) to create a classic token. Make sure you checked `repo` and `read:packages` scopes.
-
-<img width="2222" height="1350" alt="image" src="https://github.com/user-attachments/assets/f556eadf-15ca-4b04-aab1-8618c2c7470d" />
-
-Then, create a `.npmrc` file in the project root directory and add content as below. 
-
-```
-@babelcloud:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${YOUR_GITHUB_PERSONAL_ACCESS_TOKEN}
-```
-
-Finally you can install it.
-
 ```bash
-npm install @babelcloud/live-view
+npm install @gbox.ai/live-view
 # or
-pnpm add @babelcloud/live-view
+pnpm add @gbox.ai/live-view
 ```
 
 ## Usage
@@ -37,7 +24,7 @@ pnpm add @babelcloud/live-view
 ### As a React Component
 
 ```tsx
-import { AndroidLiveView } from '@babelcloud/live-view';
+import { AndroidLiveView } from '@gbox.ai/live-view';
 
 function App() {
   return (

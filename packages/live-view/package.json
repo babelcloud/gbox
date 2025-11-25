@@ -1,5 +1,5 @@
 {
-  "name": "@babelcloud/live-view",
+  "name": "@gbox.ai/live-view",
   "version": "0.7.0",
   "type": "module",
   "description": "Live view component for Android device streaming",
@@ -63,9 +63,6 @@
     "ts-jest": "^29.1.1",
     "typescript": "^5.3.3",
     "vite": "^5.0.8"
-  },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
   },
   "repository": {
     "type": "git",
