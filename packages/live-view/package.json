@@ -64,6 +64,9 @@
     "typescript": "^5.3.3",
     "vite": "^5.0.8"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/babelcloud/gbox.git",
