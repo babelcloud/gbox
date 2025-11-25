@@ -34,9 +34,9 @@ function App() {
   return (
     <AndroidLiveView
       connectParams={{
-        deviceSerial: "your-device-serial",
+        deviceSerial: "68afd15",
         apiUrl: "http://localhost:29888/api",
-        wsUrl: "ws://localhost:29888"
+        wsUrl: "ws://localhost:29888",
       }}
       onConnect={(device) => console.log('Connected to', device)}
       onDisconnect={() => console.log('Disconnected')}
