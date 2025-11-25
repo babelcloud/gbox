@@ -13,14 +13,18 @@ Live view component for Android device streaming using WebRTC.
 
 ## Installation
 
-At first, you need to set up the registry and token of GitHub. Create a `.npmrc` file in the project root directory and add content as below. You can get your GitHub access token [here](https://github.com/settings/tokens).
+At first, go to [GitHub token settings](https://github.com/settings/tokens) to create a classic token. Make sure you checked `repo` and `read:packages` scopes.
+
+<img width="2222" height="1350" alt="image" src="https://github.com/user-attachments/assets/f556eadf-15ca-4b04-aab1-8618c2c7470d" />
+
+Then, create a `.npmrc` file in the project root directory and add content as below. 
 
 ```
 @babelcloud:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${YOUR_GITHUB_PERSONAL_ACCESS_TOKEN}
 ```
 
-Then
+Finally you can install it.
 
 ```bash
 npm install @babelcloud/live-view
