@@ -5,7 +5,9 @@ import react from "@vitejs/plugin-react";
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
-    react(),
+    react({
+      jsxRuntime: 'automatic',
+    }),
     // dts({
     //   insertTypesEntry: true,
     //   include: ['sdk/**/*'],
@@ -22,11 +24,16 @@ export default defineConfig({
     },
     rollupOptions: {
       // 不要把 peerDependencies 打包进去
-      external: ['react', 'react-dom'],
+      external: (id) => {
+        // 排除所有 react 相关的包
+        return /^react($|\/|$)/.test(id) || /^react-dom($|\/|$)/.test(id);
+      },
       output: {
         globals: {
           react: 'React',
-          'react-dom': 'ReactDOM'
+          'react-dom': 'ReactDOM',
+          'react/jsx-runtime': 'React',
+          'react-dom/client': 'ReactDOM'
         }
       }
     },
