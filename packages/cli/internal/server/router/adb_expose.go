@@ -16,11 +16,15 @@ func (r *ADBExposeRouter) RegisterRoutes(mux *http.ServeMux, server interface{})
 	// Create handlers instance
 	r.handlers = handlers.NewADBExposeHandlers()
 
-	// ADB expose endpoints
-	mux.HandleFunc("/api/adb-expose/start", r.handlers.HandleADBExposeStart)
-	mux.HandleFunc("/api/adb-expose/stop", r.handlers.HandleADBExposeStop)
-	mux.HandleFunc("/api/adb-expose/status", r.handlers.HandleADBExposeStatus)
-	mux.HandleFunc("/api/adb-expose/list", r.handlers.HandleADBExposeList)
+	// Create pattern router for ADB expose endpoints
+	adbExposeRouter := NewPatternRouter()
+	adbExposeRouter.HandleFunc("/api/adb-expose/start", r.handlers.HandleADBExposeStart)
+	adbExposeRouter.HandleFunc("/api/adb-expose/stop", r.handlers.HandleADBExposeStop)
+	adbExposeRouter.HandleFunc("/api/adb-expose/status", r.handlers.HandleADBExposeStatus)
+	adbExposeRouter.HandleFunc("/api/adb-expose/list", r.handlers.HandleADBExposeList)
+
+	// Register pattern router
+	mux.HandleFunc("/api/adb-expose/", adbExposeRouter.ServeHTTP)
 }
 
 // GetPathPrefix returns the path prefix for this router

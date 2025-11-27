@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	client "github.com/babelcloud/gbox/packages/cli/internal/client"
+	"github.com/babelcloud/gbox/packages/cli/internal/util"
 	"github.com/spf13/cobra"
 )
 
@@ -130,12 +131,12 @@ func printResponse(resp interface{}, outputFormat string) error {
 	}
 
 	// Define table columns
-	columns := []TableColumn{
+	columns := []util.TableColumn{
 		{Header: "ID", Key: "id"},
 		{Header: "TYPE", Key: "type"},
 		{Header: "STATUS", Key: "status"},
 	}
 
-	RenderTable(columns, data)
+	util.RenderTable(columns, data)
 	return nil
 }

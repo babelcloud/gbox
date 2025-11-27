@@ -105,5 +105,9 @@ func (h *APIHandlers) HandleServerInfo(w http.ResponseWriter, req *http.Request)
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
+	// Set version headers for client verification
+	w.Header().Set("X-GBOX-Version", h.serverService.GetVersion())
+	w.Header().Set("X-GBOX-Build-ID", h.serverService.GetBuildID())
+
 	RespondJSON(w, http.StatusOK, info)
 }

@@ -25,8 +25,6 @@ type ServerService interface {
 
 	// Static file serving
 	GetStaticFS() fs.FS
-	FindLiveViewStaticPath() string
-	FindStaticPath() string
 
 	// Server lifecycle
 	Stop() error
@@ -35,6 +33,15 @@ type ServerService interface {
 	StartPortForward(boxID string, localPorts, remotePorts []int) error
 	StopPortForward(boxID string) error
 	ListPortForwards() interface{}
+
+	ConnectAP(serial string) error
+	DisconnectAP(serial string) error
+	GetSerialByDeviceId(deviceId string) string        // Gets device serialno by device ID (supports both Android and desktop)
+	GetDeviceInfo(serial string) interface{}           // Returns DeviceDTO or nil
+	UpdateDeviceInfo(device interface{})               // Accepts DeviceDTO
+	IsDeviceConnected(serial string) bool              // Checks if device is currently connected to AP
+	GetDeviceReconnectState(serial string) interface{} // Returns reconnect state (isReconnecting, attempt, maxRetry)
+	ReconnectRegisteredDevices() error                 // Reconnects all registered devices on server start
 }
 
 // Bridge defines the interface for device bridge operations
@@ -44,4 +51,3 @@ type Bridge interface {
 	HandleKeyEvent(msg map[string]interface{})
 	HandleScrollEvent(msg map[string]interface{})
 }
-

@@ -255,7 +255,7 @@ if {[catch {
             set gbox_android_found 1
             exp_continue
         }
-        -re "npx.*@gbox.ai/mcp-android-server@latest" {
+        -re "npx.*@gbox.ai/mcp-server@latest" {
             puts "${GREEN}✓ Found npx command with package@latest${NC}"
             set npx_found 1
             exp_continue
@@ -848,7 +848,7 @@ if {[catch {
             set gbox_android_found 1
             exp_continue
         }
-        -re "npx.*@gbox.ai/mcp-android-server@latest" {
+        -re "npx.*@gbox.ai/mcp-server@latest" {
             puts "${GREEN}✓ Found npx command with package@latest using short flags${NC}"
             set npx_found 1
             exp_continue

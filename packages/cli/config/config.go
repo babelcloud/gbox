@@ -46,6 +46,16 @@ func init() {
 	v.BindEnv("device_proxy.home", "DEVICE_PROXY_HOME")
 	v.BindEnv("profile.path", "GBOX_PROFILE_PATH") // Bind profile path env var
 	v.BindEnv("github.client_secret", "GBOX_GITHUB_CLIENT_SECRET")
+	v.BindEnv("appium.install", "GBOX_INSTALL_APPIUM")
+	v.BindEnv("appium.drivers", "GBOX_APPIUM_DRIVERS")
+	v.BindEnv("appium.plugins", "GBOX_APPIUM_PLUGINS")
+
+	// Pre-process APPIUM_HOME: set default if not already set
+	if os.Getenv("APPIUM_HOME") == "" {
+		defaultAppiumHome := filepath.Join(GetDeviceProxyHome(), "appium")
+		os.Setenv("APPIUM_HOME", defaultAppiumHome)
+	}
+	v.BindEnv("appium.home", "APPIUM_HOME")
 
 	// Config file
 	v.SetConfigName("config")
@@ -121,4 +131,24 @@ func GetDeviceProxyHome() string {
 
 	// Otherwise, use gbox.home + "/device-proxy"
 	return filepath.Join(GetGboxHome(), "device-proxy")
+}
+
+// GetAppiumInstall returns whether Appium should be installed
+func GetAppiumInstall() bool {
+	return v.GetBool("appium.install")
+}
+
+// GetAppiumDrivers returns the list of Appium drivers to install
+func GetAppiumDrivers() string {
+	return v.GetString("appium.drivers")
+}
+
+// GetAppiumPlugins returns the list of Appium plugins to install
+func GetAppiumPlugins() string {
+	return v.GetString("appium.plugins")
+}
+
+// GetAppiumHome returns the Appium home directory
+func GetAppiumHome() string {
+	return v.GetString("appium.home")
 }

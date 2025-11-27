@@ -3,16 +3,22 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/babelcloud/gbox/packages/cli/internal/daemon"
+	procgroup "github.com/babelcloud/gbox/packages/cli/internal/proc_group"
 	"github.com/babelcloud/gbox/packages/cli/internal/server"
+	"github.com/google/uuid"
+	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -35,22 +41,28 @@ func NewServerCmd() *cobra.Command {
 // newServerStartCmd creates the 'server start' subcommand
 func newServerStartCmd() *cobra.Command {
 	var (
-		port       int
-		foreground bool
-		replyFd    int
+		port                   int
+		foreground             bool
+		internalDaemon         bool
+		daemonStartLogFilename string
 	)
 
 	cmd := &cobra.Command{
-		Use:   "start",
-		Short: "Start the server",
-		Long:  `Start the gbox server if it's not already running.`,
+		Use:           "start",
+		Short:         "Start the server",
+		Long:          `Start the gbox server if it's not already running.`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if foreground {
 				// Run in foreground mode
 				return runServerInForeground(port)
 			}
+			if internalDaemon {
+				return runServerInBackground(port, daemonStartLogFilename)
+			}
 			// Default: run in daemon mode with IPC communication
-			return runServerInDaemon(port, replyFd)
+			return runServerInDaemon(port)
 		},
 		Example: `  # Start server in background
   gbox server start
@@ -66,55 +78,42 @@ func newServerStartCmd() *cobra.Command {
 	flags := cmd.Flags()
 	flags.IntVarP(&port, "port", "p", 29888, "Server port")
 	flags.BoolVarP(&foreground, "foreground", "f", false, "Run server in foreground (show logs)")
-	flags.IntVar(&replyFd, "reply-fd", 0, "File descriptor for IPC communication (internal use)")
+
+	// Flag --internal-daemon is hidden in help message for internal use.
+	flags.BoolVarP(&internalDaemon, "internal-daemon", "", false, "")
+	flags.Lookup("internal-daemon").Hidden = true
+	flags.StringVarP(&daemonStartLogFilename, "daemon-start-log-filename", "", "", "")
+	flags.Lookup("daemon-start-log-filename").Hidden = true
 
 	return cmd
 }
 
 // newServerStopCmd creates the 'server stop' subcommand
 func newServerStopCmd() *cobra.Command {
-	var force bool
+	var (
+		port  int
+		force bool
+	)
 
 	cmd := &cobra.Command{
-		Use:   "stop",
-		Short: "Stop the server",
-		Long:  `Stop the gbox server if it's running.`,
+		Use:           "stop",
+		Short:         "Stop the server",
+		Long:          `Stop the gbox server if it's running.`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dm := daemon.NewManager()
-
-			if force {
-				// Force stop all processes
-				dm.CleanupOldServers()
-				fmt.Println("Force stopped all server processes")
-				return nil
-			}
-
-			// Normal stop
-			if !dm.IsServerRunning() {
-				fmt.Println("Server is not running")
-				return nil
-			}
-
-			fmt.Println("Stopping gbox server...")
-			if err := dm.StopServer(); err != nil {
-				// Try force cleanup if normal stop fails
-				dm.CleanupOldServers()
-				fmt.Println("Server stopped (forced)")
-				return nil
-			}
-
-			fmt.Println("Server stopped successfully")
-			return nil
+			return stopServer(port, force)
 		},
 		Example: `  # Stop the server
   gbox server stop
 
-  # Force stop all server processes
-  gbox server stop --force
-  gbox server stop -f`,
+  # Stop server running on specified port
+  gbox server stop --port 29888
+  gbox server stop -p 29888`,
 	}
 
 	flags := cmd.Flags()
+	flags.IntVarP(&port, "port", "p", 29888, "Server port")
 	flags.BoolVarP(&force, "force", "f", false, "Force stop all server processes")
 
 	return cmd
@@ -170,43 +169,20 @@ func newServerRestartCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "restart",
-		Short: "Restart the server",
-		Long:  `Stop and then start the gbox server.`,
+		Use:           "restart",
+		Short:         "Restart the server",
+		Long:          `Stop and then start the gbox server.`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dm := daemon.NewManager()
-
-			// Stop server if it's running
-			if dm.IsServerRunning() {
-				fmt.Println("Stopping gbox server...")
-				if err := dm.StopServer(); err != nil {
-					// Try force cleanup if normal stop fails
-					dm.CleanupOldServers()
-					fmt.Println("Server stopped (forced)")
-				} else {
-					fmt.Println("Server stopped successfully")
-				}
-
-				// Wait a moment for cleanup
-				time.Sleep(500 * time.Millisecond)
+			if err := stopServer(port, true); err != nil {
+				return err
 			}
-
-			// Start server
 			if foreground {
 				// Run in foreground mode
-				fmt.Println("Restarting server in foreground mode...")
 				return runServerInForeground(port)
 			}
-
-			// Start in background mode
-			fmt.Printf("Starting gbox server on port %d...\n", port)
-			if err := dm.StartServer(); err != nil {
-				return fmt.Errorf("failed to start server: %v", err)
-			}
-
-			fmt.Println("Server restarted successfully")
-			fmt.Printf("Web UI available at: http://localhost:%d\n", port)
-			return nil
+			return runServerInDaemon(port)
 		},
 		Example: `  # Restart the server
   gbox server restart
@@ -229,81 +205,148 @@ func newServerRestartCmd() *cobra.Command {
 // Helper functions
 
 // runServerInDaemon runs the server in daemon mode with IPC communication
-func runServerInDaemon(port int, replyFd int) error {
-	// Start the server
-	server := server.NewGBoxServer(port)
-
-	// Start server in a goroutine
-	errChan := make(chan error, 1)
-	go func() {
-		errChan <- server.Start()
-	}()
-
-	// Wait a bit for server to start
-	time.Sleep(2 * time.Second)
-
-	// Check if server started successfully by trying to connect
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 1*time.Second)
-	if err != nil {
-		// Server failed to start
-		if replyFd > 0 {
-			replyFile := os.NewFile(uintptr(replyFd), "reply")
-			if replyFile != nil {
-				replyFile.WriteString(fmt.Sprintf("ERROR: server failed to start: %v", err))
-				replyFile.Close()
-			}
+func runServerInDaemon(port int) error {
+	if err := checkServerStatus(port); err != nil {
+		if err == ServerMismatchedError {
+			return errors.Wrapf(err, "port %d is already been used", port)
 		}
-		return fmt.Errorf("server failed to start: %v", err)
-	}
-	conn.Close()
-
-	// Server started successfully
-	if replyFd > 0 {
-		replyFile := os.NewFile(uintptr(replyFd), "reply")
-		if replyFile != nil {
-			replyFile.WriteString("OK")
-			replyFile.Close()
-		}
-	}
-
-	// Keep the server running
-	select {}
-}
-
-func startServerInBackground(port int) error {
-	dm := daemon.NewManager()
-
-	// Check if already running
-	if dm.IsServerRunning() {
-		fmt.Println("Server is already running")
-		fmt.Printf("Web UI available at: http://localhost:%d\n", port)
+	} else {
+		fmt.Printf("server has been already started on port %d\n", port)
 		return nil
 	}
 
-	fmt.Printf("Starting gbox server on port %d...\n", port)
-	if err := dm.StartServer(); err != nil {
-		return fmt.Errorf("failed to start server: %v", err)
+	executable, err := os.Executable()
+	if err != nil {
+		return errors.Wrap(err, "failed to get exectuable")
 	}
 
-	fmt.Println("Server started successfully")
-	fmt.Printf("Web UI available at: http://localhost:%d\n", port)
+	runId := uuid.New()
+	daemonStartLogFilename := filepath.Join(os.TempDir(), "gbox-server-"+runId.String())
+	defer os.RemoveAll(daemonStartLogFilename)
+
+	cmd := exec.Command(executable, "server", "start", "--port", strconv.Itoa(port), "--internal-daemon", "--daemon-start-log-filename", daemonStartLogFilename)
+	procgroup.SetProcGrp(cmd)
+	if err := cmd.Start(); err != nil {
+		return errors.Wrap(err, "failed to start server daemon")
+	}
+
+	for range 3 {
+		time.Sleep(time.Second)
+		if err := checkServerStatus(port); err != nil {
+			startLog, err := os.ReadFile(daemonStartLogFilename)
+			if err != nil {
+				continue
+			}
+			return errors.Errorf("fail to start server on port %d: %s", port, string(startLog))
+		}
+	}
+
+	fmt.Printf("server has been started on port %d\n", port)
+	return nil
+}
+
+func runServerInBackground(port int, startLogFilename string) error {
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		err := errors.Wrapf(err, "failed to get user home directory")
+		os.WriteFile(startLogFilename, []byte(err.Error()), 0600)
+		return err
+	}
+
+	logFile := filepath.Join(userHome, ".gbox/cli/server.log")
+	logFd, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		err := errors.Wrapf(err, "failed to create log file: %s", logFile)
+		os.WriteFile(startLogFilename, []byte(err.Error()), 0600)
+		return err
+	}
+	defer logFd.Close()
+
+	log.SetOutput(logFd)
+	log.SetFlags(log.LstdFlags)
+
+	server := server.NewGBoxServer(port)
+	if err := server.Start(); err != nil && err != http.ErrServerClosed {
+		err := errors.Wrapf(err, "failed to start server")
+		os.WriteFile(startLogFilename, []byte(err.Error()), 0600)
+		return err
+	}
+	return nil
+}
+
+func checkServerStatus(port int) error {
+	url := fmt.Sprintf("http://localhost:%d/api/health", port)
+	resp, err := http.Get(url)
+	if err != nil {
+		return ServerPortUnavailableError
+	}
+	defer resp.Body.Close()
+	decoder := json.NewDecoder(resp.Body)
+	var body struct {
+		Status  string `json:"status"`
+		Service string `json:"service"`
+	}
+	if err := decoder.Decode(&body); err != nil {
+		return ServerMismatchedError
+	}
+	if body.Service != "gbox-server" {
+		return ServerMismatchedError
+	}
+	return nil
+}
+
+func stopServer(port int, force bool) error {
+	if err := checkServerStatus(port); err != nil && !force {
+		if err == ServerPortUnavailableError {
+			return errors.Errorf("server is not running")
+		}
+		if err == ServerMismatchedError {
+			return errors.Wrapf(err, "port %d is already been used by other process", port)
+		}
+	}
+
+	url := fmt.Sprintf("http://localhost:%d/api/server/shutdown", port)
+	resp, err := http.Post(url, "application/json", nil)
+	if err != nil {
+		if force {
+			return nil
+		}
+		return ServerPortUnavailableError
+	}
+	defer resp.Body.Close()
+	io.ReadAll(resp.Body)
+	time.Sleep(1 * time.Second)
 	return nil
 }
 
 func runServerInForeground(port int) error {
-	// Check if another instance is running
-	dm := daemon.NewManager()
-	if dm.IsServerRunning() {
-		fmt.Println("Warning: Another server instance is already running")
-		fmt.Println("Stop it first with 'gbox server stop' or use a different port")
-		return fmt.Errorf("server already running")
+	if err := checkServerStatus(port); err != nil {
+		if err == ServerMismatchedError {
+			return errors.Wrapf(err, "port %d is already been used", port)
+		}
+	} else {
+		fmt.Printf("server has been already started on port %d\n", port)
+		return nil
 	}
 
-	// Starting server in foreground mode
+	server := server.NewGBoxServer(port)
+	errChan := make(chan error)
+	go func() {
+		if err := server.Start(); err != nil && err != http.ErrServerClosed {
+			errChan <- err
+		}
+	}()
 
-	srv := server.NewGBoxServer(port)
-	if err := srv.Start(); err != nil {
-		return fmt.Errorf("failed to start server: %v", err)
+	for range 3 {
+		time.Sleep(time.Second)
+		if err := checkServerStatus(port); err != nil {
+			select {
+			case startErr := <-errChan:
+				return errors.Wrapf(startErr, "fail to start server on port %d", port)
+			default:
+				continue
+			}
+		}
 	}
 
 	// ANSI color codes
@@ -323,9 +366,25 @@ func runServerInForeground(port int) error {
 	<-sigChan
 
 	log.Println("Shutting down server...")
-	if err := srv.Stop(); err != nil {
+	if err := server.Stop(); err != nil {
 		log.Printf("Error stopping server: %v", err)
 	}
 
 	return nil
+}
+
+var ServerPortUnavailableError = &serverPortUnavailableError{}
+
+type serverPortUnavailableError struct{}
+
+func (e *serverPortUnavailableError) Error() string {
+	return "server port unavailable"
+}
+
+var ServerMismatchedError = &serverMismatchedError{}
+
+type serverMismatchedError struct{}
+
+func (e *serverMismatchedError) Error() string {
+	return "server mismatched"
 }

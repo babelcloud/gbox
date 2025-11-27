@@ -28,30 +28,43 @@ func (r *APIRouter) RegisterRoutes(mux *http.ServeMux, server interface{}) {
 	// Create box handlers separately
 	boxHandlers := handlers.NewBoxHandlers(serverService)
 
+	// Create a unified pattern router for all /api/* routes
+	apiRouter := NewPatternRouter()
+
 	// Health and status endpoints
-	mux.HandleFunc("/api/health", r.handlers.HandleHealth)
-	mux.HandleFunc("/api/status", r.handlers.HandleStatus)
+	apiRouter.HandleFunc("/api/health", r.handlers.HandleHealth)
+	apiRouter.HandleFunc("/api/status", r.handlers.HandleStatus)
 
-	// Device management endpoints - direct routing to device handlers
-	mux.HandleFunc("/api/devices", deviceHandlers.HandleDeviceList)
-	mux.HandleFunc("/api/devices/register", deviceHandlers.HandleDeviceRegister)
-	mux.HandleFunc("/api/devices/unregister", deviceHandlers.HandleDeviceUnregister)
+	// Device management endpoints
+	apiRouter.HandleFunc("/api/devices", deviceHandlers.HandleDeviceList)
+	apiRouter.HandleFunc("/api/devices/register", deviceHandlers.HandleDeviceRegister)
+	apiRouter.HandleFunc("/api/devices/unregister", deviceHandlers.HandleDeviceUnregister)
 
-	// Device-specific endpoints with path patterns - direct routing to device handlers
-	mux.HandleFunc("/api/devices/{serial}", deviceHandlers.HandleDeviceAction)
-	mux.HandleFunc("/api/devices/{serial}/video", deviceHandlers.HandleDeviceVideo)
-	mux.HandleFunc("/api/devices/{serial}/audio", deviceHandlers.HandleDeviceAudio)
-	mux.HandleFunc("/api/devices/{serial}/stream", deviceHandlers.HandleDeviceStream)
-	mux.HandleFunc("/api/devices/{serial}/control", deviceHandlers.HandleDeviceControl)
+	// Device-specific endpoints with path parameters
+	apiRouter.HandleFunc("/api/devices/{serial}", deviceHandlers.HandleDeviceAction)
+	apiRouter.HandleFunc("/api/devices/{serial}/video", deviceHandlers.HandleDeviceVideo)
+	apiRouter.HandleFunc("/api/devices/{serial}/audio", deviceHandlers.HandleDeviceAudio)
+	apiRouter.HandleFunc("/api/devices/{serial}/stream", deviceHandlers.HandleDeviceStream)
+	apiRouter.HandleFunc("/api/devices/{serial}/control", deviceHandlers.HandleDeviceControl)
+	apiRouter.HandleFunc("/api/devices/{serial}/adb", deviceHandlers.HandleDeviceAdb)
+	apiRouter.HandleFunc("/api/devices/{serial}/exec", deviceHandlers.HandleDeviceExec)
+	apiRouter.HandleFunc("/api/devices/{serial}/appium", deviceHandlers.HandleDeviceAppium)
+	apiRouter.HandleFunc("/api/devices/{serial}/appium/{path:.*}", deviceHandlers.HandleDeviceAppium)
+
+	// File operations endpoints
+	apiRouter.HandleFunc("/api/devices/{serial}/files", deviceHandlers.HandleDeviceFiles)
+	apiRouter.HandleFunc("/api/devices/{serial}/files/{action}", deviceHandlers.HandleDeviceFiles)
 
 	// Box management endpoints (proxy to remote GBOX API)
-	mux.HandleFunc("/api/boxes", boxHandlers.HandleBoxList)
-
-	// Note: ADB Expose endpoints are handled by ADBExposeRouter
+	apiRouter.HandleFunc("/api/boxes", boxHandlers.HandleBoxList)
 
 	// Server management endpoints
-	mux.HandleFunc("/api/server/shutdown", r.handlers.HandleServerShutdown)
-	mux.HandleFunc("/api/server/info", r.handlers.HandleServerInfo)
+	apiRouter.HandleFunc("/api/server/shutdown", r.handlers.HandleServerShutdown)
+	apiRouter.HandleFunc("/api/server/info", r.handlers.HandleServerInfo)
+
+	// Register the unified API router
+	// Note: ADB Expose endpoints are handled separately by ADBExposeRouter
+	mux.HandleFunc("/api/", apiRouter.ServeHTTP)
 }
 
 // GetPathPrefix returns the path prefix for this router

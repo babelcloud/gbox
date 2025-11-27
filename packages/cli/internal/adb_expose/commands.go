@@ -15,6 +15,7 @@ import (
 
 	sdk "github.com/babelcloud/gbox-sdk-go"
 	gboxsdk "github.com/babelcloud/gbox/packages/cli/internal/client"
+	"github.com/babelcloud/gbox/packages/cli/internal/util"
 )
 
 // StartCommand starts port forwarding using the main GBOX server API
@@ -268,18 +269,28 @@ func renderTable(data []map[string]interface{}) {
 		return
 	}
 
-	// Print table header
-	fmt.Printf("%-40s %-12s %-25s\n", "Box ID", "Port", "Started At")
-	fmt.Println(strings.Repeat("-", 77))
-
-	// Print data rows
-	for _, row := range data {
+	// Prepare data for RenderTable
+	tableData := make([]map[string]interface{}, len(data))
+	for i, row := range data {
 		boxID, _ := row["box_id"].(string)
 		port, _ := row["port"].(string)
 		startedAt, _ := row["started_at"].(string)
 
-		fmt.Printf("%-40s %-12s %-25s\n", boxID, port, startedAt)
+		tableData[i] = map[string]interface{}{
+			"box_id":     boxID,
+			"port":       port,
+			"started_at": startedAt,
+		}
 	}
+
+	// Define table columns
+	columns := []util.TableColumn{
+		{Header: "Box ID", Key: "box_id"},
+		{Header: "Port", Key: "port"},
+		{Header: "Started At", Key: "started_at"},
+	}
+
+	util.RenderTable(columns, tableData)
 }
 
 // ensureServerRunning ensures the GBOX server is running, starting it if necessary

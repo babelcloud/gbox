@@ -6,8 +6,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os/exec"
-	"strings"
 	"sync"
 	"time"
 
@@ -425,47 +423,4 @@ func (h *ADBExposeHandlers) startLocalListener(forward *PortForward, localPort, 
 		// Handle connection in goroutine
 		go adb_expose.HandleLocalConnWithClient(conn, forward.client, remotePort)
 	}
-}
-
-// getADBDevices retrieves the list of connected ADB devices
-func getADBDevices() ([]map[string]interface{}, error) {
-	cmd := exec.Command("adb", "devices", "-l")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute adb devices: %v", err)
-	}
-
-	lines := strings.Split(string(output), "\n")
-	var devices []map[string]interface{}
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "List of devices") {
-			continue
-		}
-
-		parts := strings.Fields(line)
-		if len(parts) >= 2 {
-			device := map[string]interface{}{
-				"id":     parts[0],
-				"status": parts[1],
-			}
-
-			// Parse additional device info if available
-			if len(parts) > 2 {
-				for _, part := range parts[2:] {
-					if strings.Contains(part, ":") {
-						kv := strings.SplitN(part, ":", 2)
-						if len(kv) == 2 {
-							device[kv[0]] = kv[1]
-						}
-					}
-				}
-			}
-
-			devices = append(devices, device)
-		}
-	}
-
-	return devices, nil
 }

@@ -2,10 +2,11 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/babelcloud/gbox/packages/cli/internal/daemon"
-	"github.com/babelcloud/gbox/packages/cli/internal/profile"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -19,31 +20,37 @@ func NewDeviceConnectRegisterCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "register [device_id] [flags]",
 		Aliases: []string{"reg"},
-		Short:   "Register an Android device for remote access",
-		Long:    "Register an Android device for remote access. If no device ID is provided, an interactive selection will be shown.",
-		Example: `  # Interactively select a device to register
-  gbox device-connect register
+		Short:   "Register a device for remote access",
+		Long:    "Register a device for remote access. Use 'local' to register this machine as desktop, or provide a device ID to register an Android device.",
+		Example: `  # Register an Android device by ID
+  gbox device-connect register abc123xyz456
 
-  # Register specific device
-  gbox device-connect register abc123xyz456-usb`,
-		Args: cobra.MaximumNArgs(1),
+  # Register and connect this machine as desktop
+  gbox device-connect register local`,
+		Args:          cobra.MaximumNArgs(1),
+		SilenceUsage:  false,
+		SilenceErrors: true, // Don't show errors twice (we handle them in RunE)
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ExecuteDeviceConnectRegister(cmd, opts, args)
+			// No interactive mode - require device ID
+			if len(args) == 0 && opts.DeviceID == "" {
+				return fmt.Errorf("device ID is required. Use 'gbox device-connect' for interactive selection")
+			}
+			err := ExecuteDeviceConnectRegister(cmd, opts, args)
+			if err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+			}
+			return nil // Return nil to prevent Cobra from printing again
 		},
 	}
 
 	flags := cmd.Flags()
-	flags.StringVarP(&opts.DeviceID, "device", "d", "", "Specify the Android device ID to register")
+	flags.StringVarP(&opts.DeviceID, "device", "d", "", "Specify the device ID to register")
 
 	return cmd
 }
 
 func ExecuteDeviceConnectRegister(cmd *cobra.Command, opts *DeviceConnectRegisterOptions, args []string) error {
-	if !checkAdbInstalled() {
-		printAdbInstallationHint()
-		return fmt.Errorf("ADB is not installed or not in your PATH. Please install ADB and try again.")
-	}
-
+	// Resolve device ID from args/flags first
 	var deviceID string
 	if len(args) > 0 {
 		deviceID = args[0]
@@ -51,116 +58,82 @@ func ExecuteDeviceConnectRegister(cmd *cobra.Command, opts *DeviceConnectRegiste
 		deviceID = opts.DeviceID
 	}
 
-	if deviceID == "" {
-		return runInteractiveDeviceRegistration()
+	// Determine device type based on deviceID
+	// If "local", register as desktop with auto-detected OS
+	// Otherwise, register as mobile (Android) device
+	if strings.EqualFold(deviceID, "local") {
+		// For local registration, use empty deviceID and register as desktop
+		// OS type will be auto-detected by registerDevice
+		return registerDevice("", "")
 	}
-	
-	return registerDevice(deviceID)
+
+	// For Android device, ensure ADB is installed
+	if !checkAdbInstalled() {
+		printAdbInstallationHint()
+		return fmt.Errorf("adb is not installed or not in your PATH; install adb and try again")
+	}
+
+	// Register as mobile (Android) device
+	return registerDevice(deviceID, "android")
 }
 
-func runInteractiveDeviceRegistration() error {
-	// Use daemon manager to call API
-	var response struct {
-		Success bool                     `json:"success"`
-		Devices []map[string]interface{} `json:"devices"`
-	}
-	
-	if err := daemon.DefaultManager.CallAPI("GET", "/api/devices", nil, &response); err != nil {
-		return fmt.Errorf("failed to get available devices: %v", err)
-	}
-	
-	if !response.Success {
-		return fmt.Errorf("failed to get devices from server")
-	}
-	
-	devices := response.Devices
-	if len(devices) == 0 {
-		fmt.Println("No Android devices found.")
-		fmt.Println()
-		printDeveloperModeHint()
-		return nil
-	}
+// registerDevice is defined in device_connect.go (same package)
 
-	fmt.Println()
-	fmt.Println("Select a device to register for remote access:")
-	fmt.Println()
-	printDeveloperModeHint()
-	fmt.Println()
-
-	for i, device := range devices {
-		status := "Not Registered"
-		statusColor := color.New(color.Faint)
-		
-		// Extract device info from map
-		serialNo := device["ro.serialno"].(string)
-		connectionType := device["connectionType"].(string)
-		isRegistered, _ := device["isRegistrable"].(bool)
-		
-		if isRegistered {
-			status = "Registered"
-			statusColor = color.New(color.FgGreen)
-		}
-		
-		model := "Unknown"
-		if m, ok := device["ro.product.model"].(string); ok {
-			model = m
-		}
-		
-		manufacturer := ""
-		if mfr, ok := device["ro.product.manufacturer"].(string); ok {
-			manufacturer = mfr
-		}
-		
-		fmt.Printf("%d. %s (%s, %s) - %s [%s]\n",
-			i+1,
-			color.New(color.FgCyan).Sprint(serialNo+"-"+connectionType),
-			model,
-			connectionType,
-			manufacturer,
-			statusColor.Sprint(status))
-	}
-	fmt.Println()
-	fmt.Print("Enter a number: ")
-	var choice int
-	fmt.Scanf("%d", &choice)
-	if choice < 1 || choice > len(devices) {
-		return fmt.Errorf("invalid selection: %d", choice)
-	}
-
-	selectedDevice := devices[choice-1]
-	deviceID := selectedDevice["id"].(string)
-	return registerDevice(deviceID)
+type DeviceConnectLinuxConnectOptions struct {
+	DeviceID string
 }
 
-func registerDevice(deviceID string) error {
-	// Register device via daemon API
-	req := map[string]string{"deviceId": deviceID}
-	var resp map[string]interface{}
-	
-	if err := daemon.DefaultManager.CallAPI("POST", "/api/devices/register", req, &resp); err != nil {
-		return fmt.Errorf("failed to register device: %v", err)
-	}
-	
-	if success, ok := resp["success"].(bool); !ok || !success {
-		return fmt.Errorf("failed to register device: %v", resp["error"])
-	}
-	
-	fmt.Printf("Establishing remote connection for device %s...\n", deviceID)
-	fmt.Printf("Connection established successfully!\n")
-	
-	// Display local Web UI URL
-	fmt.Printf("\n📱 View and control your device at: %s\n", color.CyanString("http://localhost:29888"))
-	fmt.Printf("   This is the local live-view interface for device control\n")
-
-	// Get and display devices URL for the current profile
-	pm := profile.NewProfileManager()
-	if err := pm.Load(); err == nil {
-		if devicesURL, err := pm.GetDevicesURL(); err == nil {
-			fmt.Printf("\n☁️  Remote access available at: %s\n", color.CyanString(devicesURL))
-		}
+// ExecuteDeviceConnectLinuxConnect is deprecated: use registerDevice with type="linux" instead
+// This function is kept for backward compatibility but now calls registerDevice
+func ExecuteDeviceConnectLinuxConnect(cmd *cobra.Command, opts *DeviceConnectLinuxConnectOptions, args []string) error {
+	// Force restart local server on each execution of this command
+	_ = daemon.DefaultManager.StopServer()
+	if err := daemon.DefaultManager.StartServer(); err != nil {
+		return fmt.Errorf("failed to restart local server: %v", err)
 	}
 
-	fmt.Printf("\n💡 Device registered successfully. Use 'gbox device-connect unregister %s' to disconnect when needed.\n", deviceID)
-	
-	return nil
+	// Use registerDevice which handles both registration and connection for desktop devices
+	deviceID := ""
+	if opts.DeviceID != "" && !strings.EqualFold(opts.DeviceID, "local") {
+		deviceID = opts.DeviceID
+	}
+	// Empty deviceID and deviceType will register as desktop with auto-detected OS
+	return registerDevice(deviceID, "")
+}
+
+// getLocalRegIdPath returns the file path for storing the reg_id on this machine.
+func getLocalRegIdPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(home, ".gbox")
+	return filepath.Join(dir, "reg_id"), nil
+}
+
+// readLocalRegId reads reg_id from ~/.gbox/reg_id if exists.
+func readLocalRegId() (string, error) {
+	path, err := getLocalRegIdPath()
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	// Trim trailing spaces/newlines
+	s := strings.TrimSpace(string(data))
+	return s, nil
+}
+
+// writeLocalRegId writes reg_id into ~/.gbox/reg_id, creating directory if needed.
+func writeLocalRegId(regId string) error {
+	path, err := getLocalRegIdPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(regId+"\n"), 0o600)
 }

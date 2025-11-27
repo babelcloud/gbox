@@ -20,17 +20,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: packages/live-view/package.json
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
+          cache: "pnpm"
           cache-dependency-path: packages/live-view/pnpm-lock.yaml
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 8
 
       - name: Install dependencies
         run: |
