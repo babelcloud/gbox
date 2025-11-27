@@ -289,6 +289,7 @@ export const AndroidLiveView: React.FC<AndroidLiveViewProps> = ({
       setConnectionStatus('Connecting...');
       
       if (clientRef.current instanceof MP4Client) {
+        console.log("=====", device.serial, apiUrl, wsUrl, forceReconnect)
         // MP4Client needs wsUrl for control WebSocket connection
         await clientRef.current.connect(device.serial, apiUrl, wsUrl, forceReconnect);
       } else {
