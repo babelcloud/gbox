@@ -39,17 +39,39 @@ export const useDeviceManager = ({
         console.log("[useDeviceManager] First raw device:", data.devices[0]);
       }
       // Transform device data to match our interface
-      // The API returns 'id' but we use 'serial' internally
-      const transformedDevices = (data.devices || []).map(
-        (device: Record<string, unknown>) => ({
-          serial: (device.id || device.serial || device.udid) as string,
-          state: (device.status || device.state) as string, // API returns 'status', frontend expects 'state'
-          model: (device["ro.product.model"] ||
-            device.model ||
-            "Unknown") as string,
-          connected: device.connected as boolean,
+      // The new API returns devices with serialno, metadata.model/hostname, and isConnected
+      // Filter to only include mobile devices (platform === "mobile")
+      const transformedDevices = (data.devices || [])
+        .filter((device: Record<string, unknown>) => {
+          // Only include mobile devices
+          return device.platform === "mobile";
         })
-      );
+        .map((device: Record<string, unknown>) => {
+          const metadata = (device.metadata || {}) as Record<string, unknown>;
+          // Get model: for mobile devices use metadata.model
+          const model =
+            (metadata.model as string) || (device.model as string) || "Unknown";
+
+          // Get serial from serialno field
+          const serial = (device.serialno ||
+            device.id ||
+            device.serial ||
+            device.udid) as string;
+
+          // Get connected status from isConnected field
+          const connected = (device.isConnected || device.connected) as boolean;
+
+          // Determine state: all available devices should have state 'device' to allow connection
+          // The API returns devices that are available, so we use 'device' as the state
+          const state = "device";
+
+          return {
+            serial,
+            state,
+            model,
+            connected,
+          };
+        });
       console.log(
         "[useDeviceManager] Transformed devices:",
         transformedDevices
