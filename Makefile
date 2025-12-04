@@ -106,9 +106,7 @@ dist-%: ## Create package for specific platform and architecture (e.g., dist-dar
 	rm -rf $$PLATFORM_DIR; \
 	mkdir -p $$PLATFORM_DIR/bin; \
 	mkdir -p $$PLATFORM_DIR/packages/cli; \
-	mkdir -p $$PLATFORM_DIR/packages/cli/cmd/script; \
 	cp packages/cli/gbox-$$PLATFORM_ARCH $$PLATFORM_DIR/packages/cli/gbox; \
-	cp -r packages/cli/cmd/script/. $$PLATFORM_DIR/packages/cli/cmd/script/; \
 	cp .env $$PLATFORM_DIR/ 2>/dev/null || true; \
 	cp LICENSE README.md $$PLATFORM_DIR/; \
 	if [ -f "packages/cli/gbox-$$PLATFORM_ARCH" ]; then \
