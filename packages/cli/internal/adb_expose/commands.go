@@ -15,6 +15,7 @@ import (
 
 	sdk "github.com/babelcloud/gbox-sdk-go"
 	gboxsdk "github.com/babelcloud/gbox/packages/cli/internal/client"
+	"github.com/babelcloud/gbox/packages/cli/internal/proc_group"
 	"github.com/babelcloud/gbox/packages/cli/internal/util"
 )
 
@@ -508,10 +509,8 @@ func startServerInBackground() error {
 	// Create command to start server in background with reply fd
 	cmd := exec.Command(execPath, "server", "start", "--reply-fd", "3")
 
-	// Set up process attributes for daemon mode
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true, // Create new process group
-	}
+	// Set up process attributes for daemon mode (platform-specific)
+	procgroup.SetProcGrp(cmd)
 
 	// Pass the write end of the pipe as file descriptor 3
 	cmd.ExtraFiles = []*os.File{writer}

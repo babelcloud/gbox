@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/babelcloud/gbox/packages/cli/internal/proc_group"
 )
 
 // AutoStartManager manages automatic server startup
@@ -64,10 +66,8 @@ func (m *AutoStartManager) startServerInBackground() error {
 	// Create command to start server in background
 	cmd := exec.Command(execPath, "server", "start", "--daemon")
 
-	// Set up process attributes for daemon mode
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true, // Create new process group
-	}
+	// Set up process attributes for daemon mode (platform-specific)
+	procgroup.SetProcGrp(cmd)
 
 	// Redirect output to log file
 	logFile, err := os.OpenFile(m.logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
