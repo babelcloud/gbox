@@ -1,11 +1,13 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"embed"
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -236,6 +238,14 @@ func (lw *loggingResponseWriter) Write(b []byte) (int, error) {
 	n, err := lw.ResponseWriter.Write(b)
 	lw.length += n
 	return n, err
+}
+
+func (w *loggingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hj, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("http.Hijacker interface is not supported")
+	}
+	return hj.Hijack()
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {
