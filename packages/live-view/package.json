@@ -1,26 +1,45 @@
 {
-  "name": "@gbox/live-view",
-  "version": "0.1.0",
+  "name": "@gbox.ai/live-view",
+  "version": "0.7.2",
   "type": "module",
   "description": "Live view component for Android device streaming",
-  "main": "dist/index.js",
-  "module": "dist/index.esm.js",
+  "main": "dist/index.umd.js",
+  "module": "dist/index.es.js",
   "types": "dist/index.d.ts",
+  "sideEffects": [
+    "./dist/style.css",
+    "./dist/index.es.js",
+    "./dist/index.umd.js"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.es.js",
+      "require": "./dist/index.umd.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./style.css": {
+      "import": "./dist/style.css",
+      "require": "./dist/style.css",
+      "default": "./dist/style.css"
+    }
+  },
   "files": [
     "dist",
-    "static"
+    "README.md"
   ],
   "scripts": {
     "dev": "vite",
-    "build": "npm run build:component && npm run build:static",
+    "build": "vite build --config vite.config.sdk.ts",
     "build:component": "rollup -c",
-    "build:static": "vite build",
+    "build:static": "vite build --config vite.config.sdk.ts",
+    "build:sdk": "vite build --config vite.config.sdk.ts",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
     "lint": "eslint src",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "build-sdk": "vite build --config vite.config.sdk.ts",
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
@@ -53,14 +72,15 @@
     "rollup-plugin-postcss": "^4.0.2",
     "ts-jest": "^29.1.1",
     "typescript": "^5.3.3",
-    "vite": "^5.0.8"
+    "vite": "^5.0.8",
+    "vite-plugin-dts": "^4.5.4"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/gbox-ai/gbox.git",
+    "url": "https://github.com/babelcloud/gbox.git",
     "directory": "packages/live-view"
   },
   "keywords": [
