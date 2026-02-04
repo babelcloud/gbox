@@ -1,12 +1,15 @@
 package device
 
 import (
+	"bytes"
+	"encoding/xml"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/babelcloud/gbox/packages/cli/internal/util"
@@ -47,8 +50,8 @@ func NewScrcpyConnectionWithMode(deviceSerial string, scid uint32, streamingMode
 		serverPath = "/data/local/tmp/scrcpy-server.jar"
 	}
 
-	// Select optimal encoder based on streaming mode
-	videoEncoder := selectVideoEncoder(streamingMode)
+	// Select optimal encoder based on streaming mode and device capabilities
+	videoEncoder := selectVideoEncoder(deviceSerial, adbPath, streamingMode)
 
 	return &ScrcpyConnection{
 		deviceSerial:  deviceSerial,
@@ -60,19 +63,86 @@ func NewScrcpyConnectionWithMode(deviceSerial string, scid uint32, streamingMode
 	}
 }
 
-// selectVideoEncoder chooses the optimal video encoder based on streaming mode
-func selectVideoEncoder(streamingMode string) string {
+// preferredAvcEncoders is the order of preferred AVC encoders (vendor/hardware first).
+// If none exist on device, we fallback to c2.android.avc.encoder.
+var preferredAvcEncoders = []string{
+	"c2.qti.avc.encoder",
+	"c2.mtk.avc.encoder",
+	"c2.exynos.avc.encoder",
+	"c2.google.avc.encoder",
+	"c2.hisilicon.avc.encoder",
+	"c2.unisoc.avc.encoder",
+}
+
+const fallbackAvcEncoder = "c2.android.avc.encoder"
+
+// getAvailableEncoders runs adb to read device media_codecs*.xml and parses XML
+// to collect all encoder names (elements with name attribute containing "encoder").
+func getAvailableEncoders(adbPath, deviceSerial string) map[string]bool {
+	cmd := exec.Command(adbPath, "-s", deviceSerial, "shell",
+		"cat /vendor/etc/media_codecs*.xml 2>/dev/null")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	return parseEncoderNamesFromMediaCodecsXML(output)
+}
+
+// parseEncoderNamesFromMediaCodecsXML parses Android media_codecs XML and returns
+// a set of encoder names (name attributes whose value contains "encoder").
+func parseEncoderNamesFromMediaCodecsXML(data []byte) map[string]bool {
+	encoders := make(map[string]bool)
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		start, ok := tok.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		for _, a := range start.Attr {
+			if a.Name.Local == "name" && strings.Contains(a.Value, "encoder") {
+				encoders[a.Value] = true
+				break
+			}
+		}
+	}
+	return encoders
+}
+
+// selectVideoEncoder chooses the optimal video encoder based on streaming mode and device.
+func selectVideoEncoder(deviceSerial, adbPath, streamingMode string) string {
 	switch streamingMode {
 	case "h264":
 		// H.264 WebCodecs mode: Use software encoder for maximum compatibility
-		// OMX.google.h264.encoder is the most reliable software encoder
 		return "OMX.google.h264.encoder"
 	case "webrtc", "mse":
-		// WebRTC and MSE modes: use hardware encoder for better performance
-		return "c2.qti.avc.encoder"
+		// Prefer vendor/hardware AVC encoders; fallback to c2.android.avc.encoder
+		available := getAvailableEncoders(adbPath, deviceSerial)
+		if available == nil {
+			log.Printf("Could not query device encoders, using fallback %s", fallbackAvcEncoder)
+			return fallbackAvcEncoder
+		}
+		for _, enc := range preferredAvcEncoders {
+			if available[enc] {
+				log.Printf("Using video encoder: %s", enc)
+				return enc
+			}
+		}
+		log.Printf("No preferred AVC encoder found on device, using %s", fallbackAvcEncoder)
+		return fallbackAvcEncoder
 	default:
-		// Default: use hardware encoder
-		return "c2.qti.avc.encoder"
+		available := getAvailableEncoders(adbPath, deviceSerial)
+		if available != nil {
+			for _, enc := range preferredAvcEncoders {
+				if available[enc] {
+					return enc
+				}
+			}
+		}
+		return fallbackAvcEncoder
 	}
 }
 
@@ -237,7 +307,7 @@ func (sc *ScrcpyConnection) startScrcpyServer() error {
 		"log_level=verbose", // Enable verbose logging to debug scroll issues
 		"video_codec_options=i-frame-interval=2",
 		"video_codec=h264",
-		"video_encoder=c2.qti.avc.encoder",
+		fmt.Sprintf("video_encoder=%s", sc.videoEncoder),
 	}
 
 	// Select audio codec by mode:
