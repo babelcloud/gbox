@@ -1441,7 +1441,10 @@ func (h *DeviceHandlers) HandleDeviceAdb(w http.ResponseWriter, req *http.Reques
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	RespondJSON(w, http.StatusOK, result)
+	RespondJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"data":    result,
+	})
 }
 
 // HandleDeviceAppium proxies Appium requests to the local Appium server.
