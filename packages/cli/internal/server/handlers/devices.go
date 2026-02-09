@@ -3,8 +3,12 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/draw"
+	"image/png"
 	"io"
 	"log"
 	"log/slog"
@@ -1464,6 +1468,278 @@ func (h *DeviceHandlers) HandleDeviceAdb(w http.ResponseWriter, req *http.Reques
 		"success": true,
 		"data":    result,
 	})
+}
+
+// Screenshot request body
+type screenshotRequest struct {
+	TransferFormat  string          `json:"transferFormat"`
+	PresignedPutURL string          `json:"presignedPutUrl"`
+	StorageKey      string          `json:"storageKey"`
+	ScrollCapture   *scrollCapture  `json:"scrollCapture"`
+}
+
+type scrollCapture struct {
+	MaxHeight  int  `json:"maxHeight"`
+	ScrollBack bool `json:"scrollBack"`
+}
+
+// Screenshot response body
+type screenshotResponse struct {
+	Data        string `json:"data"`
+	OutputFormat string `json:"outputFormat"`
+}
+
+const (
+	screenshotTransferBase64    = "base64"
+	screenshotTransferStorageKey = "storageKey"
+	defaultScrollCaptureMaxHeight = 4000
+)
+
+// HandleDeviceScreenshot captures device screen via adb shell screencap -p.
+// POST /api/devices/{serial}/screenshot
+// Request: { transferFormat: "base64"|"storageKey", presignedPutUrl?, storageKey?, scrollCapture?: { maxHeight?, scrollBack? } }
+// Response: { data: string, outputFormat: "base64"|"storageKey" }
+func (h *DeviceHandlers) HandleDeviceScreenshot(w http.ResponseWriter, req *http.Request) {
+	path := strings.TrimPrefix(req.URL.Path, "/api/devices/")
+	parts := strings.Split(path, "/")
+	deviceSerial := parts[0]
+
+	if strings.Contains(req.Header.Get("via"), "gbox-device-ap") {
+		deviceSerial = h.serverService.GetSerialByDeviceId(deviceSerial)
+	}
+
+	if deviceSerial == "" {
+		http.Error(w, "Device serial required", http.StatusBadRequest)
+		return
+	}
+
+	if req.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var body screenshotRequest
+	decoder := json.NewDecoder(req.Body)
+	if err := decoder.Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+		return
+	}
+
+	if body.TransferFormat != screenshotTransferBase64 && body.TransferFormat != screenshotTransferStorageKey {
+		RespondJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error": "transferFormat must be \"base64\" or \"storageKey\"",
+		})
+		return
+	}
+	if body.TransferFormat == screenshotTransferStorageKey && body.PresignedPutURL == "" {
+		RespondJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error": "presignedPutUrl is required when transferFormat is \"storageKey\"",
+		})
+		return
+	}
+
+	scrollOpts := body.ScrollCapture
+	maxHeight := defaultScrollCaptureMaxHeight
+	scrollBack := false
+	if scrollOpts != nil {
+		if scrollOpts.MaxHeight > 0 {
+			maxHeight = scrollOpts.MaxHeight
+		}
+		scrollBack = scrollOpts.ScrollBack
+	}
+
+	devicePlatform := h.getDevicePlatform(deviceSerial)
+	if devicePlatform != "mobile" {
+		RespondJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error": "screenshot is only supported for Android devices",
+		})
+		return
+	}
+
+	adbPath, err := exec.LookPath("adb")
+	if err != nil {
+		adbPath = "adb"
+	}
+
+	var pngData []byte
+	if scrollOpts == nil {
+		// Single capture
+		pngData, err = runScreencap(adbPath, deviceSerial)
+		if err != nil {
+			log.Printf("[HandleDeviceScreenshot] screencap failed: %v", err)
+			RespondJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"error": err.Error(),
+			})
+			return
+		}
+	} else {
+		// Scroll capture
+		pngData, err = h.doScrollCapture(adbPath, deviceSerial, maxHeight, scrollBack)
+		if err != nil {
+			log.Printf("[HandleDeviceScreenshot] scroll capture failed: %v", err)
+			RespondJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"error": err.Error(),
+			})
+			return
+		}
+	}
+
+	var data string
+	outputFormat := body.TransferFormat
+
+	switch body.TransferFormat {
+	case screenshotTransferBase64:
+		data = "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngData)
+	case screenshotTransferStorageKey:
+		data = ""
+		if err := uploadToPresignedURL(req.Context(), body.PresignedPutURL, pngData); err != nil {
+			log.Printf("[HandleDeviceScreenshot] upload failed: %v", err)
+			RespondJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"error": "failed to upload screenshot: " + err.Error(),
+			})
+			return
+		}
+	}
+
+	RespondJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"data": screenshotResponse{
+			Data:         data,
+			OutputFormat: outputFormat,
+		},
+	})
+}
+
+func runScreencap(adbPath, deviceSerial string) ([]byte, error) {
+	cmd := exec.Command(adbPath, "-s", deviceSerial, "shell", "screencap", "-p")
+	return cmd.Output()
+}
+
+func (h *DeviceHandlers) doScrollCapture(adbPath, deviceSerial string, maxHeight int, scrollBack bool) ([]byte, error) {
+	width, height, err := h.getDeviceDisplaySize(deviceSerial)
+	if err != nil {
+		return nil, errors.Wrap(err, "get display size")
+	}
+
+	var captures [][]byte
+	yOffset := 0
+
+	for yOffset < maxHeight {
+		data, err := runScreencap(adbPath, deviceSerial)
+		if err != nil {
+			return nil, err
+		}
+		captures = append(captures, data)
+		yOffset += height
+		if yOffset >= maxHeight {
+			break
+		}
+		// Scroll down: swipe from lower to upper (content moves up)
+		x := width / 2
+		yStart := height * 4 / 5
+		yEnd := height / 5
+		swipeCmd := exec.Command(adbPath, "-s", deviceSerial, "shell", "input", "swipe",
+			strconv.Itoa(x), strconv.Itoa(yStart), strconv.Itoa(x), strconv.Itoa(yEnd), "200")
+		if err := swipeCmd.Run(); err != nil {
+			return nil, errors.Wrap(err, "scroll swipe")
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+
+	if scrollBack {
+		for i := 0; i < len(captures)-1; i++ {
+			x := width / 2
+			yEnd := height * 4 / 5
+			yStart := height / 5
+			swipeCmd := exec.Command(adbPath, "-s", deviceSerial, "shell", "input", "swipe",
+				strconv.Itoa(x), strconv.Itoa(yStart), strconv.Itoa(x), strconv.Itoa(yEnd), "200")
+			if err := swipeCmd.Run(); err != nil {
+				log.Printf("[HandleDeviceScreenshot] scroll back swipe failed: %v", err)
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+
+	return stitchPNGVertically(captures, maxHeight)
+}
+
+func (h *DeviceHandlers) getDeviceDisplaySize(deviceSerial string) (width, height int, err error) {
+	manager := device.NewManager("android")
+	androidMgr, ok := manager.(*device.AndroidManager)
+	if !ok {
+		return 0, 0, errors.New("not an Android manager")
+	}
+	return androidMgr.GetDisplayResolution(deviceSerial)
+}
+
+func stitchPNGVertically(captures [][]byte, maxHeight int) ([]byte, error) {
+	if len(captures) == 0 {
+		return nil, errors.New("no captures to stitch")
+	}
+	if len(captures) == 1 {
+		return captures[0], nil
+	}
+
+	var images []image.Image
+	var totalHeight int
+	var maxWidth int
+
+	for _, data := range captures {
+		img, err := png.Decode(bytes.NewReader(data))
+		if err != nil {
+			return nil, errors.Wrap(err, "decode capture png")
+		}
+		bounds := img.Bounds()
+		w := bounds.Dx()
+		h := bounds.Dy()
+		if w > maxWidth {
+			maxWidth = w
+		}
+		totalHeight += h
+		images = append(images, img)
+	}
+
+	if totalHeight > maxHeight {
+		totalHeight = maxHeight
+	}
+
+	dst := image.NewRGBA(image.Rect(0, 0, maxWidth, totalHeight))
+	y := 0
+	for _, img := range images {
+		if y >= totalHeight {
+			break
+		}
+		bounds := img.Bounds()
+		h := bounds.Dy()
+		if y+h > totalHeight {
+			h = totalHeight - y
+		}
+		draw.Draw(dst, image.Rect(0, y, bounds.Dx(), y+h), img, bounds.Min, draw.Src)
+		y += bounds.Dy()
+	}
+
+	var out bytes.Buffer
+	if err := png.Encode(&out, dst); err != nil {
+		return nil, errors.Wrap(err, "encode stitched png")
+	}
+	return out.Bytes(), nil
+}
+
+func uploadToPresignedURL(ctx context.Context, putURL string, body []byte) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, putURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "image/png")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("upload returned status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // HandleDeviceAppium proxies Appium requests to the local Appium server.
