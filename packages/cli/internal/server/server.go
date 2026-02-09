@@ -263,6 +263,10 @@ func (s *GBoxServer) ConnectAP(serial string) error {
 	return s.deviceKeeper.connectAP(serial)
 }
 
+func (s *GBoxServer) ConnectAPWithDeviceId(serialKey, deviceId, deviceType, osType string) error {
+	return s.deviceKeeper.ConnectAPWithDeviceId(serialKey, deviceId, deviceType, osType)
+}
+
 func (s *GBoxServer) DisconnectAP(serial string) error {
 	return s.deviceKeeper.disconnectAPForce(serial)
 }
