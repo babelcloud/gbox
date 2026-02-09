@@ -466,10 +466,29 @@ func (h *DeviceHandlers) HandleDeviceRegister(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Connect to access point asynchronously (for both desktop and mobile)
+	// Update device info cache so getSerialByDeviceId(deviceId) resolves to serialno before ConnectAP completes.
+	if created.Id != "" && created.Metadata.Serialno != "" {
+		dto := &DeviceDTO{
+			ID:       created.Id,
+			Serialno: created.Metadata.Serialno,
+			Platform: deviceType,
+			OS:       osType,
+			RegId:    created.RegId,
+		}
+		h.serverService.UpdateDeviceInfo(dto)
+	}
+
+	// Connect to access point asynchronously. Use UUID (created.Id) for token API; backend requires UUID, not serialno.
+	// For mobile, call ConnectAPWithDeviceId(serialno, created.Id, ...) so token API gets UUID and session key is serialno for correct getSerialByDeviceId mapping.
 	go func() {
-		if err := h.serverService.ConnectAP(created.Id); err != nil {
-			log.Print(errors.Wrapf(err, "fail to connect device %s to access point", created.Id))
+		var connectErr error
+		if deviceType == "mobile" && created.Metadata.Serialno != "" {
+			connectErr = h.serverService.ConnectAPWithDeviceId(created.Metadata.Serialno, created.Id, deviceType, osType)
+		} else {
+			connectErr = h.serverService.ConnectAP(created.Id)
+		}
+		if connectErr != nil {
+			log.Print(errors.Wrapf(connectErr, "fail to connect device %s to access point", created.Id))
 		}
 	}()
 

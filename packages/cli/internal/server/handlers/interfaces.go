@@ -35,6 +35,8 @@ type ServerService interface {
 	ListPortForwards() interface{}
 
 	ConnectAP(serial string) error
+	// ConnectAPWithDeviceId connects to AP using known serialKey (session key) and deviceId (UUID for token API). Use after register when both are known to avoid passing non-UUID to backend.
+	ConnectAPWithDeviceId(serialKey, deviceId, deviceType, osType string) error
 	DisconnectAP(serial string) error
 	GetSerialByDeviceId(deviceId string) string        // Gets device serialno by device ID (supports both Android and desktop)
 	GetDeviceInfo(serial string) interface{}           // Returns DeviceDTO or nil

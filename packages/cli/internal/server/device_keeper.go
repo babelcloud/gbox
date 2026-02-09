@@ -526,12 +526,41 @@ func (dm *DeviceKeeper) connectAP(serial string) error {
 	return dm.connectAPUsingDeviceId(serial, dev.Id, deviceType, osType)
 }
 
+// ConnectAPWithDeviceId connects to AP using known serialKey (session key) and deviceId (UUID).
+// Used after register when both are known so the token API always receives UUID, not serialno.
+func (dm *DeviceKeeper) ConnectAPWithDeviceId(serialKey, deviceId, deviceType, osType string) error {
+	return dm.connectAPUsingDeviceId(serialKey, deviceId, deviceType, osType)
+}
+
+// resolveAndroidSessionKey returns the ADB server device id for the given key (serialno or existing adb id).
+// For emulators, ADB uses ids like "emulator-5554"; for physical devices, id may equal serialno.
+// This ensures deviceSessions and adbDeviceBiMap use the same id that adb -s <id> uses.
+func (dm *DeviceKeeper) resolveAndroidSessionKey(key string) string {
+	devMgr := device.NewManager("android")
+	devs, err := devMgr.GetDevices()
+	if err != nil {
+		return key
+	}
+	for _, d := range devs {
+		if d.ID == key || d.SerialNo == key {
+			return d.ID
+		}
+	}
+	return key
+}
+
 // connectAPUsingDeviceId establishes AP connection using known gbox deviceId.
 // key is used as the map/session key and logging serial (adb serial or deviceId).
+// For Android (mobile), the session key is resolved to the ADB server device id (e.g. emulator-5554) so deviceSessions and adbDeviceBiMap use the same id as adb.
 // deviceType and osType are stored for device type-specific handling.
 func (dm *DeviceKeeper) connectAPUsingDeviceId(key string, deviceId string, deviceType string, osType string) error {
-	dm.deviceLock.LockKey(key)
-	defer dm.deviceLock.UnlockKey(key)
+	sessionKey := key
+	if deviceType == "mobile" {
+		sessionKey = dm.resolveAndroidSessionKey(key)
+	}
+
+	dm.deviceLock.LockKey(sessionKey)
+	defer dm.deviceLock.UnlockKey(sessionKey)
 
 	apList, err := dm.apAPI.List()
 	if err != nil {
@@ -552,14 +581,14 @@ func (dm *DeviceKeeper) connectAPUsingDeviceId(key string, deviceId string, devi
 		return errors.Wrapf(err, "failed to generate access point token")
 	}
 
-	mux, err := connectAP(connectEndpoint.String(), token.Token, apList.Data[0].Metadata.Protocol, key)
+	mux, err := connectAP(connectEndpoint.String(), token.Token, apList.Data[0].Metadata.Protocol, sessionKey)
 	if err != nil {
-		return errors.Wrapf(err, "failed to connect device %s to GBOX access point", key)
+		return errors.Wrapf(err, "failed to connect device %s to GBOX access point", sessionKey)
 	}
 
-	session := dm.addDevice(key, &DeviceSession{
+	session := dm.addDevice(sessionKey, &DeviceSession{
 		Mux:              mux,
-		Serial:           key,
+		Serial:           sessionKey,
 		DeviceType:       deviceType,
 		OsType:           osType,
 		ReconnectAttempt: 0,
@@ -567,18 +596,18 @@ func (dm *DeviceKeeper) connectAPUsingDeviceId(key string, deviceId string, devi
 		LastError:        nil,
 	}, deviceId)
 
-	// Create minimal device info for cache (full info will be updated when device list is queried)
-	// This ensures we can look up device platform immediately after connection
+	// Create minimal device info for cache (full info will be updated when device list is queried).
+	// Serialno is set to sessionKey so getSerialByDeviceId returns the ADB device id (e.g. emulator-5554) for Android.
 	dto := &handlers.DeviceDTO{
 		ID:         deviceId,
-		Serialno:   key,
+		Serialno:   sessionKey,
 		Platform:   deviceType, // deviceType is actually "mobile" or "desktop" here
 		OS:         osType,
 		DeviceType: "", // Will be filled when device list is queried
 	}
 	dm.updateDeviceInfo(dto)
 
-	go dm.processDeviceSession(session, key)
+	go dm.processDeviceSession(session, sessionKey)
 	return nil
 }
 
