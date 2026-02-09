@@ -589,6 +589,13 @@ func registerDevice(deviceID string, deviceType string) error {
 		_ = writeLocalRegId(regIdStr)
 	}
 
+	// For Android devices, ensure ADB Keyboard is installed (for IME input over ADB)
+	if !isDesktop && deviceID != "" {
+		if err := ensureADBKeyboardOnDevice(deviceID); err != nil {
+			fmt.Printf("Warning: could not ensure ADB Keyboard on device: %v\n", err)
+		}
+	}
+
 	// Display registration result
 	if isDesktop {
 		if actualID != "" && regIdStr != "" {

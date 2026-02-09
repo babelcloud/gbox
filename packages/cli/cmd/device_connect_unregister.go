@@ -120,6 +120,11 @@ func unregisterAllDevices() error {
 				fmt.Printf("Failed to unregister %s: %v\n", deviceKey, err)
 				continue
 			}
+			if device.OS == "android" {
+				if err := uninstallADBKeyboardFromDevice(deviceKey); err != nil {
+					fmt.Printf("Warning: could not uninstall ADB Keyboard from %s: %v\n", deviceKey, err)
+				}
+			}
 			fmt.Printf("Device %s unregistered successfully.\n", deviceKey)
 			unregisteredCount++
 		}
@@ -214,6 +219,10 @@ func unregisterDevice(deviceKey string) error {
 	req := map[string]string{"deviceId": deviceKey}
 	if err := daemon.DefaultManager.CallAPI("POST", "/api/devices/unregister", req, nil); err != nil {
 		return fmt.Errorf("failed to unregister device: %v", err)
+	}
+
+	if err := uninstallADBKeyboardFromDevice(deviceKey); err != nil {
+		fmt.Printf("Warning: could not uninstall ADB Keyboard from device: %v\n", err)
 	}
 
 	fmt.Printf("Device %s unregistered successfully.\n", deviceKey)
