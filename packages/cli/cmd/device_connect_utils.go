@@ -31,6 +31,117 @@ func checkFrpcInstalled() bool {
 	return err == nil
 }
 
+// ADB Keyboard (com.android.adbkeyboard) is used for IME input over ADB.
+const (
+	adbKeyboardPkgPrefix = "package:com.android.adbkeyboard"
+	adbKeyboardDownload  = "https://github.com/babelcloud/ADBKeyBoard/raw/refs/heads/master/ADBKeyboard.apk"
+)
+
+// getGboxDir returns the gbox config directory (~/.gbox).
+func getGboxDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".gbox"), nil
+}
+
+// adbKeyboardAPKPath returns the path where ADBKeyboard.apk should be stored (~/.gbox/ADBKeyboard.apk).
+func adbKeyboardAPKPath() (string, error) {
+	dir, err := getGboxDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "ADBKeyboard.apk"), nil
+}
+
+// ensureADBKeyboardAPK ensures ADBKeyboard.apk exists at ~/.gbox/ADBKeyboard.apk,
+// downloading from babelcloud/ADBKeyBoard if missing. Returns the APK path.
+func ensureADBKeyboardAPK() (string, error) {
+	path, err := adbKeyboardAPKPath()
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(path); err == nil {
+		return path, nil
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("create gbox dir: %w", err)
+	}
+	resp, err := http.Get(adbKeyboardDownload)
+	if err != nil {
+		return "", fmt.Errorf("download ADBKeyboard.apk: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download ADBKeyboard.apk: HTTP %d", resp.StatusCode)
+	}
+	out, err := os.Create(path)
+	if err != nil {
+		return "", fmt.Errorf("create ADBKeyboard.apk: %w", err)
+	}
+	defer out.Close()
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		os.Remove(path)
+		return "", fmt.Errorf("write ADBKeyboard.apk: %w", err)
+	}
+	return path, nil
+}
+
+// isADBKeyboardInstalled reports whether the ADB Keyboard package is installed on the device.
+// Uses: adb -s deviceID shell pm list packages and checks for package:com.android.adbkeyboard.
+func isADBKeyboardInstalled(deviceID string) (bool, error) {
+	cmd := exec.Command("adb", "-s", deviceID, "shell", "pm", "list", "packages")
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("pm list packages: %w", err)
+	}
+	// pm list packages returns lines like "package:com.android.adbkeyboard"
+	return strings.Contains(strings.ToLower(string(output)), strings.ToLower(adbKeyboardPkgPrefix)), nil
+}
+
+// ensureADBKeyboardOnDevice ensures ADB Keyboard is installed on the given Android device.
+// If the APK is not at ~/.gbox/ADBKeyboard.apk it is downloaded; then the app is installed if missing.
+func ensureADBKeyboardOnDevice(deviceID string) error {
+	apkPath, err := ensureADBKeyboardAPK()
+	if err != nil {
+		return err
+	}
+	installed, err := isADBKeyboardInstalled(deviceID)
+	if err != nil {
+		return err
+	}
+	if installed {
+		return nil
+	}
+	cmd := exec.Command("adb", "-s", deviceID, "install", "-r", apkPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("install ADBKeyboard.apk: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+const adbKeyboardPkg = "com.android.adbkeyboard"
+
+// uninstallADBKeyboardFromDevice uninstalls the ADB Keyboard app from the given Android device.
+// It is a no-op if the package is not installed. Errors (e.g. device offline) are returned.
+func uninstallADBKeyboardFromDevice(deviceID string) error {
+	installed, err := isADBKeyboardInstalled(deviceID)
+	if err != nil {
+		return err
+	}
+	if !installed {
+		return nil
+	}
+	cmd := exec.Command("adb", "-s", deviceID, "uninstall", adbKeyboardPkg)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("uninstall ADB Keyboard: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 func printAdbInstallationHint() {
 	const (
 		ansiRed    = "\033[31m"
