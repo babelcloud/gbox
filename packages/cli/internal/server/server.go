@@ -9,12 +9,15 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/babelcloud/gbox/packages/cli/internal/device_connect"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/control"
 	"github.com/babelcloud/gbox/packages/cli/internal/device_connect/transport/webrtc"
 	"github.com/babelcloud/gbox/packages/cli/internal/server/handlers"
+	"github.com/babelcloud/gbox/packages/cli/config"
 	"github.com/babelcloud/gbox/packages/cli/internal/server/router"
 	"github.com/pkg/errors"
 )
@@ -70,6 +73,16 @@ func (s *GBoxServer) Start() error {
 		return err
 	}
 
+	// Start Appium server if enabled and installed (Android automation)
+	if device_connect.GetAppiumConfig().InstallAppium {
+		appiumHome := filepath.Join(config.GetDeviceProxyHome(), "appium")
+		if device_connect.IsAppiumInstalled(appiumHome) {
+			if err := device_connect.StartAppiumServer(); err != nil {
+				log.Printf("[Appium] Failed to start Appium server: %v", err)
+			}
+		}
+	}
+
 	s.httpServer = &http.Server{
 		Addr:         fmt.Sprintf(":%d", s.port),
 		Handler:      loggingMiddleware(s.mux),
@@ -99,6 +112,7 @@ func (s *GBoxServer) Stop() error {
 	}
 
 	// Cleanup services
+	device_connect.StopAppiumServer()
 	s.bridgeManager.Close()
 	s.deviceKeeper.Close()
 
