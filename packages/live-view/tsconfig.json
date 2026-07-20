@@ -31,7 +31,8 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": [
-    "src"
+    "src",
+    "sdk"
   ],
   "exclude": [
     "node_modules",

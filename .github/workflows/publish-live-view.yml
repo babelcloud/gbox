@@ -1,0 +1,50 @@
+name: Publish Live View Package
+
+on:
+  push:
+    branches: [ zhangze/live-view ]  # 监听当前分支
+    paths:
+      - 'packages/live-view/**'    # 只监听live-view目录的变化
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@gbox'
+          
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.0
+          
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+            
+      - name: Install dependencies
+        working-directory: packages/live-view
+        run: pnpm install --frozen-lockfile
+        
+      - name: Build SDK
+        working-directory: packages/live-view
+        run: npm run build:sdk
+        
+      - name: Publish to GitHub Packages
+        working-directory: packages/live-view
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
